@@ -247,3 +247,61 @@ export interface PaymentConfig {
   flutterwave_enabled: boolean;
   bank_transfer_enabled: boolean;
 }
+
+// === Employee ===
+export interface Employee {
+  id: string;
+  entity_id: string;
+  staff_number: string;
+  full_name: string;
+  kra_pin: string;
+  nssf_number?: string;
+  nhif_number?: string;
+  helb_deduction?: number;
+  employment_type: string;
+  basic_salary: number;
+  allowances: any;
+  bank_account: any;
+  tax_relief: number;
+  disability_exemption: boolean;
+  start_date: string;
+  end_date?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+// === Journal Entry ===
+export interface JournalEntry {
+  id: string;
+  entity_id: string;
+  number: string;
+  date: string;
+  period_id: string;
+  source: string;
+  reference: string;
+  description: string;
+  status: string;
+  created_by: any;
+  created_at: string;
+  posted_at?: string;
+}
+
+// === Estimate ===
+export interface Estimate {
+  id: string;
+  entity_id: string;
+  number: string;
+  customer_id: string;
+  issue_date: string;
+  expiry_date: string;
+  currency: string;
+  subtotal: number;
+  tax_total: number;
+  gross_total: number;
+  status: EstimateStatus;
+  notes?: string;
+  converted_invoice_id?: string;
+  created_at: string;
+}
+
+export type EstimateStatus = 'draft' | 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired' | 'converted';

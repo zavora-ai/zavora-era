@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
-  ArrowLeftRight, ClipboardList
+  ArrowLeftRight, ClipboardList, UserCheck, BookMarked
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -21,8 +21,10 @@ const navigation = [
   { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
   { divider: true, label: 'ACCOUNTING' },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Employees', href: '/employees', icon: UserCheck },
   { name: 'Payroll', href: '/payroll', icon: Wallet },
   { name: 'Accounts', href: '/accounts', icon: BookOpen },
+  { name: 'Journal Entries', href: '/journal-entries', icon: BookMarked },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { divider: true, label: '' },
   { name: 'Settings', href: '/settings', icon: Settings },

@@ -42,6 +42,7 @@ export const generatePeriods = (data: any) => api.post('/periods', data);
 export const closePeriod = (id: string, data: any) => api.post(`/periods/${id}/close`, data);
 
 // === Journal Entries ===
+export const getJournalEntries = () => api.get('/journal-entries');
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
 
