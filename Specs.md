@@ -3,7 +3,7 @@
 
 
 ZAVORA TECHNOLOGIES LTD
-Zavora ERA — Core ERP Engine
+Zavora ERP — Core ERP Engine
 
 Technical Specification v0.2 — Full Product Scope
 June 2026 · Nairobi, Kenya
@@ -13,11 +13,11 @@ Author	James Karanja, Zavora Technologies Ltd
 Version	0.2 — revised from 0.1 after Wave Apps parity audit
 Status	Draft — Internal Review
 Classification	Confidential
-Related specs	Zavora ERA Agentic Layer; AWP Protocol v0.4
+Related specs	Zavora ERP Agentic Layer; AWP Protocol v0.4
  
 1. Purpose and scope
-This document specifies the complete Zavora ERA core ERP engine and UI-facing product. Version 0.2 supersedes v0.1 following a Wave Apps parity audit that identified 20 missing feature areas. The engine must now serve two equal consumers: (1) the standalone user interface — a non-accountant using it like Wave Apps — and (2) the ADK-Rust agentic layer that sits above it. Neither consumer is more important than the other.
-The governing product principle: every feature available in Wave Apps Starter/Pro must exist in Zavora ERA, plus Kenya-specific additions (KRA iTax, M-Pesa, NSSF/NHIF, PAYE) that Wave does not provide.
+This document specifies the complete Zavora ERP core ERP engine and UI-facing product. Version 0.2 supersedes v0.1 following a Wave Apps parity audit that identified 20 missing feature areas. The engine must now serve two equal consumers: (1) the standalone user interface — a non-accountant using it like Wave Apps — and (2) the ADK-Rust agentic layer that sits above it. Neither consumer is more important than the other.
+The governing product principle: every feature available in Wave Apps Starter/Pro must exist in Zavora ERP, plus Kenya-specific additions (KRA iTax, M-Pesa, NSSF/NHIF, PAYE) that Wave does not provide.
 
 v0.2 additions vs v0.1:  Customer & Vendor entities · Products & Services catalog · Estimates & Quotes · Recurring invoices · Invoice branding & templates · Payment links (M-Pesa, card) · Auto payment reminders · Customer statements · Credit notes · Partial payments & deposits · Receipt scanning / OCR · Transaction categorisation queue · Split & merge transactions · Payroll engine (Kenya) · User roles & RBAC · Notification system · Dashboard summary API · Settings persistence · Document sequences · Report export (PDF/CSV)
 
@@ -25,7 +25,7 @@ v0.2 additions vs v0.1:  Customer & Vendor entities · Products & Services catal
 2. Wave Apps feature parity matrix
 Every row marked 'In scope' is a delivery commitment for v1. 'v2' items are explicitly deferred.
 
-Feature area	Wave Apps	Zavora ERA v1	Zavora advantage
+Feature area	Wave Apps	Zavora ERP v1	Zavora advantage
 Dashboard — financial overview	Yes	Yes	Agent-narrated insights panel
 Invoicing — create & send	Yes	Yes	WhatsApp + M-Pesa payment link
 Invoicing — customise (logo, colour, template)	Yes	Yes	Per-entity branding, PDF preview
@@ -561,7 +561,7 @@ pub async fn post_unmatched_line(&self, stmt_line_id: Uuid, account_code: Accoun
 
  
 13. Payroll — Kenya
-Zavora ERA includes a full Kenya payroll engine covering PAYE, NSSF, NHIF (SHA), HELB deductions, and payslip generation. This is not available in Wave Apps and is a primary Zavora differentiator for SMEs with employees.
+Zavora ERP includes a full Kenya payroll engine covering PAYE, NSSF, NHIF (SHA), HELB deductions, and payslip generation. This is not available in Wave Apps and is a primary Zavora differentiator for SMEs with employees.
 13.1  Employee
 pub struct Employee {
     pub id:              Uuid,
@@ -948,9 +948,9 @@ M9 — Reporting	All 15 report types, PDF/CSV export, Dashboard summary API	Week
 M10 — Hardening	DB triggers, integration test suite, adk-bench baseline, security audit	Week 20
 
 29. Open questions
-•	Mobile app: Wave has iOS and Android. Zavora ERA v1 is web-only. Mobile targets v2. Receipt scanning on mobile is critical UX — consider PWA as interim.
+•	Mobile app: Wave has iOS and Android. Zavora ERP v1 is web-only. Mobile targets v2. Receipt scanning on mobile is critical UX — consider PWA as interim.
 •	Multi-entity / consolidation: entity_id column is present everywhere, making multi-entity non-breaking. Inter-company elimination and consolidated reporting targeted for v2.
-•	POS integration: Wave supports Square/Shopify via Zapier. Zavora ERA v1 has no POS. v2 consideration.
+•	POS integration: Wave supports Square/Shopify via Zapier. Zavora ERP v1 has no POS. v2 consideration.
 •	Offline posting: field staff using M-Pesa receipts need offline queue. AWP message queue is the candidate protocol.
 •	Project costing: dimension tags enable cost-centre reporting. Full WIP/project P&L is a separate module for v2, aligned with Mitchell Cotts Group requirements.
 •	KDPA retention: Redis audit stream requires periodic Postgres/S3 sink. 7-year minimum retention for financial records under KDPA.
