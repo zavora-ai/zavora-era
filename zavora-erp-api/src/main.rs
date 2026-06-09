@@ -62,10 +62,31 @@ async fn main() -> anyhow::Result<()> {
 
     let config = load_or_create_config(&pool, entity_id).await?;
 
+    // Create scheduler engine (uses its own clones)
+    let scheduler_pool = pool.clone();
+    let scheduler_redis = redis_client.get_multiplexed_async_connection().await?;
+    let scheduler_config = config.clone();
+
     // Create engine
     let engine = ErpEngine::new(pool, redis_conn, config).await?;
 
     let state = Arc::new(AppState { engine });
+
+    // Spawn background scheduler
+    let scheduler_engine = ErpEngine::new(scheduler_pool, scheduler_redis, scheduler_config).await?;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running scheduled tasks...");
+            if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_invoices(&scheduler_engine).await {
+                tracing::error!("Recurring invoice error: {}", e);
+            }
+            if let Err(e) = zavora_erp_core::services::scheduler::process_invoice_reminders(&scheduler_engine).await {
+                tracing::error!("Reminder scheduler error: {}", e);
+            }
+        }
+    });
 
     // Build router
     let app = Router::new()

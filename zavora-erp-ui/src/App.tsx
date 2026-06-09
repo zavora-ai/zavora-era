@@ -3,10 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import InvoicesPage from './pages/invoicing/InvoicesPage';
+import InvoiceDetailPage from './pages/invoicing/InvoiceDetailPage';
 import EstimatesPage from './pages/invoicing/EstimatesPage';
+import RecurringInvoicesPage from './pages/invoicing/RecurringInvoicesPage';
 import BillsPage from './pages/bills/BillsPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
+import CustomerDetailPage from './pages/customers/CustomerDetailPage';
 import VendorsPage from './pages/vendors/VendorsPage';
 import ProductsPage from './pages/products/ProductsPage';
 import BankingPage from './pages/banking/BankingPage';
@@ -39,10 +42,13 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route index element={<DashboardPage />} />
             <Route path="invoices" element={<InvoicesPage />} />
+            <Route path="invoices/:id" element={<InvoiceDetailPage />} />
             <Route path="estimates" element={<EstimatesPage />} />
+            <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
+            <Route path="customers/:id" element={<CustomerDetailPage />} />
             <Route path="vendors" element={<VendorsPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="banking" element={<BankingPage />} />

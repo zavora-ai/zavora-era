@@ -12,6 +12,7 @@ const navigation = [
   { divider: true, label: 'SALES' },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Estimates', href: '/estimates', icon: ClipboardList },
+  { name: 'Recurring', href: '/recurring-invoices', icon: RefreshCw },
   { name: 'Customers', href: '/customers', icon: Users },
   { divider: true, label: 'PURCHASES' },
   { name: 'Bills', href: '/bills', icon: Receipt },

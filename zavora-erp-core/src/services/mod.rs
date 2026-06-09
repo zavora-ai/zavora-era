@@ -16,3 +16,5 @@ pub mod fx;
 pub mod assets;
 pub mod inventory;
 pub mod notifications;
+pub mod scheduler;
+pub mod ocr;
