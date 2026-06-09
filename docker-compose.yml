@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: zavora-postgres
+    environment:
+      POSTGRES_USER: zavora
+      POSTGRES_PASSWORD: zavora
+      POSTGRES_DB: zavora_era
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: zavora-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

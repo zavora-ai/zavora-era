@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, createInvoice, postInvoice, getCustomers } from '../../api/client';
-import type { Invoice, Customer } from '../../types';
+import { getInvoices, createInvoice, postInvoice, sendInvoice, getCustomers, getProducts } from '../../api/client';
+import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, Send, CheckCircle } from 'lucide-react';
+import { Plus, Send, CheckCircle, Eye, MoreHorizontal, Download, Mail } from 'lucide-react';
 
 export default function InvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
@@ -22,24 +23,40 @@ export default function InvoicesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
   });
 
+  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter);
+
+  const statusCounts = {
+    all: invoices.length,
+    draft: invoices.filter(i => i.status === 'draft').length,
+    sent: invoices.filter(i => i.status === 'sent' || i.status === 'viewed').length,
+    overdue: invoices.filter(i => i.status === 'overdue').length,
+    paid: invoices.filter(i => i.status === 'paid').length,
+  };
+
   const columns: Column<Invoice>[] = [
-    { key: 'number', header: 'Number', render: (r) => <span className="font-medium">{r.number}</span> },
-    { key: 'customer_id', header: 'Customer', render: (r) => r.customer_id?.slice(0, 8) + '...' },
-    { key: 'issue_date', header: 'Date', render: (r) => formatDate(r.issue_date) },
-    { key: 'due_date', header: 'Due', render: (r) => formatDate(r.due_date) },
-    { key: 'gross_total', header: 'Amount', render: (r) => formatCurrency(r.gross_total), className: 'text-right' },
-    { key: 'balance_due', header: 'Balance', render: (r) => formatCurrency(r.balance_due), className: 'text-right' },
-    {
-      key: 'status', header: 'Status',
-      render: (r) => <span className={statusColor(r.status)}>{r.status}</span>
-    },
+    { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span> },
+    { key: 'number', header: 'Invoice #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
+    { key: 'customer_id', header: 'Customer', render: (r) => <span className="text-gray-900">{r.customer_id?.slice(0, 8)}...</span> },
+    { key: 'issue_date', header: 'Issued', render: (r) => formatDate(r.issue_date) },
+    { key: 'due_date', header: 'Due Date', render: (r) => <span className={r.status === 'overdue' ? 'text-red-600 font-medium' : ''}>{formatDate(r.due_date)}</span> },
+    { key: 'gross_total', header: 'Total', render: (r) => <span className="font-medium">{formatCurrency(r.gross_total)}</span>, className: 'text-right' },
+    { key: 'balance_due', header: 'Amount Due', render: (r) => <span className="font-bold">{formatCurrency(r.balance_due)}</span>, className: 'text-right' },
     {
       key: 'actions', header: '',
-      render: (r) => r.status === 'draft' ? (
-        <button onClick={(e) => { e.stopPropagation(); postMutation.mutate(r.id); }} className="btn-primary text-xs py-1 px-2">
-          <CheckCircle className="w-3 h-3" /> Post
-        </button>
-      ) : null
+      render: (r) => (
+        <div className="flex items-center gap-1">
+          {r.status === 'draft' && (
+            <button onClick={(e) => { e.stopPropagation(); postMutation.mutate(r.id); }} className="btn-primary text-xs py-1 px-2" title="Approve & Send">
+              <Send className="w-3 h-3" /> Send
+            </button>
+          )}
+          {(r.status === 'sent' || r.status === 'viewed') && (
+            <button className="btn-secondary text-xs py-1 px-2" title="Record Payment">
+              <CheckCircle className="w-3 h-3" /> Payment
+            </button>
+          )}
+        </div>
+      )
     },
   ];
 
@@ -47,34 +64,62 @@ export default function InvoicesPage() {
     <div>
       <PageHeader
         title="Invoices"
-        subtitle="Manage sales invoices and credit notes"
+        subtitle="Create and manage invoices for your customers"
         actions={
           <button onClick={() => setShowCreate(true)} className="btn-primary">
-            <Plus className="w-4 h-4" /> New Invoice
+            <Plus className="w-4 h-4" /> Create Invoice
           </button>
         }
       />
 
-      <DataTable columns={columns} data={invoices} loading={isLoading} emptyMessage="No invoices yet. Create your first invoice." />
+      {/* Status filter tabs */}
+      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+        {(['all', 'draft', 'sent', 'overdue', 'paid'] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setFilter(s)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === s ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)} ({statusCounts[s]})
+          </button>
+        ))}
+      </div>
+
+      <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No invoices yet. Create your first invoice to get paid." />
 
       {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
 
+// ============================================================
+// Full-featured Invoice Creation — Wave Apps parity
+// ============================================================
 function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: customers = [] } = useQuery<Customer[]>({
-    queryKey: ['customers'],
-    queryFn: () => getCustomers().then(r => r.data),
-  });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+
+  const today = new Date().toISOString().split('T')[0];
+  const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
   const [form, setForm] = useState({
     customer_id: '',
-    issue_date: new Date().toISOString().split('T')[0],
-    lines: [{ description: '', quantity: 1, unit_price: 0, account_code: '5000' }],
+    invoice_date: today,
+    due_date: defaultDue,
+    po_number: '',
+    lines: [emptyLine()],
     notes: '',
+    footer: 'Thank you for your business!',
+    currency: 'KES',
+    discount_type: 'none' as 'none' | 'percent' | 'fixed',
+    discount_value: 0,
+    send_on_save: false,
   });
+
+  function emptyLine() {
+    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '5000' };
+  }
 
   const mutation = useMutation({
     mutationFn: (data: any) => createInvoice(data),
@@ -84,99 +129,253 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const addLine = () => {
-    setForm({ ...form, lines: [...form.lines, { description: '', quantity: 1, unit_price: 0, account_code: '5000' }] });
-  };
+  const addLine = () => setForm({ ...form, lines: [...form.lines, emptyLine()] });
 
   const updateLine = (i: number, field: string, value: any) => {
     const lines = [...form.lines];
     (lines[i] as any)[field] = value;
+
+    // Auto-fill from product selection
+    if (field === 'product_id' && value) {
+      const product = products.find(p => p.id === value);
+      if (product) {
+        lines[i].description = product.description || product.name;
+        lines[i].unit_price = product.unit_price || 0;
+        lines[i].account_code = product.sales_account;
+        lines[i].tax_rate = product.vat_treatment === 'Standard16' ? 16 : product.vat_treatment === 'ZeroRated' ? 0 : 0;
+      }
+    }
     setForm({ ...form, lines });
   };
 
   const removeLine = (i: number) => {
+    if (form.lines.length === 1) return;
     setForm({ ...form, lines: form.lines.filter((_, idx) => idx !== i) });
   };
 
+  // Calculations
   const subtotal = form.lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0);
-  const tax = subtotal * 0.16;
-  const total = subtotal + tax;
+  const discount = form.discount_type === 'percent' ? subtotal * form.discount_value / 100
+    : form.discount_type === 'fixed' ? form.discount_value : 0;
+  const afterDiscount = subtotal - discount;
+  const taxByRate: Record<number, number> = {};
+  form.lines.forEach(l => {
+    const lineTotal = l.quantity * l.unit_price;
+    const tax = lineTotal * l.tax_rate / 100;
+    taxByRate[l.tax_rate] = (taxByRate[l.tax_rate] || 0) + tax;
+  });
+  const totalTax = Object.values(taxByRate).reduce((a, b) => a + b, 0);
+  const grandTotal = afterDiscount + totalTax;
+
+  // Customer selection handling
+  const selectedCustomer = customers.find(c => c.id === form.customer_id);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     mutation.mutate({
       customer_id: form.customer_id,
-      issue_date: form.issue_date,
+      issue_date: form.invoice_date,
+      due_date: form.due_date,
       lines: form.lines.map(l => ({
+        product_id: l.product_id || undefined,
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
         account_code: l.account_code,
+        vat_treatment: l.tax_rate === 16 ? 'Standard16' : l.tax_rate === 0 ? 'ZeroRated' : 'Exempt',
       })),
       notes: form.notes || undefined,
+      send_immediately: form.send_on_save,
     });
   };
 
   return (
     <Modal open={true} onClose={onClose} title="Create Invoice" size="xl">
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Customer</label>
-            <select className="input" value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} required>
-              <option value="">Select customer...</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+        {/* Header — Customer + Dates */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left — Customer */}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Bill To *</label>
+              <select
+                className="input"
+                value={form.customer_id}
+                onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+                required
+              >
+                <option value="">Choose a customer...</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {!customers.length && (
+                <p className="text-xs text-gray-500 mt-1">No customers yet. Add one from the Customers page first.</p>
+              )}
+            </div>
+            {selectedCustomer && (
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                <p className="font-medium text-gray-900">{selectedCustomer.name}</p>
+                {selectedCustomer.email?.[0] && <p>{selectedCustomer.email[0].email}</p>}
+                {selectedCustomer.kra_pin && <p>PIN: {selectedCustomer.kra_pin}</p>}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="label">Issue Date</label>
-            <input type="date" className="input" value={form.issue_date} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} />
+
+          {/* Right — Invoice details */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Invoice Date</label>
+                <input type="date" className="input" value={form.invoice_date} onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Payment Due</label>
+                <input type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">P.O. / S.O. Number</label>
+                <input className="input" value={form.po_number} onChange={(e) => setForm({ ...form, po_number: e.target.value })} placeholder="Optional" />
+              </div>
+              <div>
+                <label className="label">Currency</label>
+                <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                  <option value="KES">KES - Kenya Shilling</option>
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="GBP">GBP - British Pound</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Line items */}
+        {/* Line Items */}
         <div>
-          <label className="label">Line Items</label>
-          <div className="space-y-2">
-            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
-              <div className="col-span-5">Description</div>
-              <div className="col-span-2">Qty</div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="label mb-0">Items</label>
+          </div>
+          <div className="border rounded-lg overflow-hidden">
+            {/* Table header */}
+            <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-50 border-b text-xs font-medium text-gray-500 uppercase">
+              <div className="col-span-3">Product / Service</div>
+              <div className="col-span-3">Description</div>
+              <div className="col-span-1">Qty</div>
               <div className="col-span-2">Price</div>
-              <div className="col-span-2">Total</div>
+              <div className="col-span-1">Tax</div>
+              <div className="col-span-1 text-right">Amount</div>
               <div className="col-span-1"></div>
             </div>
+            {/* Line rows */}
             {form.lines.map((line, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2">
-                <input className="input col-span-5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} required />
-                <input className="input col-span-2" type="number" min="1" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', +e.target.value)} />
-                <input className="input col-span-2" type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => updateLine(i, 'unit_price', +e.target.value)} />
-                <div className="col-span-2 flex items-center text-sm font-medium">{formatCurrency(line.quantity * line.unit_price)}</div>
-                <button type="button" onClick={() => removeLine(i)} className="col-span-1 text-red-500 hover:text-red-700 text-sm">×</button>
+              <div key={i} className="grid grid-cols-12 gap-2 px-3 py-2 border-b last:border-b-0 items-center">
+                <div className="col-span-3">
+                  <select className="input text-sm py-1.5" value={line.product_id} onChange={(e) => updateLine(i, 'product_id', e.target.value)}>
+                    <option value="">Select item...</option>
+                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-3">
+                  <input className="input text-sm py-1.5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} />
+                </div>
+                <div className="col-span-1">
+                  <input className="input text-sm py-1.5 text-center" type="number" min="1" step="0.01" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', +e.target.value)} />
+                </div>
+                <div className="col-span-2">
+                  <input className="input text-sm py-1.5" type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => updateLine(i, 'unit_price', +e.target.value)} />
+                </div>
+                <div className="col-span-1">
+                  <select className="input text-sm py-1.5" value={line.tax_rate} onChange={(e) => updateLine(i, 'tax_rate', +e.target.value)}>
+                    <option value={16}>16%</option>
+                    <option value={8}>8%</option>
+                    <option value={0}>0%</option>
+                  </select>
+                </div>
+                <div className="col-span-1 text-right text-sm font-medium">
+                  {formatCurrency(line.quantity * line.unit_price)}
+                </div>
+                <div className="col-span-1 text-center">
+                  <button type="button" onClick={() => removeLine(i)} className="text-gray-400 hover:text-red-500 text-lg" disabled={form.lines.length === 1}>×</button>
+                </div>
               </div>
             ))}
-            <button type="button" onClick={addLine} className="text-sm text-blue-600 hover:text-blue-800">+ Add line</button>
           </div>
-        </div>
-
-        {/* Totals */}
-        <div className="flex justify-end">
-          <div className="w-64 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">VAT (16%)</span><span>{formatCurrency(tax)}</span></div>
-            <div className="flex justify-between font-bold text-base border-t pt-2"><span>Total</span><span>{formatCurrency(total)}</span></div>
-          </div>
-        </div>
-
-        <div>
-          <label className="label">Notes</label>
-          <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes for the customer" />
-        </div>
-
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Creating...' : 'Create Invoice'}
+          <button type="button" onClick={addLine} className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800">
+            + Add a Line
           </button>
+        </div>
+
+        {/* Notes + Totals row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left — Notes */}
+          <div className="space-y-3">
+            <div>
+              <label className="label">Notes / Memo <span className="text-gray-400 font-normal">(visible to customer)</span></label>
+              <textarea className="input" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Add payment instructions, project details, or a personal note..." />
+            </div>
+            <div>
+              <label className="label">Footer <span className="text-gray-400 font-normal">(appears on all invoices)</span></label>
+              <input className="input" value={form.footer} onChange={(e) => setForm({ ...form, footer: e.target.value })} />
+            </div>
+          </div>
+
+          {/* Right — Totals */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="font-medium">{formatCurrency(subtotal)}</span>
+            </div>
+
+            {/* Discount */}
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Discount</span>
+                <select className="input text-xs py-0.5 px-2 w-auto" value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as any })}>
+                  <option value="none">None</option>
+                  <option value="percent">%</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+                {form.discount_type !== 'none' && (
+                  <input type="number" className="input text-xs py-0.5 px-2 w-16" value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: +e.target.value })} />
+                )}
+              </div>
+              <span>{discount > 0 ? `-${formatCurrency(discount)}` : '—'}</span>
+            </div>
+
+            {/* Tax lines */}
+            {Object.entries(taxByRate).map(([rate, amount]) => (
+              <div key={rate} className="flex justify-between text-sm">
+                <span className="text-gray-600">VAT ({rate}%)</span>
+                <span>{formatCurrency(amount)}</span>
+              </div>
+            ))}
+
+            <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold">
+              <span>Total ({form.currency})</span>
+              <span>{formatCurrency(grandTotal)}</span>
+            </div>
+
+            <div className="border-t pt-3 mt-3 flex justify-between text-sm text-gray-600">
+              <span>Balance Due</span>
+              <span className="font-bold text-lg text-gray-900">{formatCurrency(grandTotal)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-between pt-4 border-t">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={form.send_on_save} onChange={(e) => setForm({ ...form, send_on_save: e.target.checked })} className="rounded" />
+            Send invoice to customer immediately
+          </label>
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+            <button type="submit" className="btn-primary" disabled={mutation.isPending || !form.customer_id}>
+              {mutation.isPending ? 'Saving...' : form.send_on_save ? 'Save & Send' : 'Save as Draft'}
+            </button>
+          </div>
         </div>
       </form>
     </Modal>
