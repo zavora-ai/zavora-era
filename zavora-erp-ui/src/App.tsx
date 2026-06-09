@@ -17,6 +17,10 @@ import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import InventoryPage from './pages/inventory/InventoryPage';
+import AssetsPage from './pages/assets/AssetsPage';
+import FxRatesPage from './pages/settings/FxRatesPage';
+import AuditPage from './pages/settings/AuditPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,6 +53,10 @@ export default function App() {
             <Route path="journal-entries" element={<JournalEntriesPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="inventory" element={<InventoryPage />} />
+            <Route path="assets" element={<AssetsPage />} />
+            <Route path="fx-rates" element={<FxRatesPage />} />
+            <Route path="audit" element={<AuditPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

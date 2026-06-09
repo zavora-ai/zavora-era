@@ -305,3 +305,74 @@ export interface Estimate {
 }
 
 export type EstimateStatus = 'draft' | 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired' | 'converted';
+
+// === Inventory ===
+export interface InventoryItem {
+  id: string;
+  entity_id: string;
+  product_id?: string;
+  sku: string;
+  description: string;
+  uom: string;
+  costing_method: string;
+  gl_inventory: string;
+  gl_cogs: string;
+  on_hand: number;
+  committed: number;
+  available: number;
+  unit_cost: number;
+  total_value: number;
+  reorder_point?: number;
+  reorder_quantity?: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+// === Fixed Assets ===
+export interface FixedAsset {
+  id: string;
+  entity_id: string;
+  asset_number: string;
+  description: string;
+  category: string;
+  acquisition_date: string;
+  cost: number;
+  residual_value: number;
+  useful_life_months: number;
+  depreciation_method: any;
+  accumulated_depreciation: number;
+  net_book_value: number;
+  gl_asset_account: string;
+  gl_accum_depr_account: string;
+  gl_depr_expense: string;
+  status: string;
+  disposal_date?: string;
+  disposal_proceeds?: number;
+  created_at: string;
+}
+
+// === FX Rates ===
+export interface ExchangeRateEntry {
+  id: string;
+  entity_id: string;
+  from_ccy: string;
+  to_ccy: string;
+  rate_date: string;
+  rate_type: string;
+  rate: number;
+  source: string;
+}
+
+// === Audit ===
+export interface AuditEventEntry {
+  id: string;
+  entity_id: string;
+  event_type: string;
+  object_type: string;
+  object_id: string;
+  actor: any;
+  before_state?: any;
+  after_state?: any;
+  metadata?: any;
+  timestamp: string;
+}

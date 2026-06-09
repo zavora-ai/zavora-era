@@ -376,19 +376,366 @@ struct PnlQueryRow {
     balance: Decimal,
 }
 
-/// Cash flow statement stub.
-async fn cash_flow(_engine: &ErpEngine, params: ReportParameters) -> ErpResult<CashFlowReport> {
+/// Cash flow statement (indirect method).
+///
+/// Operating: Net income + depreciation + changes in working capital (AR, AP, inventory)
+/// Investing: Asset purchases/disposals
+/// Financing: Loan movements, equity changes
+async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<CashFlowReport> {
     let today = Utc::now().date_naive();
+    let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
+    let period_to = params.period_to.unwrap_or(today);
+
+    // --- Net Income from P&L ---
+    let _net_income = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(
+               SUM(CASE WHEN a.account_type IN ('revenue', 'contra_revenue') 
+                   THEN COALESCE(jl.functional_credit, 0) - COALESCE(jl.functional_debit, 0)
+                   ELSE COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0) END * -1
+               ), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND a.account_type IN ('revenue', 'contra_revenue', 'expense', 'contra_expense')"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    // More reliable: revenue credits - expense debits
+    let revenue = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_credit, 0) - COALESCE(jl.functional_debit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND a.account_type IN ('revenue', 'contra_revenue')"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    let expenses = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND a.account_type IN ('expense', 'contra_expense')"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    let computed_net_income = revenue - expenses;
+
+    // --- Add back: Depreciation expense (non-cash) ---
+    let depreciation = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND je.source = '"Depreciation"'"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    // --- Changes in working capital ---
+    // Change in AR (increase = cash outflow, decrease = cash inflow)
+    let ar_change = working_capital_change(engine, "1200", "1299", period_from, period_to).await?;
+
+    // Change in AP (increase = cash inflow, decrease = cash outflow)
+    let ap_change = working_capital_change(engine, "3000", "3099", period_from, period_to).await?;
+
+    // Change in Inventory (increase = cash outflow)
+    let inventory_change = working_capital_change(engine, "1300", "1399", period_from, period_to).await?;
+
+    let mut operating_lines = Vec::new();
+    operating_lines.push(CashFlowLine { description: "Net income".to_string(), amount: computed_net_income });
+    if depreciation != Decimal::ZERO {
+        operating_lines.push(CashFlowLine { description: "Add back: Depreciation".to_string(), amount: depreciation });
+    }
+    if ar_change != Decimal::ZERO {
+        // AR increase means less cash (negative), AR decrease means more cash (positive)
+        operating_lines.push(CashFlowLine { description: "Change in accounts receivable".to_string(), amount: -ar_change });
+    }
+    if ap_change != Decimal::ZERO {
+        // AP increase means more cash (positive), AP decrease means less cash (negative)
+        operating_lines.push(CashFlowLine { description: "Change in accounts payable".to_string(), amount: ap_change });
+    }
+    if inventory_change != Decimal::ZERO {
+        operating_lines.push(CashFlowLine { description: "Change in inventory".to_string(), amount: -inventory_change });
+    }
+
+    let operating_total: Decimal = operating_lines.iter().map(|l| l.amount).sum();
+
+    // --- Investing activities: Fixed asset purchases ---
+    let asset_purchases = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND a.code >= '2500' AND a.code < '2700'
+             AND a.account_type = 'asset'"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    let mut investing_lines = Vec::new();
+    if asset_purchases != Decimal::ZERO {
+        investing_lines.push(CashFlowLine { description: "Purchase of fixed assets".to_string(), amount: -asset_purchases });
+    }
+    let investing_total: Decimal = investing_lines.iter().map(|l| l.amount).sum();
+
+    // --- Financing activities: Long-term liabilities and equity ---
+    let loan_movements = working_capital_change(engine, "3200", "3999", period_from, period_to).await?;
+    let equity_movements = working_capital_change(engine, "4000", "4999", period_from, period_to).await?;
+
+    let mut financing_lines = Vec::new();
+    if loan_movements != Decimal::ZERO {
+        financing_lines.push(CashFlowLine { description: "Loan proceeds / (repayments)".to_string(), amount: loan_movements });
+    }
+    if equity_movements != Decimal::ZERO {
+        financing_lines.push(CashFlowLine { description: "Equity movements".to_string(), amount: equity_movements });
+    }
+    let financing_total: Decimal = financing_lines.iter().map(|l| l.amount).sum();
+
+    // --- Opening and closing cash ---
+    let opening_cash = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date < $2
+             AND a.code >= '1000' AND a.code < '1100'"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    let net_change = operating_total + investing_total + financing_total;
+    let closing_cash = opening_cash + net_change;
+
     Ok(CashFlowReport {
-        period_from: params.period_from.unwrap_or(today),
-        period_to: params.period_to.unwrap_or(today),
-        operating_activities: CashFlowSection { lines: Vec::new(), total: Decimal::ZERO },
-        investing_activities: CashFlowSection { lines: Vec::new(), total: Decimal::ZERO },
-        financing_activities: CashFlowSection { lines: Vec::new(), total: Decimal::ZERO },
-        net_change: Decimal::ZERO,
-        opening_cash: Decimal::ZERO,
-        closing_cash: Decimal::ZERO,
+        period_from,
+        period_to,
+        operating_activities: CashFlowSection { lines: operating_lines, total: operating_total },
+        investing_activities: CashFlowSection { lines: investing_lines, total: investing_total },
+        financing_activities: CashFlowSection { lines: financing_lines, total: financing_total },
+        net_change,
+        opening_cash,
+        closing_cash,
     })
+}
+
+/// Calculate the net movement in accounts within a code range during a period.
+/// Returns positive for net debit increase, negative for net credit increase.
+async fn working_capital_change(
+    engine: &ErpEngine,
+    code_from: &str,
+    code_to: &str,
+    period_from: NaiveDate,
+    period_to: NaiveDate,
+) -> ErpResult<Decimal> {
+    let change = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.date >= $2 AND je.date <= $3
+             AND jl.account_code >= $4 AND jl.account_code <= $5"#,
+    )
+    .bind(engine.entity_id())
+    .bind(period_from)
+    .bind(period_to)
+    .bind(code_from)
+    .bind(code_to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    Ok(change)
+}
+
+/// Export report data to CSV format.
+pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
+    let mut output = Vec::new();
+
+    match &report.content {
+        ReportContent::TrialBalance(tb) => {
+            output.extend_from_slice(b"Account Code,Account Name,Opening Debit,Opening Credit,Movement Debit,Movement Credit,Closing Debit,Closing Credit\n");
+            for line in &tb.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&line.account_code),
+                    csv_escape(&line.account_name),
+                    line.opening_debit,
+                    line.opening_credit,
+                    line.movement_debit,
+                    line.movement_credit,
+                    line.closing_debit,
+                    line.closing_credit,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            let totals = format!(",Totals,,,,{},{}\n", tb.total_debits, tb.total_credits);
+            output.extend_from_slice(totals.as_bytes());
+        }
+        ReportContent::ProfitAndLoss(pnl) => {
+            output.extend_from_slice(b"Section,Account Code,Account Name,Amount\n");
+            for section in &pnl.revenue {
+                for line in &section.lines {
+                    let row = format!("Revenue,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Total Revenue,{}\n", pnl.total_revenue).as_bytes());
+            for section in &pnl.cost_of_sales {
+                for line in &section.lines {
+                    let row = format!("Cost of Sales,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Gross Profit,{}\n", pnl.gross_profit).as_bytes());
+            for section in &pnl.operating_expenses {
+                for line in &section.lines {
+                    let row = format!("Operating Expenses,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Operating Profit,{}\n", pnl.operating_profit).as_bytes());
+            output.extend_from_slice(format!(",,Net Profit,{}\n", pnl.net_profit).as_bytes());
+        }
+        ReportContent::BalanceSheet(bs) => {
+            output.extend_from_slice(b"Section,Account Code,Account Name,Amount\n");
+            for section in &bs.assets {
+                for line in &section.lines {
+                    let row = format!("Assets,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Total Assets,{}\n", bs.total_assets).as_bytes());
+            for section in &bs.liabilities {
+                for line in &section.lines {
+                    let row = format!("Liabilities,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Total Liabilities,{}\n", bs.total_liabilities).as_bytes());
+            for section in &bs.equity {
+                for line in &section.lines {
+                    let row = format!("Equity,{},{},{}\n", csv_escape(&line.account_code), csv_escape(&line.account_name), line.amount);
+                    output.extend_from_slice(row.as_bytes());
+                }
+            }
+            output.extend_from_slice(format!(",,Total Equity,{}\n", bs.total_equity).as_bytes());
+        }
+        ReportContent::CashFlow(cf) => {
+            output.extend_from_slice(b"Section,Description,Amount\n");
+            for line in &cf.operating_activities.lines {
+                let row = format!("Operating,{},{}\n", csv_escape(&line.description), line.amount);
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Operating,{}\n", cf.operating_activities.total).as_bytes());
+            for line in &cf.investing_activities.lines {
+                let row = format!("Investing,{},{}\n", csv_escape(&line.description), line.amount);
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Investing,{}\n", cf.investing_activities.total).as_bytes());
+            for line in &cf.financing_activities.lines {
+                let row = format!("Financing,{},{}\n", csv_escape(&line.description), line.amount);
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Financing,{}\n", cf.financing_activities.total).as_bytes());
+            output.extend_from_slice(format!(",Net Change in Cash,{}\n", cf.net_change).as_bytes());
+            output.extend_from_slice(format!(",Opening Cash,{}\n", cf.opening_cash).as_bytes());
+            output.extend_from_slice(format!(",Closing Cash,{}\n", cf.closing_cash).as_bytes());
+        }
+        ReportContent::ArAgeing(ageing) | ReportContent::ApAgeing(ageing) => {
+            output.extend_from_slice(b"Party Name,Current,1-30 Days,31-60 Days,61-90 Days,Over 90,Total\n");
+            for line in &ageing.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    csv_escape(&line.party_name),
+                    line.current,
+                    line.days_1_30,
+                    line.days_31_60,
+                    line.days_61_90,
+                    line.over_90,
+                    line.total,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            let totals = format!(
+                "Totals,{},{},{},{},{},{}\n",
+                ageing.totals.current,
+                ageing.totals.days_1_30,
+                ageing.totals.days_31_60,
+                ageing.totals.days_61_90,
+                ageing.totals.over_90,
+                ageing.totals.total,
+            );
+            output.extend_from_slice(totals.as_bytes());
+        }
+        ReportContent::GlDetail(gl) => {
+            output.extend_from_slice(format!("Account: {} - {}\n", gl.account_code, gl.account_name).as_bytes());
+            output.extend_from_slice(b"Date,Journal Number,Description,Reference,Debit,Credit,Balance\n");
+            for line in &gl.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    line.date,
+                    csv_escape(&line.journal_number),
+                    csv_escape(&line.description),
+                    csv_escape(&line.reference),
+                    line.debit,
+                    line.credit,
+                    line.balance,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+        }
+        ReportContent::Generic(_) => {
+            output.extend_from_slice(b"Report type does not support CSV export\n");
+        }
+    }
+
+    Ok(output)
+}
+
+/// Escape a string for CSV output (wrap in quotes if it contains commas or quotes).
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 /// AR ageing report.
