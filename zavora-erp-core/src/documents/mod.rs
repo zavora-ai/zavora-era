@@ -21,7 +21,7 @@ pub struct Attachment {
 }
 
 /// Database row for attachment.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct AttachmentRow {
     pub id: Uuid,
     pub entity_id: Uuid,

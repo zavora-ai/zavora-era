@@ -77,7 +77,7 @@ impl RecurringInvoice {
 }
 
 /// Database row for recurring invoice.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct RecurringInvoiceRow {
     pub id: Uuid,
     pub entity_id: Uuid,

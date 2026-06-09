@@ -30,7 +30,7 @@ pub struct InvoiceTemplate {
 }
 
 /// Database row for invoice template.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct InvoiceTemplateRow {
     pub id: Uuid,
     pub entity_id: Uuid,

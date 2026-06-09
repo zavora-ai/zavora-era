@@ -92,7 +92,7 @@ impl Payment {
 }
 
 /// Database row for payment.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct PaymentRow {
     pub id: Uuid,
     pub entity_id: Uuid,

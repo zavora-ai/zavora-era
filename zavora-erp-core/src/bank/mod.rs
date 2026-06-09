@@ -24,7 +24,7 @@ pub struct BankAccount {
 }
 
 /// Database row for bank account.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct BankAccountRow {
     pub id: Uuid,
     pub entity_id: Uuid,

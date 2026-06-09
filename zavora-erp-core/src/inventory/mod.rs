@@ -54,7 +54,7 @@ impl InventoryItem {
 }
 
 /// Database row for inventory item.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct InventoryItemRow {
     pub id: Uuid,
     pub entity_id: Uuid,

@@ -28,7 +28,7 @@ pub struct ExchangeRate {
 }
 
 /// Database row for exchange rate.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct ExchangeRateRow {
     pub id: Uuid,
     pub entity_id: Uuid,

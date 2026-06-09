@@ -43,7 +43,7 @@ pub struct AuditEvent {
 }
 
 /// Database row for audit events.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct AuditEventRow {
     pub id: Uuid,
     pub entity_id: Uuid,

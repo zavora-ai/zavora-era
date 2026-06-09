@@ -38,7 +38,7 @@ pub struct Product {
 }
 
 /// Database row for product.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct ProductRow {
     pub id: Uuid,
     pub entity_id: Uuid,

@@ -113,7 +113,7 @@ impl FixedAsset {
 }
 
 /// Database row for fixed asset.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct FixedAssetRow {
     pub id: Uuid,
     pub entity_id: Uuid,

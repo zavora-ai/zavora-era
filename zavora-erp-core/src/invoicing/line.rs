@@ -39,7 +39,7 @@ pub struct TaxLine {
 }
 
 /// Database row for invoice lines.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct InvoiceLineRow {
     pub id: Uuid,
     pub invoice_id: Uuid,

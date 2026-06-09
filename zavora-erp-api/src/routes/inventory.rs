@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
-use zavora_erp_core::payments::*;
-use zavora_erp_core::services::payments as svc;
+use zavora_erp_core::inventory::*;
+use zavora_erp_core::services::inventory as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let rows = sqlx::query_as::<_, PaymentRow>(
-        "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, InventoryItemRow>(
+        "SELECT * FROM inventory_items WHERE entity_id = $1 AND is_active = true ORDER BY sku",
     )
     .bind(state.engine.entity_id())
     .fetch_all(state.engine.pool())
@@ -22,30 +22,31 @@ pub async fn list(
     }
 }
 
-pub async fn record(
+pub async fn create(
+    State(_state): State<Arc<AppState>>,
+    Json(_req): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "status": "todo" }))
+}
+
+pub async fn receive(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<RecordPaymentRequest>,
+    Json(req): Json<ReceiveInventoryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let actor = AgentOrUserId::Agent("api".to_string());
-    match svc::record_payment(&state.engine, req, &actor).await {
-        Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
+    match svc::receive_inventory(&state.engine, req, &actor).await {
+        Ok(id) => Ok(Json(serde_json::json!({ "movement_id": id }))),
         Err(e) => Err(err_response(e)),
     }
 }
 
-#[derive(serde::Deserialize)]
-pub struct MpesaCallbackWrapper {
-    pub invoice_id: uuid::Uuid,
-    #[serde(flatten)]
-    pub callback: MpesaCallback,
-}
-
-pub async fn mpesa_callback(
+pub async fn issue(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<MpesaCallbackWrapper>,
+    Json(req): Json<IssueInventoryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::record_mpesa_payment(&state.engine, req.invoice_id, req.callback).await {
-        Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
+    let actor = AgentOrUserId::Agent("api".to_string());
+    match svc::issue_inventory(&state.engine, req, &actor).await {
+        Ok(id) => Ok(Json(serde_json::json!({ "movement_id": id }))),
         Err(e) => Err(err_response(e)),
     }
 }

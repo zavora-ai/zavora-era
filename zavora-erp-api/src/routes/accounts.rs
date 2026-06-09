@@ -37,6 +37,16 @@ pub async fn create(
     }
 }
 
+pub async fn seed(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let actor = AgentOrUserId::Agent("api".to_string());
+    match svc::seed_coa(&state.engine, &zavora_erp_core::ledger::CoaTemplate::KenyaStandard, &actor).await {
+        Ok(count) => Ok(Json(serde_json::json!({ "seeded": count }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 pub async fn update(
     State(state): State<Arc<AppState>>,
     Path(code): Path<String>,

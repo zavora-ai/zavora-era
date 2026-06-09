@@ -76,36 +76,77 @@ async fn main() -> anyhow::Result<()> {
         // Accounts
         .route("/api/v1/accounts", get(routes::accounts::list).post(routes::accounts::create))
         .route("/api/v1/accounts/{code}", get(routes::accounts::get).put(routes::accounts::update))
+        .route("/api/v1/accounts/seed", post(routes::accounts::seed))
         // Periods
         .route("/api/v1/periods", get(routes::periods::list).post(routes::periods::generate))
         .route("/api/v1/periods/{id}/close", post(routes::periods::close))
         // Journal entries
-        .route("/api/v1/journal-entries", post(routes::journal::create))
+        .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
         // Customers
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
+        .route("/api/v1/customers/{id}", get(routes::parties::get_customer).put(routes::parties::update_customer))
+        .route("/api/v1/customers/{id}/statement", get(routes::parties::customer_statement))
         // Vendors
         .route("/api/v1/vendors", get(routes::parties::list_vendors).post(routes::parties::create_vendor))
+        .route("/api/v1/vendors/{id}", get(routes::parties::get_vendor).put(routes::parties::update_vendor))
         // Employees
-        .route("/api/v1/employees", post(routes::parties::create_employee))
+        .route("/api/v1/employees", get(routes::parties::list_employees).post(routes::parties::create_employee))
+        .route("/api/v1/employees/{id}", get(routes::parties::get_employee).put(routes::parties::update_employee))
         // Products
-        .route("/api/v1/products", post(routes::catalog::create_product))
+        .route("/api/v1/products", get(routes::catalog::list_products).post(routes::catalog::create_product))
+        .route("/api/v1/products/{id}", get(routes::catalog::get_product).put(routes::catalog::update_product))
         // Invoices
-        .route("/api/v1/invoices", post(routes::invoices::create))
+        .route("/api/v1/invoices", get(routes::invoices::list).post(routes::invoices::create))
+        .route("/api/v1/invoices/{id}", get(routes::invoices::get_one))
         .route("/api/v1/invoices/{id}/post", post(routes::invoices::post_invoice))
         .route("/api/v1/invoices/{id}/send", post(routes::invoices::send))
+        .route("/api/v1/invoices/{id}/credit-note", post(routes::invoices::create_credit_note))
+        // Estimates
+        .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
+        .route("/api/v1/estimates/{id}", get(routes::estimates::get_one))
+        .route("/api/v1/estimates/{id}/convert", post(routes::estimates::convert))
+        // Recurring Invoices
+        .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
         // Bills
-        .route("/api/v1/bills", post(routes::bills::create))
+        .route("/api/v1/bills", get(routes::bills::list).post(routes::bills::create))
+        .route("/api/v1/bills/{id}", get(routes::bills::get_one))
         .route("/api/v1/bills/{id}/approve", post(routes::bills::approve))
+        .route("/api/v1/bills/{id}/post", post(routes::bills::post_bill))
         // Payments
-        .route("/api/v1/payments", post(routes::payments::record))
+        .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
+        // Transactions (categorisation queue)
+        .route("/api/v1/transactions", get(routes::transactions::list))
+        .route("/api/v1/transactions/{id}/categorise", post(routes::transactions::categorise))
+        .route("/api/v1/transactions/{id}/split", post(routes::transactions::split))
+        .route("/api/v1/transactions/merge", post(routes::transactions::merge))
+        .route("/api/v1/transactions/{id}/exclude", post(routes::transactions::exclude))
+        // Bank
+        .route("/api/v1/bank-accounts", get(routes::bank::list_accounts).post(routes::bank::create_account))
+        .route("/api/v1/bank/import", post(routes::bank::import_statement))
+        .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
+        .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
         // Payroll
         .route("/api/v1/payroll/run", post(routes::payroll::run))
         .route("/api/v1/payroll/{id}/approve", post(routes::payroll::approve))
         .route("/api/v1/payroll/{id}/post", post(routes::payroll::post_run))
+        // Inventory
+        .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
+        .route("/api/v1/inventory/receive", post(routes::inventory::receive))
+        .route("/api/v1/inventory/issue", post(routes::inventory::issue))
+        // Assets
+        .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
+        .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
+        // FX Rates
+        .route("/api/v1/fx-rates", get(routes::fx::list).post(routes::fx::upsert))
+        .route("/api/v1/fx/revaluation", post(routes::fx::revaluation))
+        // Audit
+        .route("/api/v1/audit", get(routes::audit::query))
+        .route("/api/v1/audit/{object_type}/{object_id}", get(routes::audit::for_object))
         // Reports
         .route("/api/v1/reports", post(routes::reports::generate))
+        .route("/api/v1/reports/export", post(routes::reports::export))
         // Agent API
         .route("/api/v1/agent/post", post(routes::agent::post_from_agent))
         .route("/api/v1/agent/report", post(routes::agent::run_report))

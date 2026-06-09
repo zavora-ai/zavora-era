@@ -74,7 +74,7 @@ pub struct EraUser {
 }
 
 /// Database row for user.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct EraUserRow {
     pub id: Uuid,
     pub entity_id: Uuid,

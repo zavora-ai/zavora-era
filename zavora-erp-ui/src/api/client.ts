@@ -69,12 +69,19 @@ export const sendInvoice = (id: string, data: any) => api.post(`/invoices/${id}/
 // === Estimates ===
 export const getEstimates = () => api.get('/estimates');
 export const createEstimate = (data: any) => api.post('/estimates', data);
-export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data);
+export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
+export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
+
+// === Recurring Invoices ===
+export const getRecurringInvoices = () => api.get('/recurring-invoices');
+export const createRecurringInvoice = (data: any) => api.post('/recurring-invoices', data);
 
 // === Bills ===
 export const getBills = () => api.get('/bills');
+export const getBill = (id: string) => api.get(`/bills/${id}`);
 export const createBill = (data: any) => api.post('/bills', data);
 export const approveBill = (id: string) => api.post(`/bills/${id}/approve`);
+export const postBill = (id: string) => api.post(`/bills/${id}/post`);
 
 // === Payments ===
 export const getPayments = () => api.get('/payments');
@@ -91,3 +98,61 @@ export const generateReport = (data: any) => api.post('/reports', data);
 // === Settings ===
 export const getSettings = () => api.get('/settings');
 export const updateSettings = (data: any) => api.put('/settings', data);
+
+// === Transactions (categorisation queue) ===
+export const getTransactions = (params?: any) => api.get('/transactions', { params });
+export const categoriseTransaction = (id: string, data: any) => api.post(`/transactions/${id}/categorise`, data);
+export const splitTransaction = (id: string, data: any) => api.post(`/transactions/${id}/split`, data);
+export const mergeTransactions = (data: any) => api.post('/transactions/merge', data);
+export const excludeTransaction = (id: string, data: any) => api.post(`/transactions/${id}/exclude`, data);
+
+// === Bank ===
+export const getBankAccounts = () => api.get('/bank-accounts');
+export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
+export const importStatement = (data: any) => api.post('/bank/import', data);
+export const reconcileStatement = (id: string) => api.post(`/bank/reconcile/${id}`);
+export const confirmMatch = (data: any) => api.post('/bank/confirm-match', data);
+
+// === Inventory ===
+export const getInventory = () => api.get('/inventory');
+export const createInventoryItem = (data: any) => api.post('/inventory', data);
+export const receiveInventory = (data: any) => api.post('/inventory/receive', data);
+export const issueInventory = (data: any) => api.post('/inventory/issue', data);
+
+// === Assets ===
+export const getAssets = () => api.get('/assets');
+export const createAsset = (data: any) => api.post('/assets', data);
+export const runDepreciation = () => api.post('/assets/depreciation/run');
+
+// === FX Rates ===
+export const getFxRates = () => api.get('/fx-rates');
+export const upsertFxRate = (data: any) => api.post('/fx-rates', data);
+export const runFxRevaluation = () => api.post('/fx/revaluation');
+
+// === Audit ===
+export const getAuditEvents = (params?: any) => api.get('/audit', { params });
+export const getAuditForObject = (type: string, id: string) => api.get(`/audit/${type}/${id}`);
+
+// === Accounts Seed ===
+export const seedAccounts = () => api.post('/accounts/seed');
+
+// === Invoices (additional) ===
+export const getInvoice = (id: string) => api.get(`/invoices/${id}`);
+export const createCreditNote = (id: string, data: any) => api.post(`/invoices/${id}/credit-note`, data);
+
+// === Employees (additional) ===
+export const getEmployees = () => api.get('/employees');
+export const getEmployee = (id: string) => api.get(`/employees/${id}`);
+export const createEmployeeApi = (data: any) => api.post('/employees', data);
+
+// === Customers (additional) ===
+export const getCustomer = (id: string) => api.get(`/customers/${id}`);
+export const updateCustomer = (id: string, data: any) => api.put(`/customers/${id}`, data);
+export const getCustomerStatement = (id: string) => api.get(`/customers/${id}/statement`);
+
+// === Vendors (additional) ===
+export const getVendor = (id: string) => api.get(`/vendors/${id}`);
+export const updateVendor = (id: string, data: any) => api.put(`/vendors/${id}`, data);
+
+// === Reports (additional) ===
+export const exportReport = (data: any) => api.post('/reports/export', data);

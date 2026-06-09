@@ -33,7 +33,7 @@ pub struct SupplierCreditNote {
 }
 
 /// Database row for supplier credit note.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct SupplierCreditNoteRow {
     pub id: Uuid,
     pub entity_id: Uuid,

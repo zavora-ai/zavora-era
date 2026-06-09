@@ -115,7 +115,7 @@ impl JournalEntry {
 }
 
 /// Database row for a journal entry header.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct JournalEntryRow {
     pub id: Uuid,
     pub entity_id: Uuid,
@@ -132,7 +132,7 @@ pub struct JournalEntryRow {
 }
 
 /// Database row for a journal line.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct JournalLineRow {
     pub id: Uuid,
     pub entry_id: Uuid,
