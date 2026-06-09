@@ -1,0 +1,33 @@
+pub mod dashboard;
+pub mod accounts;
+pub mod periods;
+pub mod journal;
+pub mod parties;
+pub mod catalog;
+pub mod invoices;
+pub mod bills;
+pub mod payments;
+pub mod payroll;
+pub mod reports;
+pub mod agent;
+pub mod settings;
+
+use axum::{http::StatusCode, response::IntoResponse, Json};
+use zavora_erp_core::ErpError;
+
+/// Convert ErpError to HTTP response.
+pub fn err_response(e: ErpError) -> impl IntoResponse {
+    let (status, message) = match &e {
+        ErpError::NotFound { .. } => (StatusCode::NOT_FOUND, e.to_string()),
+        ErpError::ValidationFailed { .. } => (StatusCode::BAD_REQUEST, e.to_string()),
+        ErpError::Unbalanced { .. } => (StatusCode::BAD_REQUEST, e.to_string()),
+        ErpError::PeriodClosed { .. } => (StatusCode::CONFLICT, e.to_string()),
+        ErpError::Duplicate { .. } => (StatusCode::CONFLICT, e.to_string()),
+        ErpError::DuplicateReference { .. } => (StatusCode::CONFLICT, e.to_string()),
+        ErpError::PermissionDenied { .. } => (StatusCode::FORBIDDEN, e.to_string()),
+        ErpError::InsufficientStock { .. } => (StatusCode::CONFLICT, e.to_string()),
+        ErpError::Overpayment { .. } => (StatusCode::BAD_REQUEST, e.to_string()),
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+    (status, Json(serde_json::json!({ "error": message })))
+}
