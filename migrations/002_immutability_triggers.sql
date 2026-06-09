@@ -1,4 +1,4 @@
--- Zavora ERA — Immutability Guarantees (DB-level enforcement)
+-- Zavora ERP — Immutability Guarantees (DB-level enforcement)
 -- Spec section 25.2: These guarantees cannot be bypassed via application code.
 
 -- ============================================================

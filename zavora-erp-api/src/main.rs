@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    tracing::info!("Starting Zavora ERA API on {}", bind_addr);
+    tracing::info!("Starting Zavora ERP API on {}", bind_addr);
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     axum::serve(listener, app).await?;
 
@@ -126,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "zavora-era-api",
+        "service": "zavora-erp-api",
         "version": env!("CARGO_PKG_VERSION")
     }))
 }

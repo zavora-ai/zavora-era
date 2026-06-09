@@ -21,7 +21,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Configure your Zavora ERA instance" />
+      <PageHeader title="Settings" subtitle="Configure your Zavora ERP instance" />
 
       <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
         {tabs.map((t) => (

@@ -1,4 +1,4 @@
-# Zavora ERA — Core ERP Engine
+# Zavora ERP — Core ERP Engine
 
 A full-featured double-entry accounting engine built in Rust, targeting Kenyan SMEs with Wave Apps feature parity plus Kenya-specific compliance (KRA iTax, M-Pesa, PAYE/NSSF/NHIF/HELB, WHT).
 

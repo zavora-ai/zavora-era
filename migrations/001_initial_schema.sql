@@ -1,4 +1,4 @@
--- Zavora ERA — Initial Database Schema
+-- Zavora ERP — Initial Database Schema
 -- Covers all tables from spec sections 26.1–26.7 plus supporting tables.
 
 -- Enable required extensions
