@@ -8,6 +8,7 @@ use crate::types::CurrencyCode;
 
 /// Type of payment — AR (from customer) or AP (to vendor).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum PaymentType {
     CustomerPayment,
     VendorPayment,
@@ -35,6 +36,7 @@ pub enum PaymentMethod {
 
 /// Status of a payment record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum PaymentStatus {
     Pending,
     Completed,

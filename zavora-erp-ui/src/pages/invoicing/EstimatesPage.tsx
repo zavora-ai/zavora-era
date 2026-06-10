@@ -28,9 +28,9 @@ export default function EstimatesPage() {
   const statusCounts = {
     all: estimates.length,
     draft: estimates.filter(e => e.status === 'draft').length,
-    sent: estimates.filter(e => e.status === 'sent' || e.status === 'viewed').length,
+    sent: estimates.filter(e => e.status === 'sent').length,
     accepted: estimates.filter(e => e.status === 'accepted').length,
-    expired: estimates.filter(e => e.status === 'expired' || e.status === 'rejected').length,
+    expired: estimates.filter(e => e.status === 'expired' || e.status === 'declined').length,
     converted: estimates.filter(e => e.status === 'converted').length,
   };
 

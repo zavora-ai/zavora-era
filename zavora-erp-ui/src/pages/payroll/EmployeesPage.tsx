@@ -104,11 +104,11 @@ function CreateEmployeeModal({ onClose }: { onClose: () => void }) {
       helb_deduction: form.helb_deduction ? parseFloat(form.helb_deduction) : undefined,
       employment_type: form.employment_type,
       basic_salary: parseFloat(form.basic_salary) || 0,
-      allowances: {
-        housing: parseFloat(form.housing_allowance) || 0,
-        transport: parseFloat(form.transport_allowance) || 0,
-        other: parseFloat(form.other_allowance) || 0,
-      },
+      allowances: [
+        { name: "Housing", amount: parseFloat(form.housing_allowance) || 0, taxable: true },
+        { name: "Transport", amount: parseFloat(form.transport_allowance) || 0, taxable: false },
+        { name: "Other", amount: parseFloat(form.other_allowance) || 0, taxable: true },
+      ].filter(a => a.amount > 0),
       bank_account: form.account_number ? {
         bank_name: form.bank_name,
         branch: form.bank_branch,

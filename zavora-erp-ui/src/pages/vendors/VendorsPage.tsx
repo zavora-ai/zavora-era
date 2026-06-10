@@ -104,6 +104,7 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
         postal_code: form.postal || undefined, country: form.country,
       } : undefined,
       currency: form.currency,
+      payment_terms: form.payment_terms,
       default_expense_account: form.default_expense_account || undefined,
       bank_details: form.bank_account_number ? {
         bank_name: form.bank_name, branch: form.bank_branch || undefined,

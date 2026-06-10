@@ -10,6 +10,7 @@ use super::line::{CreateInvoiceLineRequest, InvoiceLine, TaxLine};
 
 /// Type of invoice document.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum InvoiceType {
     Invoice,
     CreditNote,
@@ -17,6 +18,7 @@ pub enum InvoiceType {
 
 /// Status of an invoice through its lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum InvoiceStatus {
     Draft,
     Sent,

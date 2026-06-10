@@ -67,9 +67,13 @@ export interface Customer {
   vat_number?: string;
   email: ContactEmail[];
   phone: ContactPhone[];
+  address?: Address;
   currency: string;
   payment_terms: string;
   credit_limit?: number;
+  ar_account: string;
+  reminder_policy: string;
+  portal_enabled: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -87,6 +91,15 @@ export interface ContactPhone {
   whatsapp_enabled: boolean;
 }
 
+export interface Address {
+  line1: string;
+  line2?: string;
+  city: string;
+  county?: string;
+  postal_code?: string;
+  country: string;
+}
+
 // === Vendor ===
 export interface Vendor {
   id: string;
@@ -94,12 +107,27 @@ export interface Vendor {
   name: string;
   kra_pin?: string;
   vat_number?: string;
+  email: ContactEmail[];
+  phone: ContactPhone[];
+  address?: Address;
   currency: string;
   payment_terms: string;
   wht_category?: string;
   resident: boolean;
+  ap_account: string;
+  default_expense_account?: string;
+  bank_details?: BankDetails;
+  notes?: string;
   is_active: boolean;
   created_at: string;
+}
+
+export interface BankDetails {
+  bank_name: string;
+  branch?: string;
+  account_name: string;
+  account_number: string;
+  swift_code?: string;
 }
 
 // === Product ===
@@ -116,7 +144,9 @@ export interface Product {
   purchase_account: string;
   vat_treatment: string;
   track_inventory: boolean;
+  inventory_item_id?: string;
   is_active: boolean;
+  created_at: string;
 }
 
 // === Invoice ===
@@ -129,12 +159,21 @@ export interface Invoice {
   issue_date: string;
   due_date: string;
   currency: string;
+  fx_rate: number;
   subtotal: number;
+  discount_total: number;
   tax_total: number;
   gross_total: number;
   amount_paid: number;
   balance_due: number;
   status: InvoiceStatus;
+  source_estimate?: string;
+  credit_note_for?: string;
+  journal_entry_id?: string;
+  sent_at?: string;
+  viewed_at?: string;
+  paid_at?: string;
+  template_id?: string;
   notes?: string;
   created_at: string;
 }
@@ -147,9 +186,11 @@ export interface Bill {
   entity_id: string;
   number: string;
   vendor_id: string;
+  vendor_invoice_number?: string;
   issue_date: string;
   due_date: string;
   currency: string;
+  fx_rate: number;
   subtotal: number;
   tax_total: number;
   wht_amount: number;
@@ -157,6 +198,9 @@ export interface Bill {
   amount_paid: number;
   balance_due: number;
   status: BillStatus;
+  journal_entry_id?: string;
+  approved_by?: string;
+  approved_at?: string;
   notes?: string;
   created_at: string;
 }
@@ -164,16 +208,28 @@ export interface Bill {
 export type BillStatus = 'draft' | 'pending_approval' | 'approved' | 'posted' | 'partially_paid' | 'paid' | 'disputed' | 'cancelled';
 
 // === Payment ===
+export interface PaymentApplication {
+  document_id: string;
+  document_type: 'Invoice' | 'Bill';
+  amount_applied: number;
+}
+
 export interface Payment {
   id: string;
+  entity_id: string;
   number: string;
-  payment_type: 'CustomerPayment' | 'VendorPayment';
+  payment_type: 'customer_payment' | 'vendor_payment';
   party_id: string;
   payment_date: string;
   amount: number;
   currency: string;
+  fx_rate: number;
   method: any;
   reference: string;
+  bank_account_id?: string;
+  applications: PaymentApplication[];
+  unapplied: number;
+  journal_entry_id?: string;
   status: string;
   created_at: string;
 }
@@ -192,6 +248,7 @@ export interface FiscalPeriod {
 // === Payroll ===
 export interface PayRun {
   id: string;
+  entity_id: string;
   period_id: string;
   pay_date: string;
   total_gross: number;
@@ -202,6 +259,11 @@ export interface PayRun {
   total_helb: number;
   total_net: number;
   status: 'draft' | 'approved' | 'posted' | 'paid';
+  journal_entry_id?: string;
+  created_by: any;
+  created_at: string;
+  approved_by?: any;
+  approved_at?: string;
 }
 
 // === Settings ===
@@ -300,11 +362,11 @@ export interface Estimate {
   gross_total: number;
   status: EstimateStatus;
   notes?: string;
-  converted_invoice_id?: string;
+  converted_to?: string;
   created_at: string;
 }
 
-export type EstimateStatus = 'draft' | 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired' | 'converted';
+export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
 
 // === Inventory ===
 export interface InventoryItem {
@@ -317,6 +379,7 @@ export interface InventoryItem {
   costing_method: string;
   gl_inventory: string;
   gl_cogs: string;
+  warehouse_id?: string;
   on_hand: number;
   committed: number;
   available: number;

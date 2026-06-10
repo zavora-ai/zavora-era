@@ -37,32 +37,66 @@ export default function BillsPage() {
 function CreateBillModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
-  const [form, setForm] = useState({ vendor_id: '', issue_date: new Date().toISOString().split('T')[0], vendor_invoice_number: '', lines: [{ description: '', quantity: 1, unit_price: 0 }] });
+  const [form, setForm] = useState({ vendor_id: '', issue_date: new Date().toISOString().split('T')[0], due_date: '', vendor_invoice_number: '', notes: '', lines: [{ description: '', quantity: 1, unit_price: 0, account_code: '7900' }] });
   const mutation = useMutation({ mutationFn: (data: any) => createBill(data), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bills'] }); onClose(); } });
 
-  const addLine = () => setForm({ ...form, lines: [...form.lines, { description: '', quantity: 1, unit_price: 0 }] });
+  const addLine = () => setForm({ ...form, lines: [...form.lines, { description: '', quantity: 1, unit_price: 0, account_code: '7900' }] });
   const updateLine = (i: number, f: string, v: any) => { const lines = [...form.lines]; (lines[i] as any)[f] = v; setForm({ ...form, lines }); };
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); mutation.mutate({ vendor_id: form.vendor_id, issue_date: form.issue_date, vendor_invoice_number: form.vendor_invoice_number || undefined, lines: form.lines.map(l => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price })) }); };
+  // Auto-set default expense account when vendor selected
+  const selectedVendor = vendors.find(v => v.id === form.vendor_id);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const defaultAccount = selectedVendor?.default_expense_account || '7900';
+    mutation.mutate({
+      vendor_id: form.vendor_id,
+      issue_date: form.issue_date,
+      due_date: form.due_date || undefined,
+      vendor_invoice_number: form.vendor_invoice_number || undefined,
+      notes: form.notes || undefined,
+      lines: form.lines.map(l => ({
+        description: l.description,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        account_code: l.account_code || defaultAccount,
+      })),
+    });
+  };
 
   return (
     <Modal open={true} onClose={onClose} title="New Bill" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div><label className="label">Vendor *</label><select className="input" value={form.vendor_id} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })} required><option value="">Select...</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
-          <div><label className="label">Date</label><input type="date" className="input" value={form.issue_date} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} /></div>
           <div><label className="label">Vendor Invoice #</label><input className="input" value={form.vendor_invoice_number} onChange={(e) => setForm({ ...form, vendor_invoice_number: e.target.value })} /></div>
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="label">Issue Date</label><input type="date" className="input" value={form.issue_date} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} /></div>
+          <div><label className="label">Due Date</label><input type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
+        </div>
         <div className="space-y-2">
+          <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+            <span className="col-span-5">Description</span>
+            <span className="col-span-2">Qty</span>
+            <span className="col-span-2">Unit Price</span>
+            <span className="col-span-2">Account</span>
+            <span className="col-span-1"></span>
+          </div>
           {form.lines.map((line, i) => (
             <div key={i} className="grid grid-cols-12 gap-2">
-              <input className="input col-span-6" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} required />
+              <input className="input col-span-5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} required />
               <input className="input col-span-2" type="number" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', +e.target.value)} />
-              <input className="input col-span-3" type="number" step="0.01" value={line.unit_price} onChange={(e) => updateLine(i, 'unit_price', +e.target.value)} />
+              <input className="input col-span-2" type="number" step="0.01" value={line.unit_price} onChange={(e) => updateLine(i, 'unit_price', +e.target.value)} />
+              <input className="input col-span-2 font-mono text-xs" value={line.account_code} onChange={(e) => updateLine(i, 'account_code', e.target.value)} placeholder="7900" />
               <button type="button" onClick={() => setForm({ ...form, lines: form.lines.filter((_, idx) => idx !== i) })} className="col-span-1 text-red-500">×</button>
             </div>
           ))}
           <button type="button" onClick={addLine} className="text-sm text-blue-600">+ Add line</button>
+        </div>
+        <div>
+          <label className="label">Notes</label>
+          <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes..." />
         </div>
         <div className="flex justify-end gap-3 pt-4 border-t"><button type="button" onClick={onClose} className="btn-secondary">Cancel</button><button type="submit" className="btn-primary" disabled={mutation.isPending}>{mutation.isPending ? 'Creating...' : 'Create Bill'}</button></div>
       </form>

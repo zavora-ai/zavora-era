@@ -110,7 +110,7 @@ function CreateItemModal({ onClose }: { onClose: () => void }) {
     sku: '',
     description: '',
     uom: 'Each',
-    costing_method: 'WeightedAvg',
+    costing_method: 'WeightedAvgCost',
     gl_inventory: '1300',
     gl_cogs: '6000',
     reorder_point: '',
@@ -166,8 +166,8 @@ function CreateItemModal({ onClose }: { onClose: () => void }) {
           <label className="label">Costing Method</label>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { value: 'FIFO', label: 'FIFO', desc: 'First In, First Out' },
-              { value: 'WeightedAvg', label: 'Weighted Average', desc: 'Running average cost' },
+              { value: 'Fifo', label: 'FIFO', desc: 'First In, First Out' },
+              { value: 'WeightedAvgCost', label: 'Weighted Average', desc: 'Running average cost' },
             ].map(opt => (
               <label key={opt.value} className={`p-3 rounded-lg border cursor-pointer transition-colors ${form.costing_method === opt.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
                 <input type="radio" name="costing" value={opt.value} checked={form.costing_method === opt.value} onChange={(e) => setForm({ ...form, costing_method: e.target.value })} className="sr-only" />

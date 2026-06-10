@@ -9,6 +9,7 @@ use crate::types::CurrencyCode;
 
 /// Status of a bill (AP document) through its lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum BillStatus {
     Draft,
     PendingApproval,

@@ -142,13 +142,37 @@ function CreateAssetModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Build correct depreciation_method structure for the backend
+    let depreciation_method: any;
+    switch (form.depreciation_method) {
+      case 'StraightLine':
+        depreciation_method = 'StraightLine';
+        break;
+      case 'DecliningBalance':
+        depreciation_method = { DecliningBalance: { rate_percent: 20 } };
+        break;
+      case 'KRATaxClass1':
+        depreciation_method = { KraTax: { class: 'Class1' } };
+        break;
+      case 'KRATaxClass2':
+        depreciation_method = { KraTax: { class: 'Class2' } };
+        break;
+      case 'KRATaxClass3':
+        depreciation_method = { KraTax: { class: 'Class3' } };
+        break;
+      case 'KRATaxClass4':
+        depreciation_method = { KraTax: { class: 'Class4' } };
+        break;
+      default:
+        depreciation_method = 'StraightLine';
+    }
     mutation.mutate({
       description: form.description,
       category: form.category,
       acquisition_date: form.acquisition_date,
       cost: parseFloat(form.cost),
       residual_value: parseFloat(form.residual_value),
-      depreciation_method: form.depreciation_method,
+      depreciation_method,
       useful_life_months: parseInt(form.useful_life_months),
       gl_asset_account: form.gl_asset_account,
       gl_accum_depr_account: form.gl_accum_depr_account,

@@ -28,6 +28,7 @@ pub enum JournalSource {
 
 /// Status of a journal entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum EntryStatus {
     Draft,
     Posted,

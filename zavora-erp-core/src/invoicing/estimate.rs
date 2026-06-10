@@ -10,6 +10,7 @@ use super::line::{CreateInvoiceLineRequest, InvoiceLine, TaxLine};
 
 /// Status of an estimate/quote.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum EstimateStatus {
     Draft,
     Sent,

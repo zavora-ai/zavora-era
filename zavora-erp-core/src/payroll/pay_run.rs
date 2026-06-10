@@ -10,6 +10,7 @@ use super::statutory::PayslipDeductions;
 
 /// Status of a pay run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum PayRunStatus {
     Draft,
     Approved,
