@@ -275,6 +275,35 @@ export interface ErpConfig {
   sequences: DocumentSequences;
   tax_config: TaxConfig;
   payment_config: PaymentConfig;
+  posting: PostingSetup;
+}
+
+// === Posting Setup (GL account determination) ===
+export interface PostingSetup {
+  accounts_receivable: string;
+  accounts_payable: string;
+  unapplied_payments: string;
+  vat_output: string;
+  vat_input: string;
+  wht_payable: string;
+  realised_fx_gain: string;
+  realised_fx_loss: string;
+  unrealised_fx_gain: string;
+  unrealised_fx_loss: string;
+  retained_earnings: string;
+  default_bank: string;
+  default_sales: string;
+  default_purchase: string;
+  default_expense: string;
+  salaries_expense: string;
+  nssf_employer_expense: string;
+  housing_levy_employer_expense: string;
+  paye_payable: string;
+  nssf_payable: string;
+  sha_payable: string;
+  helb_payable: string;
+  housing_levy_payable: string;
+  net_pay_payable: string;
 }
 
 export interface BrandingConfig {

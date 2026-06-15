@@ -32,9 +32,6 @@ struct AccountBalance {
     pub balance: Decimal,
 }
 
-/// The Retained Earnings account code per the chart of accounts.
-const RETAINED_EARNINGS_CODE: &str = "4600";
-
 /// Execute the year-end closing procedure for a fiscal year.
 ///
 /// Steps:
@@ -287,6 +284,7 @@ async fn build_closing_entry(
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
     let base_ccy = engine.config().base_currency.clone();
+    let retained_earnings = engine.posting().retained_earnings.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in pnl_balances {
@@ -336,7 +334,7 @@ async fn build_closing_entry(
     if net_income > Decimal::ZERO {
         // Net income: CR Retained Earnings
         lines.push(CreateJournalLineRequest {
-            account_code: RETAINED_EARNINGS_CODE.to_string(),
+            account_code: retained_earnings.clone(),
             debit: None,
             credit: Some(net_income),
             currency: base_ccy.clone(),
@@ -350,7 +348,7 @@ async fn build_closing_entry(
     } else if net_income < Decimal::ZERO {
         // Net loss: DR Retained Earnings
         lines.push(CreateJournalLineRequest {
-            account_code: RETAINED_EARNINGS_CODE.to_string(),
+            account_code: retained_earnings.clone(),
             debit: Some(net_income.abs()),
             credit: None,
             currency: base_ccy.clone(),

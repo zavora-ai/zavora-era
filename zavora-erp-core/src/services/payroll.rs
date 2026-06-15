@@ -220,13 +220,14 @@ pub async fn post_pay_run(
     // CR Net Salary Payable (3400) — total net
 
     let base_ccy = engine.config().base_currency.clone();
+    let posting = engine.posting();
     // NSSF total includes both employee + employer; employer portion is half
     let employer_nssf = pay_run.total_nssf / Decimal::new(2, 0);
     let employer_hl = pay_run.total_housing_levy / Decimal::new(2, 0);
 
     let lines = vec![
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "7010".to_string(),
+            account_code: posting.salaries_expense.clone(),
             debit: Some(pay_run.total_gross),
             credit: None,
             currency: base_ccy.clone(),
@@ -235,7 +236,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "7020".to_string(),
+            account_code: posting.nssf_employer_expense.clone(),
             debit: Some(employer_nssf),
             credit: None,
             currency: base_ccy.clone(),
@@ -244,7 +245,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "7030".to_string(),
+            account_code: posting.housing_levy_employer_expense.clone(),
             debit: Some(employer_hl),
             credit: None,
             currency: base_ccy.clone(),
@@ -253,7 +254,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3310".to_string(),
+            account_code: posting.paye_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_paye),
             currency: base_ccy.clone(),
@@ -262,7 +263,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3320".to_string(),
+            account_code: posting.nssf_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_nssf),
             currency: base_ccy.clone(),
@@ -271,7 +272,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3330".to_string(),
+            account_code: posting.sha_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_sha),
             currency: base_ccy.clone(),
@@ -280,7 +281,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3340".to_string(),
+            account_code: posting.helb_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_helb),
             currency: base_ccy.clone(),
@@ -289,7 +290,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3350".to_string(),
+            account_code: posting.housing_levy_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_housing_levy),
             currency: base_ccy.clone(),
@@ -298,7 +299,7 @@ pub async fn post_pay_run(
             dimensions: None,
         },
         crate::ledger::journal::CreateJournalLineRequest {
-            account_code: "3400".to_string(),
+            account_code: posting.net_pay_payable.clone(),
             debit: None,
             credit: Some(pay_run.total_net),
             currency: base_ccy.clone(),

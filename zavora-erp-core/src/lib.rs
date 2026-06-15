@@ -57,6 +57,7 @@ pub mod documents;
 pub mod rbac;
 pub mod settings;
 pub mod audit;
+pub mod posting;
 
 // Service layer — business logic implementations
 pub mod services;
@@ -65,4 +66,5 @@ pub mod services;
 pub use engine::{ErpEngine, AgentPostingResult, PostingRequest};
 pub use error::{ErpError, ErpResult};
 pub use settings::ErpConfig;
+pub use posting::PostingSetup;
 pub use types::AgentOrUserId;

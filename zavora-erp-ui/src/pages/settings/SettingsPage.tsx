@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSettings, updateSettings } from '../../api/client';
 import type { ErpConfig } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
+import PostingAccountsTab from './PostingAccountsTab';
 import { Save } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -10,13 +11,14 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const mutation = useMutation({ mutationFn: (data: any) => updateSettings(data), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }) });
 
-  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences'>('company');
+  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting'>('company');
 
   const tabs = [
     { key: 'company', label: 'Company' },
     { key: 'tax', label: 'Tax & VAT' },
     { key: 'payments', label: 'Payment Methods' },
     { key: 'sequences', label: 'Document Numbers' },
+    { key: 'posting', label: 'Posting Accounts' },
   ];
 
   return (
@@ -94,9 +96,13 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="mt-6 pt-4 border-t flex justify-end">
-          <button className="btn-primary"><Save className="w-4 h-4" /> Save Changes</button>
-        </div>
+        {tab === 'posting' && <PostingAccountsTab />}
+
+        {tab !== 'posting' && (
+          <div className="mt-6 pt-4 border-t flex justify-end">
+            <button className="btn-primary"><Save className="w-4 h-4" /> Save Changes</button>
+          </div>
+        )}
       </div>
     </div>
   );

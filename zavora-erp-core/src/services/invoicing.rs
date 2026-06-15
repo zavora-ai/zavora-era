@@ -307,7 +307,7 @@ pub async fn create_credit_note(
 
     // CR Accounts Receivable (reduce AR)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: "1200".to_string(), // Trade Debtors
+        account_code: engine.posting().accounts_receivable.clone(),
         debit: None,
         credit: Some(gross_total),
         currency: original.currency.clone(),
@@ -330,7 +330,7 @@ pub async fn create_credit_note(
 
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: "3100".to_string(), // VAT Output
+                account_code: engine.posting().vat_output.clone(),
                 debit: Some(line.vat_amount),
                 credit: None,
                 currency: original.currency.clone(),
@@ -743,7 +743,7 @@ async fn resolve_invoice_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(Decimal::ZERO),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or_else(|| "5000".to_string()),
+            account_code: req.account_code.clone().unwrap_or_else(|| engine.posting().default_sales.clone()),
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
@@ -916,7 +916,7 @@ pub async fn post_invoice(
 
     // DR Accounts Receivable (total including tax)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: "1200".to_string(), // Trade Debtors
+        account_code: engine.posting().accounts_receivable.clone(),
         debit: Some(invoice.gross_total),
         credit: None,
         currency: invoice.currency.clone(),
@@ -940,7 +940,7 @@ pub async fn post_invoice(
         // CR VAT Output (if applicable)
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: "3100".to_string(), // VAT Output
+                account_code: engine.posting().vat_output.clone(),
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: invoice.currency.clone(),
@@ -1090,7 +1090,7 @@ pub async fn resolve_bill_line(
         let default_account = vendor
             .default_expense_account
             .clone()
-            .unwrap_or_else(|| "7900".to_string());
+            .unwrap_or_else(|| engine.posting().default_expense.clone());
 
         Ok(InvoiceLine {
             id,
