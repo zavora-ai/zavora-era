@@ -1,6 +1,6 @@
 use axum::{
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -139,6 +139,7 @@ async fn main() -> anyhow::Result<()> {
         // Payments
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
+        .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
@@ -148,6 +149,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/transactions/{id}/exclude", post(routes::transactions::exclude))
         // Bank
         .route("/api/v1/bank-accounts", get(routes::bank::list_accounts).post(routes::bank::create_account))
+        .route("/api/v1/bank-accounts/{id}", delete(routes::bank::delete_account))
         .route("/api/v1/bank/import", post(routes::bank::import_statement))
         .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
         .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
@@ -180,6 +182,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/agent/report", post(routes::agent::run_report))
         // Settings
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
+        // Auth & Users
+        .route("/api/v1/auth/login", post(routes::users::login))
+        .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         // Middleware
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

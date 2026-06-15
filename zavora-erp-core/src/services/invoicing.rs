@@ -71,7 +71,10 @@ pub async fn create_invoice(
     // Generate invoice number
     let number = generate_invoice_number(engine).await?;
 
-    // Insert into database
+    // Insert header + lines atomically so a failure cannot leave an invoice
+    // header without its line items.
+    let mut tx = engine.pool().begin().await?;
+
     sqlx::query(
         r#"INSERT INTO invoices 
            (id, entity_id, number, invoice_type, customer_id, issue_date, due_date, currency, fx_rate,
@@ -99,7 +102,7 @@ pub async fn create_invoice(
     .bind(req.template_id)
     .bind(&req.notes)
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
 
     // Insert invoice lines
@@ -120,9 +123,11 @@ pub async fn create_invoice(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
-        .execute(engine.pool())
+        .execute(&mut *tx)
         .await?;
     }
+
+    tx.commit().await?;
 
     Ok(Invoice {
         id,
@@ -538,7 +543,9 @@ pub async fn create_estimate(
     // Generate estimate number
     let number = generate_estimate_number(engine).await?;
 
-    // Insert estimate
+    // Insert estimate header + lines atomically.
+    let mut tx = engine.pool().begin().await?;
+
     sqlx::query(
         r#"INSERT INTO estimates 
            (id, entity_id, number, customer_id, issue_date, expiry_date, currency, fx_rate,
@@ -560,7 +567,7 @@ pub async fn create_estimate(
     .bind(&req.notes)
     .bind(req.template_id)
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
 
     // Insert estimate lines (reusing invoice_lines table pattern)
@@ -581,9 +588,11 @@ pub async fn create_estimate(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
-        .execute(engine.pool())
+        .execute(&mut *tx)
         .await?;
     }
+
+    tx.commit().await?;
 
     Ok(id)
 }
@@ -630,9 +639,12 @@ pub async fn convert_estimate_to_invoice(
         _ => {} // draft, sent, accepted — all OK
     }
 
-    // Fetch estimate lines
+    // Fetch estimate lines. `estimate_lines.estimate_id` is aliased to `invoice_id`
+    // so the row maps onto the shared `InvoiceLineRow` struct.
     let est_lines = sqlx::query_as::<_, InvoiceLineRow>(
-        "SELECT * FROM estimate_lines WHERE estimate_id = $1",
+        r#"SELECT id, estimate_id AS invoice_id, product_id, description, quantity,
+                  unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount
+           FROM estimate_lines WHERE estimate_id = $1"#,
     )
     .bind(estimate_id)
     .fetch_all(engine.pool())

@@ -21,3 +21,6 @@ zavora-erp-ui/dist/
 
 # Logs
 *.log
+
+# Test/tooling artifacts
+.playwright-mcp/

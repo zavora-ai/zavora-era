@@ -19,6 +19,7 @@ pub mod reports;
 pub mod agent;
 pub mod receipts;
 pub mod settings;
+pub mod users;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use zavora_erp_core::ErpError;

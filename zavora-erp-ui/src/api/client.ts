@@ -5,11 +5,20 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor for auth token
+// Request interceptor for identity headers.
+// The API authenticates via X-User-Id / X-Entity-Id / X-User-Role headers
+// (set here from the stored identity established at login).
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('era_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const raw = localStorage.getItem('era_identity');
+  if (raw) {
+    try {
+      const id = JSON.parse(raw);
+      if (id.user_id) config.headers['X-User-Id'] = id.user_id;
+      if (id.entity_id) config.headers['X-Entity-Id'] = id.entity_id;
+      if (id.role) config.headers['X-User-Role'] = id.role;
+    } catch {
+      // ignore malformed identity
+    }
   }
   return config;
 });
@@ -19,14 +28,22 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('era_token');
-      window.location.href = '/login';
+      localStorage.removeItem('era_identity');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
 export default api;
+
+// === Auth & Users ===
+export const login = (email: string) => api.post('/auth/login', { email });
+export const getUsers = () => api.get('/users');
+export const createUser = (data: { email: string; display_name: string; role: string }) =>
+  api.post('/users', data);
 
 // === Dashboard ===
 export const getDashboard = () => api.get('/dashboard');
