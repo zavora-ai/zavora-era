@@ -4,10 +4,42 @@ use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
+use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
 use crate::payments::*;
 use crate::types::AgentOrUserId;
 
+/// Well-known account codes used for payment journal entries.
+mod account_codes {
+    /// Accounts Receivable
+    pub const AR: &str = "1200";
+    /// Accounts Payable
+    pub const AP: &str = "3010";
+    /// Unapplied Payments (liability)
+    pub const UNAPPLIED_PAYMENTS: &str = "3050";
+    /// WHT Payable - Vendors (liability cleared on bill payment)
+    pub const WHT_PAYABLE: &str = "3210";
+    /// Realised FX Gain (credit when payment rate > invoice rate)
+    pub const REALISED_FX_GAIN: &str = "8120";
+    /// Realised FX Loss (debit when payment rate < invoice rate)
+    pub const REALISED_FX_LOSS: &str = "8130";
+}
+
+/// Helper row for fetching bill balance + status for payment validation.
+#[derive(sqlx::FromRow)]
+struct BillBalanceRow {
+    pub balance_due: Decimal,
+    pub status: String,
+}
+
 /// Record a payment (AR or AP).
+///
+/// Overpayment handling (Requirements 3.4, 3.5, 3.6, 24.1):
+/// - When a payment application amount exceeds the document's balance_due,
+///   only balance_due is applied; the remainder becomes unapplied credit.
+/// - When a payment has no applications at all, the full amount is held as
+///   an Unapplied_Payment on the customer/vendor account.
+/// - Journal entry is split accordingly:
+///   DR Bank / CR AR (applied portion) + CR Unapplied Payments (excess portion)
 pub async fn record_payment(
     engine: &ErpEngine,
     req: RecordPaymentRequest,
@@ -17,37 +49,52 @@ pub async fn record_payment(
     let today = Utc::now().date_naive();
     let payment_date = req.payment_date.unwrap_or(today);
     let currency = req.currency.clone().unwrap_or_else(|| engine.config().base_currency.clone());
+    let fx_rate = req.fx_rate.unwrap_or(Decimal::ONE);
 
     // Validate applications don't exceed payment amount
-    let total_applied: Decimal = req.applications.iter().map(|a| a.amount).sum();
-    if total_applied > req.amount {
+    let total_requested: Decimal = req.applications.iter().map(|a| a.amount).sum();
+    if total_requested > req.amount {
         return Err(ErpError::ValidationFailed {
             message: "Total applied amount exceeds payment amount".to_string(),
         });
     }
 
-    let unapplied = req.amount - total_applied;
-
     // Generate payment number
     let number = generate_payment_number(engine).await?;
 
-    // Build applications
-    let applications: Vec<PaymentApplication> = req
-        .applications
-        .iter()
-        .map(|a| PaymentApplication {
-            document_id: a.document_id,
+    // --- Overpayment handling ---
+    // For each application, cap the applied amount to the document's balance_due.
+    // Any excess per-document is accumulated as unapplied credit.
+    let mut applications: Vec<PaymentApplication> = Vec::new();
+    let mut total_actually_applied = Decimal::ZERO;
+
+    for app_req in &req.applications {
+        let doc_balance = fetch_document_balance(engine, app_req.document_id, &req.payment_type).await?;
+
+        // Apply only up to balance_due; remainder becomes unapplied
+        let effective_apply = app_req.amount.min(doc_balance);
+
+        applications.push(PaymentApplication {
+            document_id: app_req.document_id,
             document_type: match req.payment_type {
                 PaymentType::CustomerPayment => PaymentDocType::Invoice,
                 PaymentType::VendorPayment => PaymentDocType::Bill,
             },
-            amount_applied: a.amount,
-        })
-        .collect();
+            amount_applied: effective_apply,
+        });
+
+        total_actually_applied += effective_apply;
+    }
+
+    // Total unapplied = payment amount minus what was actually applied to documents
+    let unapplied = req.amount - total_actually_applied;
 
     let reference = req.reference.unwrap_or_else(|| number.clone());
 
-    // Insert payment
+    // Determine the bank account code for the JE
+    let bank_account_code = resolve_bank_account_code(engine, req.bank_account_id).await?;
+
+    // Insert payment record
     sqlx::query(
         r#"INSERT INTO payments 
            (id, entity_id, number, payment_type, party_id, payment_date, amount, currency, fx_rate,
@@ -62,7 +109,7 @@ pub async fn record_payment(
     .bind(payment_date)
     .bind(req.amount)
     .bind(&currency)
-    .bind(req.fx_rate.unwrap_or(Decimal::ONE))
+    .bind(fx_rate)
     .bind(serde_json::to_value(&req.method).unwrap_or_default())
     .bind(&reference)
     .bind(req.bank_account_id)
@@ -73,14 +120,17 @@ pub async fn record_payment(
     .execute(engine.pool())
     .await?;
 
-    // Update invoice/bill balances for each application
-    for app in &req.applications {
+    // Update invoice/bill balances for each application (using effective amounts)
+    for app in &applications {
+        if app.amount_applied == Decimal::ZERO {
+            continue;
+        }
         match req.payment_type {
             PaymentType::CustomerPayment => {
                 sqlx::query(
                     "UPDATE invoices SET amount_paid = amount_paid + $1, balance_due = balance_due - $1 WHERE id = $2",
                 )
-                .bind(app.amount)
+                .bind(app.amount_applied)
                 .bind(app.document_id)
                 .execute(engine.pool())
                 .await?;
@@ -92,12 +142,20 @@ pub async fn record_payment(
                 .bind(app.document_id)
                 .execute(engine.pool())
                 .await?;
+
+                // Cancel pending reminders if the invoice was overdue (Requirement 5.4)
+                let new_balance = fetch_document_balance(engine, app.document_id, &req.payment_type).await.unwrap_or(Decimal::ZERO);
+                let _ = crate::services::scheduler::cancel_reminders_on_payment(
+                    engine,
+                    app.document_id,
+                    new_balance,
+                ).await;
             }
             PaymentType::VendorPayment => {
                 sqlx::query(
                     "UPDATE bills SET amount_paid = amount_paid + $1, balance_due = balance_due - $1 WHERE id = $2",
                 )
-                .bind(app.amount)
+                .bind(app.amount_applied)
                 .bind(app.document_id)
                 .execute(engine.pool())
                 .await?;
@@ -112,6 +170,98 @@ pub async fn record_payment(
         }
     }
 
+    // --- WHT handling for vendor payments (Requirements 11.4, 11.5) ---
+    // When paying a bill with WHT, we need to also clear the WHT Payable liability
+    // that was created when the bill was posted to GL.
+    // JE structure: DR AP (applied) / CR Bank (applied) + DR WHT Payable / CR Bank (wht)
+    let wht_total = if req.payment_type == PaymentType::VendorPayment {
+        let mut wht_sum = Decimal::ZERO;
+        for app in &applications {
+            if app.amount_applied == Decimal::ZERO {
+                continue;
+            }
+            let bill_wht = fetch_bill_wht_amount(engine, app.document_id).await.unwrap_or(Decimal::ZERO);
+            wht_sum += bill_wht;
+        }
+        wht_sum
+    } else {
+        Decimal::ZERO
+    };
+
+    // --- Post the payment journal entry ---
+    // For customer payments: DR Bank / CR AR (applied) / CR Unapplied Payments (excess)
+    // For vendor payments: DR AP (applied) / CR Bank (applied) + DR WHT Payable / CR Bank (wht)
+    let journal_entry_id = post_payment_journal_entry(
+        engine,
+        &number,
+        payment_date,
+        &currency,
+        fx_rate,
+        req.amount,
+        total_actually_applied,
+        unapplied,
+        &bank_account_code,
+        &req.payment_type,
+        wht_total,
+        recorded_by,
+    )
+    .await?;
+
+    // Link journal entry to payment
+    sqlx::query("UPDATE payments SET journal_entry_id = $1 WHERE id = $2")
+        .bind(journal_entry_id)
+        .bind(id)
+        .execute(engine.pool())
+        .await?;
+
+    // --- FX Gain/Loss handling (Requirements 22.2, 22.3, 22.5) ---
+    // When payment currency differs from invoice/bill currency (cross-currency),
+    // or even same currency but at a different FX rate, compute realised FX gain/loss.
+    for app in &applications {
+        if app.amount_applied == Decimal::ZERO {
+            continue;
+        }
+        let doc_fx_rate = fetch_document_fx_rate(engine, app.document_id, &req.payment_type).await?;
+
+        // Only post FX gain/loss if the rates differ
+        if doc_fx_rate != fx_rate {
+            post_fx_gain_loss_entry(
+                engine,
+                &number,
+                payment_date,
+                &currency,
+                fx_rate,
+                doc_fx_rate,
+                app.amount_applied,
+                &req.payment_type,
+                recorded_by,
+            )
+            .await?;
+
+            // Record the exchange rate used in audit trail
+            let audit_event = serde_json::json!({
+                "event_type": "fx_gain_loss",
+                "object_type": "payment",
+                "object_id": id.to_string(),
+                "document_id": app.document_id.to_string(),
+                "payment_fx_rate": fx_rate.to_string(),
+                "invoice_fx_rate": doc_fx_rate.to_string(),
+                "applied_amount": app.amount_applied.to_string(),
+                "currency": currency,
+                "timestamp": Utc::now().to_rfc3339(),
+            });
+            let stream_key = format!("erp:audit:{}", engine.entity_id());
+            let mut redis_conn = engine.redis_conn().await;
+            let _: Result<(), _> = redis::cmd("XADD")
+                .arg(&stream_key)
+                .arg("*")
+                .arg("data")
+                .arg(audit_event.to_string())
+                .query_async(&mut redis_conn)
+                .await;
+        }
+    }
+
     Ok(Payment {
         id,
         entity_id: engine.entity_id(),
@@ -121,19 +271,313 @@ pub async fn record_payment(
         payment_date,
         amount: req.amount,
         currency,
-        fx_rate: req.fx_rate.unwrap_or(Decimal::ONE),
+        fx_rate,
         method: req.method,
         reference,
         bank_account_id: req.bank_account_id,
         applications,
         unapplied,
-        journal_entry_id: None,
+        journal_entry_id: Some(journal_entry_id),
         status: PaymentStatus::Completed,
         created_at: Utc::now(),
     })
 }
 
+/// Fetch the current balance_due for a document (invoice or bill).
+///
+/// For vendor payments (bills): also validates that the bill is in an appropriate
+/// status for payment (must be Approved, Posted, or PartiallyPaid). Payments on
+/// bills in Draft or PendingApproval status are rejected (Requirement 11.6).
+async fn fetch_document_balance(
+    engine: &ErpEngine,
+    document_id: Uuid,
+    payment_type: &PaymentType,
+) -> ErpResult<Decimal> {
+    match payment_type {
+        PaymentType::CustomerPayment => {
+            sqlx::query_scalar::<_, Decimal>(
+                "SELECT balance_due FROM invoices WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(document_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?
+            .ok_or_else(|| ErpError::NotFound {
+                entity_type: "Invoice".to_string(),
+                id: document_id,
+            })
+        }
+        PaymentType::VendorPayment => {
+            // Fetch both balance_due and status to validate bill is payable
+            let row = sqlx::query_as::<_, BillBalanceRow>(
+                "SELECT balance_due, status FROM bills WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(document_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?
+            .ok_or_else(|| ErpError::NotFound {
+                entity_type: "Bill".to_string(),
+                id: document_id,
+            })?;
+
+            // Reject payment on bills in Draft or PendingApproval status (Requirement 11.6)
+            match row.status.as_str() {
+                "draft" | "pending_approval" => {
+                    return Err(ErpError::ValidationFailed {
+                        message: format!(
+                            "Cannot process payment for bill in '{}' status; bill must be approved/posted first",
+                            row.status
+                        ),
+                    });
+                }
+                _ => {}
+            }
+
+            Ok(row.balance_due)
+        }
+    }
+}
+
+/// Fetch the WHT (Withholding Tax) amount from a bill.
+/// Returns Decimal::ZERO if the bill has no WHT or if the bill is not found.
+/// Used during vendor payment to determine how much WHT liability to clear.
+async fn fetch_bill_wht_amount(
+    engine: &ErpEngine,
+    bill_id: Uuid,
+) -> ErpResult<Decimal> {
+    let wht = sqlx::query_scalar::<_, Decimal>(
+        "SELECT COALESCE(wht_amount, 0) FROM bills WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(bill_id)
+    .bind(engine.entity_id())
+    .fetch_optional(engine.pool())
+    .await?
+    .unwrap_or(Decimal::ZERO);
+
+    Ok(wht)
+}
+
+/// Resolve the GL account code for a bank account.
+/// Falls back to "1020" (default bank/cash account) if no bank_account_id is provided
+/// or if the bank account has no linked GL account.
+async fn resolve_bank_account_code(
+    engine: &ErpEngine,
+    bank_account_id: Option<Uuid>,
+) -> ErpResult<String> {
+    const DEFAULT_BANK_ACCOUNT: &str = "1020";
+
+    let Some(ba_id) = bank_account_id else {
+        return Ok(DEFAULT_BANK_ACCOUNT.to_string());
+    };
+
+    let code = sqlx::query_scalar::<_, String>(
+        "SELECT COALESCE(gl_account_code, $3) FROM bank_accounts WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(ba_id)
+    .bind(engine.entity_id())
+    .bind(DEFAULT_BANK_ACCOUNT)
+    .fetch_optional(engine.pool())
+    .await?
+    .unwrap_or_else(|| DEFAULT_BANK_ACCOUNT.to_string());
+
+    Ok(code)
+}
+
+/// Post the journal entry for a payment, handling the split between applied and unapplied portions.
+///
+/// Journal structure for customer payments:
+/// - DR Bank account (full payment amount)
+/// - CR AR (applied portion — the amount that cleared document balances)
+/// - CR Unapplied Payments (excess portion — held as credit on the party's account)
+///
+/// Journal structure for vendor payments (Requirements 11.4, 11.5):
+/// - DR AP (applied portion — the amount clearing the vendor's balance)
+/// - CR Bank (payment amount — what actually leaves the bank)
+/// - DR WHT Payable (WHT amount — clearing the WHT liability set up at bill posting)
+/// - CR Bank (WHT amount — if WHT is being remitted to KRA with this payment)
+/// - CR Unapplied Payments (excess portion, if any)
+///
+/// When payment has no applications (unapplied == full amount):
+/// - DR Bank / CR Unapplied Payments (entire amount) for customer payments
+/// - DR Unapplied Payments / CR Bank (entire amount) for vendor payments
+async fn post_payment_journal_entry(
+    engine: &ErpEngine,
+    payment_number: &str,
+    payment_date: chrono::NaiveDate,
+    currency: &str,
+    fx_rate: Decimal,
+    total_amount: Decimal,
+    applied_amount: Decimal,
+    unapplied_amount: Decimal,
+    bank_account_code: &str,
+    payment_type: &PaymentType,
+    wht_amount: Decimal,
+    posted_by: &AgentOrUserId,
+) -> ErpResult<Uuid> {
+    let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
+
+    match payment_type {
+        PaymentType::CustomerPayment => {
+            // DR Bank (full amount received)
+            lines.push(CreateJournalLineRequest {
+                account_code: bank_account_code.to_string(),
+                debit: Some(total_amount),
+                credit: None,
+                currency: currency.to_string(),
+                fx_rate: Some(fx_rate),
+                description: Some(format!("Payment received: {}", payment_number)),
+                dimensions: None,
+            });
+
+            // CR AR (applied portion)
+            if applied_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: account_codes::AR.to_string(),
+                    debit: None,
+                    credit: Some(applied_amount),
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("Applied to documents: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+
+            // CR Unapplied Payments (excess portion)
+            if unapplied_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+                    debit: None,
+                    credit: Some(unapplied_amount),
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("Unapplied payment credit: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+        }
+        PaymentType::VendorPayment => {
+            // DR AP (applied portion — the full balance being cleared, which is net of WHT)
+            if applied_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: account_codes::AP.to_string(),
+                    debit: Some(applied_amount),
+                    credit: None,
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("Bill payment - AP cleared: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+
+            // CR Bank (net amount actually paid to vendor)
+            lines.push(CreateJournalLineRequest {
+                account_code: bank_account_code.to_string(),
+                debit: None,
+                credit: Some(total_amount),
+                currency: currency.to_string(),
+                fx_rate: Some(fx_rate),
+                description: Some(format!("Payment made: {}", payment_number)),
+                dimensions: None,
+            });
+
+            // WHT handling (Requirements 11.4, 11.5):
+            // DR WHT Payable (clearing liability) / CR Bank (WHT remitted to KRA)
+            if wht_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: account_codes::WHT_PAYABLE.to_string(),
+                    debit: Some(wht_amount),
+                    credit: None,
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("WHT remitted to KRA: {}", payment_number)),
+                    dimensions: None,
+                });
+                lines.push(CreateJournalLineRequest {
+                    account_code: bank_account_code.to_string(),
+                    debit: None,
+                    credit: Some(wht_amount),
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("WHT payment to KRA: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+
+            // CR Unapplied Payments (excess portion)
+            if unapplied_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+                    debit: None,
+                    credit: Some(unapplied_amount),
+                    currency: currency.to_string(),
+                    fx_rate: Some(fx_rate),
+                    description: Some(format!("Unapplied payment credit: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+        }
+    }
+
+    let description = match payment_type {
+        PaymentType::CustomerPayment => {
+            if unapplied_amount > Decimal::ZERO && applied_amount > Decimal::ZERO {
+                format!(
+                    "Payment {} — applied {} / unapplied {}",
+                    payment_number, applied_amount, unapplied_amount
+                )
+            } else if unapplied_amount > Decimal::ZERO {
+                format!("Payment {} — full amount held as unapplied", payment_number)
+            } else {
+                format!("Payment {} — fully applied", payment_number)
+            }
+        }
+        PaymentType::VendorPayment => {
+            if wht_amount > Decimal::ZERO {
+                format!(
+                    "Payment {} — vendor payment {} + WHT {} remitted",
+                    payment_number, total_amount, wht_amount
+                )
+            } else if unapplied_amount > Decimal::ZERO {
+                format!(
+                    "Payment {} — applied {} / unapplied {}",
+                    payment_number, applied_amount, unapplied_amount
+                )
+            } else {
+                format!("Payment {} — fully applied to vendor bill", payment_number)
+            }
+        }
+    };
+
+    let je_req = CreateJournalEntryRequest {
+        date: payment_date,
+        source: JournalSource::Payment,
+        reference: payment_number.to_string(),
+        description,
+        lines,
+        post_immediately: true,
+    };
+
+    // Resolve the fiscal period for the payment date
+    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+
+    let entry = crate::services::journal::create_and_post(
+        engine,
+        je_req,
+        period.id,
+        posted_by.clone(),
+    )
+    .await?;
+
+    Ok(entry.id)
+}
+
 /// Record an M-Pesa payment from Daraja callback.
+///
+/// Overpayment handling: If the M-Pesa amount exceeds the invoice balance_due,
+/// the payment is still accepted — the excess is held as unapplied credit rather
+/// than rejected. This allows the `record_payment` function's overpayment logic
+/// to handle the split automatically.
 pub async fn record_mpesa_payment(
     engine: &ErpEngine,
     invoice_id: Uuid,
@@ -165,14 +609,9 @@ pub async fn record_mpesa_payment(
         id: invoice_id,
     })?;
 
-    // Check for overpayment
-    if amount > invoice.balance_due {
-        return Err(ErpError::Overpayment {
-            invoice_id,
-            balance: invoice.balance_due,
-            amount,
-        });
-    }
+    // No longer reject overpayments — the record_payment function handles the split.
+    // The application amount is the full M-Pesa amount; record_payment will cap it
+    // at balance_due and create unapplied credit for the excess.
 
     let req = RecordPaymentRequest {
         payment_type: PaymentType::CustomerPayment,
@@ -197,6 +636,244 @@ pub async fn record_mpesa_payment(
     record_payment(engine, req, &actor).await
 }
 
+/// Apply unapplied funds from an existing payment to a target document (invoice or bill).
+///
+/// Requirements 24.2, 24.3, 24.4, 24.5:
+/// - Reduces the payment's unapplied balance and the target document's balance_due.
+/// - Creates a JE: DR Unapplied Payments (3050) / CR AR (1200) or AP (3010).
+/// - Rejects if the apply amount exceeds the payment's unapplied balance.
+/// - Records an audit event with before/after amounts.
+pub async fn apply_unapplied_payment(
+    engine: &ErpEngine,
+    req: ApplyPaymentRequest,
+    actor: &AgentOrUserId,
+) -> ErpResult<Payment> {
+    // 1. Fetch the payment record
+    let row = sqlx::query_as::<_, PaymentRow>(
+        "SELECT * FROM payments WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.payment_id)
+    .bind(engine.entity_id())
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "Payment".to_string(),
+        id: req.payment_id,
+    })?;
+
+    let current_unapplied = row.unapplied;
+    let payment_type: PaymentType = serde_json::from_str(&format!("\"{}\"", row.payment_type))
+        .unwrap_or(PaymentType::CustomerPayment);
+
+    // 2. Validate: reject if apply amount exceeds unapplied balance (Requirement 24.4)
+    if req.amount > current_unapplied {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Apply amount {} exceeds unapplied balance {}",
+                req.amount, current_unapplied
+            ),
+        });
+    }
+
+    if req.amount <= Decimal::ZERO {
+        return Err(ErpError::ValidationFailed {
+            message: "Apply amount must be positive".to_string(),
+        });
+    }
+
+    // 3. Fetch target document's current balance_due
+    let doc_balance = fetch_document_balance(engine, req.document_id, &payment_type).await?;
+
+    // Cap application at document's balance_due
+    let effective_apply = req.amount.min(doc_balance);
+
+    if effective_apply <= Decimal::ZERO {
+        return Err(ErpError::ValidationFailed {
+            message: "Target document has no outstanding balance".to_string(),
+        });
+    }
+
+    // 4. Reduce payment's unapplied balance (Requirement 24.2)
+    let new_unapplied = current_unapplied - effective_apply;
+
+    // Add new application to the payment's applications array
+    let new_application = PaymentApplication {
+        document_id: req.document_id,
+        document_type: match payment_type {
+            PaymentType::CustomerPayment => PaymentDocType::Invoice,
+            PaymentType::VendorPayment => PaymentDocType::Bill,
+        },
+        amount_applied: effective_apply,
+    };
+
+    // Parse existing applications and append
+    let mut applications: Vec<PaymentApplication> =
+        serde_json::from_value(row.applications.clone()).unwrap_or_default();
+    applications.push(new_application);
+
+    sqlx::query(
+        "UPDATE payments SET unapplied = $1, applications = $2 WHERE id = $3",
+    )
+    .bind(new_unapplied)
+    .bind(serde_json::to_value(&applications).unwrap_or_default())
+    .bind(req.payment_id)
+    .execute(engine.pool())
+    .await?;
+
+    // 5. Reduce target document's balance_due (Requirement 24.2)
+    match payment_type {
+        PaymentType::CustomerPayment => {
+            sqlx::query(
+                "UPDATE invoices SET amount_paid = amount_paid + $1, balance_due = balance_due - $1 WHERE id = $2",
+            )
+            .bind(effective_apply)
+            .bind(req.document_id)
+            .execute(engine.pool())
+            .await?;
+
+            // Update invoice status
+            sqlx::query(
+                "UPDATE invoices SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END, paid_at = CASE WHEN balance_due <= 0 THEN NOW() ELSE paid_at END WHERE id = $1",
+            )
+            .bind(req.document_id)
+            .execute(engine.pool())
+            .await?;
+
+            // Cancel pending reminders if the invoice was overdue (Requirement 5.4)
+            let updated_balance = fetch_document_balance(engine, req.document_id, &payment_type).await.unwrap_or(Decimal::ZERO);
+            let _ = crate::services::scheduler::cancel_reminders_on_payment(
+                engine,
+                req.document_id,
+                updated_balance,
+            ).await;
+        }
+        PaymentType::VendorPayment => {
+            sqlx::query(
+                "UPDATE bills SET amount_paid = amount_paid + $1, balance_due = balance_due - $1 WHERE id = $2",
+            )
+            .bind(effective_apply)
+            .bind(req.document_id)
+            .execute(engine.pool())
+            .await?;
+
+            sqlx::query(
+                "UPDATE bills SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END WHERE id = $1",
+            )
+            .bind(req.document_id)
+            .execute(engine.pool())
+            .await?;
+        }
+    }
+
+    // 6. Create JE: DR Unapplied Payments (3050) / CR AR (1200) or AP (3010) (Requirement 24.3)
+    let receivable_payable_code = match payment_type {
+        PaymentType::CustomerPayment => account_codes::AR,
+        PaymentType::VendorPayment => account_codes::AP,
+    };
+
+    let currency = row.currency.clone();
+    let fx_rate = row.fx_rate;
+    let payment_date = row.payment_date;
+
+    let je_lines = vec![
+        CreateJournalLineRequest {
+            account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+            debit: Some(effective_apply),
+            credit: None,
+            currency: currency.clone(),
+            fx_rate: Some(fx_rate),
+            description: Some(format!(
+                "Apply unapplied funds from payment {} to document",
+                row.number
+            )),
+            dimensions: None,
+        },
+        CreateJournalLineRequest {
+            account_code: receivable_payable_code.to_string(),
+            debit: None,
+            credit: Some(effective_apply),
+            currency: currency.clone(),
+            fx_rate: Some(fx_rate),
+            description: Some(format!(
+                "Unapplied payment allocation: {}",
+                row.number
+            )),
+            dimensions: None,
+        },
+    ];
+
+    let je_req = CreateJournalEntryRequest {
+        date: payment_date,
+        source: JournalSource::Payment,
+        reference: format!("{}-APPLY", row.number),
+        description: format!(
+            "Apply unapplied funds ({}) from payment {} to document",
+            effective_apply, row.number
+        ),
+        lines: je_lines,
+        post_immediately: true,
+    };
+
+    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+    let _entry = crate::services::journal::create_and_post(
+        engine,
+        je_req,
+        period.id,
+        actor.clone(),
+    )
+    .await?;
+
+    // 7. Record audit event with before/after amounts (Requirement 24.5)
+    let audit_event = serde_json::json!({
+        "event_type": "Updated",
+        "object_type": "payment",
+        "object_id": req.payment_id,
+        "actor": actor,
+        "action": "apply_unapplied",
+        "document_id": req.document_id,
+        "amount_applied": effective_apply,
+        "before": {
+            "unapplied_balance": current_unapplied,
+            "document_balance_due": doc_balance,
+        },
+        "after": {
+            "unapplied_balance": new_unapplied,
+            "document_balance_due": doc_balance - effective_apply,
+        },
+        "timestamp": Utc::now(),
+    });
+    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
+
+    // Return updated payment
+    Ok(Payment {
+        id: row.id,
+        entity_id: row.entity_id,
+        number: row.number,
+        payment_type,
+        party_id: row.party_id,
+        payment_date: row.payment_date,
+        amount: row.amount,
+        currency: row.currency,
+        fx_rate: row.fx_rate,
+        method: serde_json::from_value(row.method).unwrap_or(PaymentMethod::Cash),
+        reference: row.reference,
+        bank_account_id: row.bank_account_id,
+        applications,
+        unapplied: new_unapplied,
+        journal_entry_id: row.journal_entry_id,
+        status: PaymentStatus::Completed,
+        created_at: row.created_at,
+    })
+}
+
 async fn generate_payment_number(engine: &ErpEngine) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
@@ -211,4 +888,168 @@ async fn generate_payment_number(engine: &ErpEngine) -> ErpResult<String> {
     let prefix = &engine.config().sequences.payment_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
+}
+
+
+/// Fetch the FX rate at which a document (invoice or bill) was originally recorded.
+/// This is needed to compute realised FX gain/loss when the payment rate differs.
+async fn fetch_document_fx_rate(
+    engine: &ErpEngine,
+    document_id: Uuid,
+    payment_type: &PaymentType,
+) -> ErpResult<Decimal> {
+    match payment_type {
+        PaymentType::CustomerPayment => {
+            sqlx::query_scalar::<_, Decimal>(
+                "SELECT fx_rate FROM invoices WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(document_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?
+            .ok_or_else(|| ErpError::NotFound {
+                entity_type: "Invoice".to_string(),
+                id: document_id,
+            })
+        }
+        PaymentType::VendorPayment => {
+            sqlx::query_scalar::<_, Decimal>(
+                "SELECT fx_rate FROM bills WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(document_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?
+            .ok_or_else(|| ErpError::NotFound {
+                entity_type: "Bill".to_string(),
+                id: document_id,
+            })
+        }
+    }
+}
+
+/// Post a realised FX gain/loss journal entry for a cross-currency payment application.
+///
+/// Calculation (Requirements 22.2, 22.3, 22.5):
+/// - applied_functional_at_invoice_rate = applied_amount × invoice_fx_rate
+/// - applied_functional_at_payment_rate = applied_amount × payment_fx_rate
+/// - fx_difference = applied_functional_at_payment_rate - applied_functional_at_invoice_rate
+///
+/// If fx_difference > 0 → Realised FX Gain:
+///   DR AR/AP (difference) / CR 8120 Realised FX Gain
+///
+/// If fx_difference < 0 → Realised FX Loss:
+///   DR 8130 Realised FX Loss / CR AR/AP (abs difference)
+async fn post_fx_gain_loss_entry(
+    engine: &ErpEngine,
+    payment_number: &str,
+    payment_date: chrono::NaiveDate,
+    _currency: &str,
+    payment_fx_rate: Decimal,
+    invoice_fx_rate: Decimal,
+    applied_amount: Decimal,
+    payment_type: &PaymentType,
+    posted_by: &AgentOrUserId,
+) -> ErpResult<Uuid> {
+    let functional_at_invoice_rate = applied_amount * invoice_fx_rate;
+    let functional_at_payment_rate = applied_amount * payment_fx_rate;
+    let fx_difference = functional_at_payment_rate - functional_at_invoice_rate;
+
+    // Determine the AR/AP account for the offsetting entry
+    let ar_ap_code = match payment_type {
+        PaymentType::CustomerPayment => account_codes::AR,
+        PaymentType::VendorPayment => account_codes::AP,
+    };
+
+    let abs_difference = fx_difference.abs();
+    let base_currency = engine.config().base_currency.clone();
+
+    let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
+
+    if fx_difference > Decimal::ZERO {
+        // FX Gain: DR AR/AP, CR 8120 Realised FX Gain
+        lines.push(CreateJournalLineRequest {
+            account_code: ar_ap_code.to_string(),
+            debit: Some(abs_difference),
+            credit: None,
+            currency: base_currency.clone(),
+            fx_rate: Some(Decimal::ONE),
+            description: Some(format!(
+                "FX gain adjustment on {}: {} @ {} vs {}",
+                payment_number, applied_amount, payment_fx_rate, invoice_fx_rate
+            )),
+            dimensions: None,
+        });
+        lines.push(CreateJournalLineRequest {
+            account_code: account_codes::REALISED_FX_GAIN.to_string(),
+            debit: None,
+            credit: Some(abs_difference),
+            currency: base_currency.clone(),
+            fx_rate: Some(Decimal::ONE),
+            description: Some(format!(
+                "Realised FX gain on payment {}",
+                payment_number
+            )),
+            dimensions: None,
+        });
+    } else {
+        // FX Loss: DR 8130 Realised FX Loss, CR AR/AP
+        lines.push(CreateJournalLineRequest {
+            account_code: account_codes::REALISED_FX_LOSS.to_string(),
+            debit: Some(abs_difference),
+            credit: None,
+            currency: base_currency.clone(),
+            fx_rate: Some(Decimal::ONE),
+            description: Some(format!(
+                "Realised FX loss on payment {}",
+                payment_number
+            )),
+            dimensions: None,
+        });
+        lines.push(CreateJournalLineRequest {
+            account_code: ar_ap_code.to_string(),
+            debit: None,
+            credit: Some(abs_difference),
+            currency: base_currency.clone(),
+            fx_rate: Some(Decimal::ONE),
+            description: Some(format!(
+                "FX loss adjustment on {}: {} @ {} vs {}",
+                payment_number, applied_amount, payment_fx_rate, invoice_fx_rate
+            )),
+            dimensions: None,
+        });
+    }
+
+    let description = if fx_difference > Decimal::ZERO {
+        format!(
+            "Realised FX gain {} on payment {} (rate {} vs invoice rate {})",
+            abs_difference, payment_number, payment_fx_rate, invoice_fx_rate
+        )
+    } else {
+        format!(
+            "Realised FX loss {} on payment {} (rate {} vs invoice rate {})",
+            abs_difference, payment_number, payment_fx_rate, invoice_fx_rate
+        )
+    };
+
+    let je_req = CreateJournalEntryRequest {
+        date: payment_date,
+        source: JournalSource::Payment,
+        reference: format!("{}-FX", payment_number),
+        description,
+        lines,
+        post_immediately: true,
+    };
+
+    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+
+    let entry = crate::services::journal::create_and_post(
+        engine,
+        je_req,
+        period.id,
+        posted_by.clone(),
+    )
+    .await?;
+
+    Ok(entry.id)
 }

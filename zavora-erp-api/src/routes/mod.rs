@@ -17,6 +17,7 @@ pub mod fx;
 pub mod audit;
 pub mod reports;
 pub mod agent;
+pub mod receipts;
 pub mod settings;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
@@ -33,6 +34,7 @@ pub fn err_response(e: ErpError) -> impl IntoResponse {
         ErpError::DuplicateReference { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::PermissionDenied { .. } => (StatusCode::FORBIDDEN, e.to_string()),
         ErpError::InsufficientStock { .. } => (StatusCode::CONFLICT, e.to_string()),
+        ErpError::CreditLimitExceeded { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::Overpayment { .. } => (StatusCode::BAD_REQUEST, e.to_string()),
         _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     };

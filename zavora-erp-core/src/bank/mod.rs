@@ -148,3 +148,34 @@ pub struct CreateBankAccountRequest {
     pub gl_account: Option<AccountCode>,
     pub feed_provider: Option<BankFeedProvider>,
 }
+
+/// Request to import a bank statement file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportStatementRequest {
+    pub entity_id: Uuid,
+    pub bank_account_id: Uuid,
+    pub filename: String,
+    pub content: String,
+    pub imported_by: AgentOrUserId,
+}
+
+/// A parsed transaction line from a bank statement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedStatementLine {
+    pub value_date: NaiveDate,
+    pub description: String,
+    pub reference: String,
+    pub debit: Option<Decimal>,
+    pub credit: Option<Decimal>,
+    pub balance: Option<Decimal>,
+}
+
+/// Result of a successful statement import.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportStatementResult {
+    pub import_id: Uuid,
+    pub format: StatementFormat,
+    pub line_count: u32,
+    pub matched_count: u32,
+    pub unmatched_count: u32,
+}

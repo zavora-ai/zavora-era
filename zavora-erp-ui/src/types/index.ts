@@ -426,6 +426,26 @@ export interface ExchangeRateEntry {
   source: string;
 }
 
+// === Categorisation Queue Transaction ===
+export interface CategorisationTransaction {
+  id: string;
+  entity_id: string;
+  bank_account_id: string;
+  date: string;
+  description: string;
+  amount: number;
+  reference: string;
+  status: 'uncategorised' | 'categorised' | 'excluded' | 'split' | 'merged';
+  suggestion?: {
+    account_code: string;
+    account_name: string;
+    confidence: number;
+  };
+  assigned_account_code?: string;
+  assigned_account_name?: string;
+  created_at: string;
+}
+
 // === Audit ===
 export interface AuditEventEntry {
   id: string;
@@ -438,4 +458,20 @@ export interface AuditEventEntry {
   after_state?: any;
   metadata?: any;
   timestamp: string;
+}
+
+// === Bank Account ===
+export interface BankAccount {
+  id: string;
+  entity_id: string;
+  name: string;
+  bank_name: string;
+  account_number: string;
+  currency: string;
+  gl_account: string;
+  feed_enabled: boolean;
+  feed_provider?: string | null;
+  last_sync?: string | null;
+  is_active: boolean;
+  created_at: string;
 }
