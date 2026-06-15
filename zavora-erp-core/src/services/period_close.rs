@@ -284,7 +284,7 @@ async fn build_closing_entry(
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
     let base_ccy = engine.config().base_currency.clone();
-    let retained_earnings = engine.config().posting.retained_earnings.clone();
+    let retained_earnings = engine.posting().retained_earnings.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in pnl_balances {

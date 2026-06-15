@@ -16,6 +16,9 @@ pub struct ErpEngine {
     pool: PgPool,
     redis: tokio::sync::Mutex<redis::aio::MultiplexedConnection>,
     config: ErpConfig,
+    /// Live posting setup (GL account determination). Held behind a lock so it
+    /// can be updated at runtime when settings are saved, without restarting.
+    posting: std::sync::RwLock<crate::posting::PostingSetup>,
 }
 
 impl ErpEngine {
@@ -28,6 +31,7 @@ impl ErpEngine {
         Ok(Self {
             pool,
             redis: tokio::sync::Mutex::new(redis),
+            posting: std::sync::RwLock::new(config.posting.clone()),
             config,
         })
     }
@@ -48,8 +52,18 @@ impl ErpEngine {
     }
 
     /// Get the posting setup (GL account determination) for this entity.
-    pub fn posting(&self) -> &crate::posting::PostingSetup {
-        &self.config.posting
+    /// Returns a snapshot of the live setup, which may have been updated since
+    /// startup via the settings API.
+    pub fn posting(&self) -> crate::posting::PostingSetup {
+        self.posting
+            .read()
+            .expect("posting setup lock poisoned")
+            .clone()
+    }
+
+    /// Replace the live posting setup (called when settings are saved).
+    pub fn set_posting(&self, posting: crate::posting::PostingSetup) {
+        *self.posting.write().expect("posting setup lock poisoned") = posting;
     }
 
     /// Get the entity ID for this engine instance.

@@ -21,7 +21,7 @@ struct PaymentAccounts {
 
 impl PaymentAccounts {
     fn resolve(engine: &ErpEngine) -> Self {
-        let p = &engine.config().posting;
+        let p = &engine.posting();
         Self {
             ar: p.accounts_receivable.clone(),
             ap: p.accounts_payable.clone(),
@@ -374,7 +374,7 @@ async fn resolve_bank_account_code(
     engine: &ErpEngine,
     bank_account_id: Option<Uuid>,
 ) -> ErpResult<String> {
-    let default_bank = engine.config().posting.default_bank.clone();
+    let default_bank = engine.posting().default_bank.clone();
 
     let Some(ba_id) = bank_account_id else {
         return Ok(default_bank);

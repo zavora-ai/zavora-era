@@ -153,6 +153,7 @@ pub struct SettingsPatch {
     pub branding: Option<BrandingConfig>,
     pub tax_config: Option<TaxConfig>,
     pub payment_config: Option<PaymentConfig>,
+    pub posting: Option<PostingSetup>,
 }
 
 /// Patch for a single sequence type.
