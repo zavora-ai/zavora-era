@@ -372,7 +372,7 @@ async fn resolve_bank_account_code(
     };
 
     let code = sqlx::query_scalar::<_, String>(
-        "SELECT COALESCE(gl_account_code, $3) FROM bank_accounts WHERE id = $1 AND entity_id = $2",
+        "SELECT COALESCE(gl_account, $3) FROM bank_accounts WHERE id = $1 AND entity_id = $2",
     )
     .bind(ba_id)
     .bind(engine.entity_id())
@@ -609,6 +609,53 @@ pub async fn record_mpesa_payment(
         id: invoice_id,
     })?;
 
+    // Idempotency: claim this M-Pesa receipt before recording a payment so that
+    // duplicate Daraja callbacks (delivered at-least-once) cannot create duplicate
+    // payments. The unique index on (entity_id, receipt_number) enforces the claim.
+    if !receipt.is_empty() {
+        let claim = sqlx::query(
+            r#"INSERT INTO mpesa_transactions
+               (entity_id, receipt_number, transaction_type, amount, phone_number, timestamp, invoice_id, reconciled)
+               VALUES ($1, $2, 'c2b', $3, $4, $5, $6, false)"#,
+        )
+        .bind(engine.entity_id())
+        .bind(&receipt)
+        .bind(amount)
+        .bind(&phone)
+        .bind(callback.transaction_date.unwrap_or_else(Utc::now))
+        .bind(invoice_id)
+        .execute(engine.pool())
+        .await;
+
+        if let Err(e) = claim {
+            let is_dup = matches!(&e, sqlx::Error::Database(db) if db.is_unique_violation());
+            if !is_dup {
+                return Err(ErpError::Database(e));
+            }
+            // Duplicate callback. If a payment was already recorded for this receipt,
+            // return it (idempotent success); otherwise the original is still in flight.
+            let existing = sqlx::query_as::<_, PaymentRow>(
+                r#"SELECT p.* FROM payments p
+                   JOIN mpesa_transactions m ON m.payment_id = p.id
+                   WHERE m.entity_id = $1 AND m.receipt_number = $2"#,
+            )
+            .bind(engine.entity_id())
+            .bind(&receipt)
+            .fetch_optional(engine.pool())
+            .await?;
+
+            if let Some(row) = existing {
+                return Ok(payment_from_row(row));
+            }
+            return Err(ErpError::PaymentError {
+                message: format!(
+                    "Duplicate M-Pesa callback for receipt {} is already being processed",
+                    receipt
+                ),
+            });
+        }
+    }
+
     // No longer reject overpayments — the record_payment function handles the split.
     // The application amount is the full M-Pesa amount; record_payment will cap it
     // at balance_due and create unapplied credit for the excess.
@@ -621,8 +668,8 @@ pub async fn record_mpesa_payment(
         currency: Some(invoice.currency),
         fx_rate: Some(invoice.fx_rate),
         method: PaymentMethod::Mpesa {
-            transaction_id: receipt,
-            phone,
+            transaction_id: receipt.clone(),
+            phone: phone.clone(),
         },
         reference: Some(callback.mpesa_receipt_number.unwrap_or_default()),
         bank_account_id: None,
@@ -633,7 +680,50 @@ pub async fn record_mpesa_payment(
     };
 
     let actor = AgentOrUserId::Agent("mpesa-webhook".to_string());
-    record_payment(engine, req, &actor).await
+    let payment = record_payment(engine, req, &actor).await?;
+
+    // Link the recorded payment back to the claimed M-Pesa transaction.
+    if !receipt.is_empty() {
+        let _ = sqlx::query(
+            "UPDATE mpesa_transactions SET payment_id = $1, reconciled = true WHERE entity_id = $2 AND receipt_number = $3",
+        )
+        .bind(payment.id)
+        .bind(engine.entity_id())
+        .bind(&receipt)
+        .execute(engine.pool())
+        .await;
+    }
+
+    Ok(payment)
+}
+
+/// Reconstruct a `Payment` domain object from its database row.
+fn payment_from_row(row: PaymentRow) -> Payment {
+    let payment_type: PaymentType =
+        serde_json::from_str(&format!("\"{}\"", row.payment_type))
+            .unwrap_or(PaymentType::CustomerPayment);
+    let applications: Vec<PaymentApplication> =
+        serde_json::from_value(row.applications.clone()).unwrap_or_default();
+
+    Payment {
+        id: row.id,
+        entity_id: row.entity_id,
+        number: row.number,
+        payment_type,
+        party_id: row.party_id,
+        payment_date: row.payment_date,
+        amount: row.amount,
+        currency: row.currency,
+        fx_rate: row.fx_rate,
+        method: serde_json::from_value(row.method).unwrap_or(PaymentMethod::Cash),
+        reference: row.reference,
+        bank_account_id: row.bank_account_id,
+        applications,
+        unapplied: row.unapplied,
+        journal_entry_id: row.journal_entry_id,
+        status: PaymentStatus::Completed,
+        created_at: row.created_at,
+    }
 }
 
 /// Apply unapplied funds from an existing payment to a target document (invoice or bill).

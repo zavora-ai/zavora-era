@@ -52,6 +52,24 @@ pub async fn import_statement(
     Json(serde_json::json!({ "status": "import_endpoint_ready", "message": "Upload CSV/MT940/OFX file" }))
 }
 
+/// DELETE /bank-accounts/{id} — soft-delete a bank account (sets is_active = false).
+pub async fn delete_account(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let result = sqlx::query(
+        "UPDATE bank_accounts SET is_active = false WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(state.engine.entity_id())
+    .execute(state.engine.pool())
+    .await;
+    match result {
+        Ok(_) => Ok(Json(serde_json::json!({ "status": "deleted", "id": id }))),
+        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    }
+}
+
 pub async fn reconcile(
     State(state): State<Arc<AppState>>,
     Path(statement_id): Path<Uuid>,
