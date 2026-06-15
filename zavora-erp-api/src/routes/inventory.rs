@@ -46,7 +46,7 @@ pub async fn issue(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let actor = AgentOrUserId::Agent("api".to_string());
     match svc::issue_inventory(&state.engine, req, &actor).await {
-        Ok(id) => Ok(Json(serde_json::json!({ "movement_id": id }))),
+        Ok(result) => Ok(Json(serde_json::json!({ "movement_id": result.movement_id }))),
         Err(e) => Err(err_response(e)),
     }
 }

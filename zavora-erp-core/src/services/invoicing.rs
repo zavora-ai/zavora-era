@@ -8,6 +8,18 @@ use crate::invoicing::*;
 use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
 use crate::types::AgentOrUserId;
 
+/// Lightweight row for querying stock movement cost data during credit note processing.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StockMovementRow {
+    #[allow(dead_code)]
+    pub id: Uuid,
+    #[allow(dead_code)]
+    pub item_id: Uuid,
+    pub unit_cost: Decimal,
+    #[allow(dead_code)]
+    pub quantity: Decimal,
+}
+
 /// Create a new invoice.
 pub async fn create_invoice(
     engine: &ErpEngine,
@@ -321,6 +333,111 @@ pub async fn create_credit_note(
                 description: Some(format!("CN VAT reversal: {}", line.description)),
                 dimensions: None,
             });
+        }
+    }
+
+    // === Inventory return logic (Requirements 23.4, 23.5) ===
+    // For each credit note line item where the original invoice issued inventory,
+    // receive stock back and reverse COGS journal lines (DR Inventory / CR COGS).
+    for line in &cn_lines {
+        if let Some(product_id) = line.product_id {
+            let product = sqlx::query_as::<_, crate::catalog::ProductRow>(
+                "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(product_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?;
+
+            if let Some(product) = product {
+                if product.track_inventory {
+                    // Resolve the inventory_item_id linked to this product
+                    let inventory_item_id = match product.inventory_item_id {
+                        Some(id) => id,
+                        None => continue, // skip if no inventory link (defensive)
+                    };
+
+                    // Look up the original stock movement from the invoice to find
+                    // the unit cost at which goods were issued
+                    let original_movement = sqlx::query_as::<_, StockMovementRow>(
+                        r#"SELECT id, item_id, unit_cost, quantity 
+                           FROM stock_movements 
+                           WHERE reference_id = $1 
+                             AND item_id = $2 
+                             AND entity_id = $3
+                             AND movement_type = 'issue'
+                           ORDER BY created_at DESC
+                           LIMIT 1"#,
+                    )
+                    .bind(req.invoice_id)
+                    .bind(inventory_item_id)
+                    .bind(engine.entity_id())
+                    .fetch_optional(engine.pool())
+                    .await?;
+
+                    let original_cost = match original_movement {
+                        Some(ref mov) => mov.unit_cost,
+                        None => continue, // no stock was issued for this item; skip
+                    };
+
+                    // Receive inventory back at original cost
+                    let receive_req = crate::inventory::ReceiveInventoryRequest {
+                        item_id: inventory_item_id,
+                        quantity: line.quantity,
+                        unit_cost: original_cost,
+                        date: Some(cn_date),
+                        reference_id: Some(cn_id),
+                        warehouse_id: None,
+                    };
+
+                    crate::services::inventory::receive_inventory(
+                        engine,
+                        receive_req,
+                        created_by,
+                    )
+                    .await?;
+
+                    // Reverse COGS: DR Inventory / CR COGS
+                    let return_cost = line.quantity * original_cost;
+
+                    // Look up GL accounts from inventory item
+                    let inv_item = sqlx::query_as::<_, crate::inventory::InventoryItemRow>(
+                        "SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2",
+                    )
+                    .bind(inventory_item_id)
+                    .bind(engine.entity_id())
+                    .fetch_one(engine.pool())
+                    .await?;
+
+                    // DR Inventory (return stock value)
+                    journal_lines.push(CreateJournalLineRequest {
+                        account_code: inv_item.gl_inventory.clone(),
+                        debit: Some(return_cost),
+                        credit: None,
+                        currency: original.currency.clone(),
+                        fx_rate: Some(original.fx_rate),
+                        description: Some(format!(
+                            "Inventory return: {} × {} @ {}",
+                            line.description, line.quantity, original_cost
+                        )),
+                        dimensions: None,
+                    });
+
+                    // CR COGS (reverse cost of goods sold)
+                    journal_lines.push(CreateJournalLineRequest {
+                        account_code: inv_item.gl_cogs.clone(),
+                        debit: None,
+                        credit: Some(return_cost),
+                        currency: original.currency.clone(),
+                        fx_rate: Some(original.fx_rate),
+                        description: Some(format!(
+                            "COGS reversal: {} × {} @ {}",
+                            line.description, line.quantity, original_cost
+                        )),
+                        dimensions: None,
+                    });
+                }
+            }
         }
     }
 
@@ -677,6 +794,9 @@ async fn generate_estimate_number(engine: &ErpEngine) -> ErpResult<String> {
 }
 
 /// Post an invoice — creates the GL journal entry (DR AR / CR Revenue / CR VAT Output).
+/// For line items with tracked inventory products, also issues stock and posts COGS
+/// (DR COGS / CR Inventory at weighted average cost). Rejects with InsufficientStock
+/// if any tracked item lacks adequate available quantity.
 pub async fn post_invoice(
     engine: &ErpEngine,
     invoice_id: Uuid,
@@ -698,6 +818,78 @@ pub async fn post_invoice(
         return Err(ErpError::ValidationFailed {
             message: format!("Invoice {} is already posted (status: {})", invoice.number, invoice.status),
         });
+    }
+
+    // === Credit limit check (Requirements 20.4, 20.5) ===
+    // Look up the customer and check if they have a credit limit set
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice.customer_id)
+    .bind(engine.entity_id())
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "Customer".to_string(),
+        id: invoice.customer_id,
+    })?;
+
+    if let Some(credit_limit) = customer.credit_limit {
+        // Query total outstanding AR balance (sum of balance_due where status NOT IN (paid, voided))
+        let outstanding: Decimal = sqlx::query_scalar(
+            r#"SELECT COALESCE(SUM(balance_due), 0) 
+               FROM invoices 
+               WHERE customer_id = $1 
+                 AND entity_id = $2 
+                 AND invoice_type = 'invoice'
+                 AND status NOT IN ('paid', 'voided')
+                 AND id != $3"#,
+        )
+        .bind(invoice.customer_id)
+        .bind(engine.entity_id())
+        .bind(invoice_id)
+        .fetch_one(engine.pool())
+        .await?;
+
+        if outstanding + invoice.gross_total > credit_limit {
+            // Send notification to Admin users via In-App and Email channels
+            let notification_req = crate::notifications::SendNotificationRequest {
+                event_type: crate::notifications::NotificationEventType::CreditLimitExceeded,
+                channels: vec![
+                    crate::types::Channel::InApp,
+                    crate::types::Channel::Email,
+                ],
+                recipients: vec!["role:Admin".to_string()],
+                subject: Some(format!(
+                    "Credit limit exceeded for customer '{}'",
+                    customer.name
+                )),
+                body: format!(
+                    "Invoice {} (amount {}) would cause customer '{}' to exceed their credit limit of {}. \
+                     Current outstanding: {}. Total if posted: {}.",
+                    invoice.number,
+                    invoice.gross_total,
+                    customer.name,
+                    credit_limit,
+                    outstanding,
+                    outstanding + invoice.gross_total,
+                ),
+                related_type: Some("Invoice".to_string()),
+                related_id: Some(invoice_id),
+                schedule_at: None,
+            };
+
+            // Best-effort notification — don't fail the entire operation if notification fails
+            let _ = crate::services::notifications::send_notification(engine, notification_req).await;
+
+            return Err(ErpError::CreditLimitExceeded {
+                customer_name: customer.name,
+                customer_id: invoice.customer_id,
+                outstanding,
+                invoice_total: invoice.gross_total,
+                credit_limit,
+            });
+        }
     }
 
     // Build journal entry lines
@@ -744,6 +936,77 @@ pub async fn post_invoice(
                 description: Some(format!("VAT on {}", line.description)),
                 dimensions: None,
             });
+        }
+    }
+
+    // === Inventory issue logic (Requirements 23.1, 23.2, 23.3) ===
+    // For each line item linked to a product with track_inventory = true,
+    // issue stock and create COGS journal lines (DR COGS / CR Inventory).
+    for line in &lines {
+        if let Some(product_id) = line.product_id {
+            let product = sqlx::query_as::<_, crate::catalog::ProductRow>(
+                "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
+            )
+            .bind(product_id)
+            .bind(engine.entity_id())
+            .fetch_optional(engine.pool())
+            .await?;
+
+            if let Some(product) = product {
+                if product.track_inventory {
+                    // Resolve the inventory_item_id linked to this product
+                    let inventory_item_id = product.inventory_item_id.ok_or_else(|| {
+                        ErpError::ValidationFailed {
+                            message: format!(
+                                "Product '{}' has track_inventory=true but no linked inventory_item_id",
+                                product.name
+                            ),
+                        }
+                    })?;
+
+                    // Issue inventory — returns InsufficientStock error if not enough stock
+                    let issue_req = crate::inventory::IssueInventoryRequest {
+                        item_id: inventory_item_id,
+                        quantity: line.quantity,
+                        date: Some(invoice.issue_date),
+                        reference_id: Some(invoice_id),
+                        warehouse_id: None,
+                    };
+
+                    let issue_result = crate::services::inventory::issue_inventory(
+                        engine, issue_req, posted_by,
+                    )
+                    .await?;
+
+                    // DR COGS at computed cost (WAC)
+                    journal_lines.push(CreateJournalLineRequest {
+                        account_code: issue_result.gl_cogs.clone(),
+                        debit: Some(issue_result.total_cost),
+                        credit: None,
+                        currency: invoice.currency.clone(),
+                        fx_rate: Some(invoice.fx_rate),
+                        description: Some(format!(
+                            "COGS: {} × {} @ {}",
+                            line.description, line.quantity, issue_result.unit_cost
+                        )),
+                        dimensions: None,
+                    });
+
+                    // CR Inventory at computed cost (WAC)
+                    journal_lines.push(CreateJournalLineRequest {
+                        account_code: issue_result.gl_inventory.clone(),
+                        debit: None,
+                        credit: Some(issue_result.total_cost),
+                        currency: invoice.currency.clone(),
+                        fx_rate: Some(invoice.fx_rate),
+                        description: Some(format!(
+                            "Inventory issued: {} × {}",
+                            line.description, line.quantity
+                        )),
+                        dimensions: None,
+                    });
+                }
+            }
         }
     }
 

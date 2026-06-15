@@ -2,6 +2,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
+use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
 use super::err_response;
 use zavora_erp_core::ledger::journal::*;
 use zavora_erp_core::{AgentOrUserId, PostingRequest};
@@ -22,12 +23,14 @@ pub async fn list(
 }
 
 pub async fn create(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_POST_JOURNAL, &ctx, "post journal entry").map_err(err_response)?;
     let posting_req = PostingRequest {
         entry: req,
-        posted_by: AgentOrUserId::Agent("api".to_string()),
+        posted_by: AgentOrUserId::User(ctx.user_id),
     };
     match state.engine.post_from_agent(posting_req).await {
         Ok(result) => Ok(Json(serde_json::to_value(result).unwrap_or_default())),

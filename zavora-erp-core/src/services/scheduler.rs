@@ -1,9 +1,11 @@
 use chrono::Utc;
+use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::engine::ErpEngine;
-use crate::error::ErpResult;
+use crate::error::{ErpError, ErpResult};
 use crate::invoicing::RecurringInvoiceRow;
+use crate::types::Channel;
 
 /// Process all recurring invoices that are due today or earlier.
 /// Creates invoices for each due recurring template.
@@ -155,15 +157,384 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct UnpaidInvoiceRow {
     id: uuid::Uuid,
     number: String,
-    #[allow(dead_code)]
     customer_id: uuid::Uuid,
     due_date: chrono::NaiveDate,
     balance_due: rust_decimal::Decimal,
-    #[allow(dead_code)]
     status: String,
     customer_name: String,
     reminder_policy: serde_json::Value,
+}
+
+/// Row representing an overdue-eligible invoice with customer contact details.
+#[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
+struct OverdueInvoiceRow {
+    id: Uuid,
+    number: String,
+    customer_id: Uuid,
+    due_date: chrono::NaiveDate,
+    balance_due: Decimal,
+    status: String,
+    customer_name: String,
+    customer_email: serde_json::Value,
+    customer_phone: serde_json::Value,
+    reminder_policy: serde_json::Value,
+}
+
+/// Summary of an overdue check run.
+#[derive(Debug, Clone)]
+pub struct OverdueCheckResult {
+    /// Number of invoices transitioned to Overdue status.
+    pub transitioned_count: u32,
+    /// Number of reminder notifications queued.
+    pub reminders_sent: u32,
+    /// Number of channels skipped due to missing delivery address.
+    pub channels_skipped: u32,
+}
+
+/// Run the overdue detection and reminder delivery job.
+///
+/// This function:
+/// 1. Queries invoices past due with outstanding balance and status in (Sent, Viewed, PartiallyPaid)
+/// 2. Transitions matching invoices to Overdue status
+/// 3. For each overdue invoice, evaluates the customer's Reminder_Policy
+/// 4. When a reminder rule's trigger date (due_date + offset_days) matches today, delivers via specified channels
+/// 5. Skips channels where the customer has no valid delivery address, logging a warning
+/// 6. Records an audit event for each reminder delivery attempt
+pub async fn run_overdue_check(engine: &ErpEngine) -> ErpResult<OverdueCheckResult> {
+    let today = Utc::now().date_naive();
+    let mut result = OverdueCheckResult {
+        transitioned_count: 0,
+        reminders_sent: 0,
+        channels_skipped: 0,
+    };
+
+    // Step 1: Query invoices that are past due with outstanding balance
+    // Status must be sent, viewed, or partially_paid (not already overdue or paid)
+    let overdue_invoices = sqlx::query_as::<_, OverdueInvoiceRow>(
+        r#"SELECT i.id, i.number, i.customer_id, i.due_date, i.balance_due, i.status,
+               c.name as customer_name, c.email as customer_email,
+               c.phone as customer_phone, c.reminder_policy
+           FROM invoices i
+           JOIN customers c ON c.id = i.customer_id
+           WHERE i.entity_id = $1
+             AND i.due_date < $2
+             AND i.balance_due > 0
+             AND i.status IN ('sent', 'viewed', 'partially_paid')"#,
+    )
+    .bind(engine.entity_id())
+    .bind(today)
+    .fetch_all(engine.pool())
+    .await?;
+
+    // Step 2: Transition matching invoices to Overdue status
+    for inv in &overdue_invoices {
+        sqlx::query("UPDATE invoices SET status = 'overdue' WHERE id = $1")
+            .bind(inv.id)
+            .execute(engine.pool())
+            .await?;
+        result.transitioned_count += 1;
+
+        tracing::info!(
+            invoice_id = %inv.id,
+            invoice_number = %inv.number,
+            customer = %inv.customer_name,
+            "Invoice transitioned to Overdue status"
+        );
+    }
+
+    // Step 3 & 4: Evaluate reminder policies and deliver reminders
+    // Query ALL overdue invoices (including those already in overdue status) for reminder evaluation
+    let all_overdue = sqlx::query_as::<_, OverdueInvoiceRow>(
+        r#"SELECT i.id, i.number, i.customer_id, i.due_date, i.balance_due, i.status,
+               c.name as customer_name, c.email as customer_email,
+               c.phone as customer_phone, c.reminder_policy
+           FROM invoices i
+           JOIN customers c ON c.id = i.customer_id
+           WHERE i.entity_id = $1
+             AND i.status = 'overdue'
+             AND i.balance_due > 0"#,
+    )
+    .bind(engine.entity_id())
+    .fetch_all(engine.pool())
+    .await?;
+
+    let actor = crate::types::AgentOrUserId::Agent("overdue-scheduler".to_string());
+
+    for inv in &all_overdue {
+        // Parse the customer's reminder policy
+        let policy: crate::parties::ReminderPolicy =
+            serde_json::from_value(inv.reminder_policy.clone()).unwrap_or_default();
+
+        // Parse customer contact details for channel validation
+        let emails: Vec<crate::types::ContactEmail> =
+            serde_json::from_value(inv.customer_email.clone()).unwrap_or_default();
+        let phones: Vec<crate::types::ContactPhone> =
+            serde_json::from_value(inv.customer_phone.clone()).unwrap_or_default();
+
+        for rule in &policy.reminders {
+            // Check if today matches this rule's offset from due_date
+            let reminder_date = inv.due_date + chrono::Duration::days(rule.offset_days as i64);
+            if reminder_date != today {
+                continue;
+            }
+
+            // Filter channels based on valid delivery addresses
+            let mut valid_channels: Vec<Channel> = Vec::new();
+            for channel in &rule.channels {
+                match channel {
+                    Channel::Email => {
+                        if emails.iter().any(|e| !e.email.is_empty()) {
+                            valid_channels.push(Channel::Email);
+                        } else {
+                            tracing::warn!(
+                                invoice_id = %inv.id,
+                                customer = %inv.customer_name,
+                                channel = "Email",
+                                "Skipping channel: no valid email address for customer"
+                            );
+                            result.channels_skipped += 1;
+                        }
+                    }
+                    Channel::WhatsApp => {
+                        if phones.iter().any(|p| p.whatsapp_enabled && !p.number.is_empty()) {
+                            valid_channels.push(Channel::WhatsApp);
+                        } else {
+                            tracing::warn!(
+                                invoice_id = %inv.id,
+                                customer = %inv.customer_name,
+                                channel = "WhatsApp",
+                                "Skipping channel: no WhatsApp-enabled phone number for customer"
+                            );
+                            result.channels_skipped += 1;
+                        }
+                    }
+                    Channel::Sms => {
+                        if phones.iter().any(|p| !p.number.is_empty()) {
+                            valid_channels.push(Channel::Sms);
+                        } else {
+                            tracing::warn!(
+                                invoice_id = %inv.id,
+                                customer = %inv.customer_name,
+                                channel = "SMS",
+                                "Skipping channel: no valid phone number for customer"
+                            );
+                            result.channels_skipped += 1;
+                        }
+                    }
+                    Channel::InApp => {
+                        // InApp is always deliverable
+                        valid_channels.push(Channel::InApp);
+                    }
+                }
+            }
+
+            // Skip if no valid channels remain
+            if valid_channels.is_empty() {
+                tracing::warn!(
+                    invoice_id = %inv.id,
+                    customer = %inv.customer_name,
+                    "No valid delivery channels available for reminder; skipping"
+                );
+                continue;
+            }
+
+            // Deliver reminder via valid channels
+            let notification_req = crate::notifications::SendNotificationRequest {
+                event_type: crate::notifications::NotificationEventType::InvoiceReminder,
+                channels: valid_channels.clone(),
+                recipients: vec![inv.customer_name.clone()],
+                subject: Some(format!("Payment Reminder: Invoice {}", inv.number)),
+                body: format!(
+                    "This is a reminder that invoice {} for {} is overdue. Amount due: {}. Due date was {}.",
+                    inv.number,
+                    inv.customer_name,
+                    inv.balance_due,
+                    inv.due_date,
+                ),
+                related_type: Some("Invoice".to_string()),
+                related_id: Some(inv.id),
+                schedule_at: None,
+            };
+
+            let delivery_outcome =
+                crate::services::notifications::send_notification(engine, notification_req).await;
+
+            // Record audit event for the reminder delivery attempt
+            let outcome_str = match &delivery_outcome {
+                Ok(()) => "queued",
+                Err(e) => {
+                    tracing::error!(
+                        invoice_id = %inv.id,
+                        error = %e,
+                        "Failed to queue reminder notification"
+                    );
+                    "failed"
+                }
+            };
+
+            let audit_event = serde_json::json!({
+                "event_type": "reminder_sent",
+                "object_type": "invoice",
+                "object_id": inv.id,
+                "actor": actor,
+                "invoice_number": inv.number,
+                "customer_id": inv.customer_id,
+                "customer_name": inv.customer_name,
+                "channels": valid_channels,
+                "offset_days": rule.offset_days,
+                "outcome": outcome_str,
+                "timestamp": Utc::now(),
+            });
+            let stream_key = format!("erp:audit:{}", engine.entity_id());
+            let mut redis_conn = engine.redis_conn().await;
+            let _: Result<(), _> = redis::cmd("XADD")
+                .arg(&stream_key)
+                .arg("*")
+                .arg("data")
+                .arg(audit_event.to_string())
+                .query_async(&mut redis_conn)
+                .await;
+
+            if delivery_outcome.is_ok() {
+                result.reminders_sent += 1;
+            }
+        }
+    }
+
+    tracing::info!(
+        transitioned = result.transitioned_count,
+        reminders = result.reminders_sent,
+        skipped_channels = result.channels_skipped,
+        "Overdue check completed"
+    );
+
+    Ok(result)
+}
+
+
+/// Result of the cancel-reminders-on-payment operation.
+#[derive(Debug, Clone)]
+pub struct CancelRemindersResult {
+    /// Whether the invoice was in Overdue status before the payment.
+    pub was_overdue: bool,
+    /// Number of pending reminders cancelled (notifications + Redis stream entries).
+    pub reminders_cancelled: u32,
+    /// The new invoice status after the payment (paid or partially_paid).
+    pub new_status: String,
+}
+
+/// Cancel pending reminders when a payment is received on an overdue invoice.
+///
+/// This function implements Requirement 5.4:
+/// - When a payment clears (or partially clears) an overdue invoice's balance:
+///   1. Check if the invoice was in Overdue status
+///   2. Cancel all pending/queued reminders for that invoice (in notifications table)
+///   3. Update invoice status based on new balance (paid if 0, partially_paid otherwise)
+///   4. Record an audit event for the cancellation
+///
+/// This should be called from the payments service after a payment application
+/// reduces an overdue invoice's balance.
+pub async fn cancel_reminders_on_payment(
+    engine: &ErpEngine,
+    invoice_id: Uuid,
+    new_balance: Decimal,
+) -> ErpResult<CancelRemindersResult> {
+    // Step 1: Check if the invoice was in Overdue status
+    let invoice_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(engine.entity_id())
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "Invoice".to_string(),
+        id: invoice_id,
+    })?;
+
+    if invoice_status != "overdue" {
+        return Ok(CancelRemindersResult {
+            was_overdue: false,
+            reminders_cancelled: 0,
+            new_status: invoice_status,
+        });
+    }
+
+    // Step 2: Cancel all pending/queued notification reminders for this invoice
+    let cancelled = sqlx::query_scalar::<_, i64>(
+        r#"WITH updated AS (
+            UPDATE notifications
+            SET status = 'cancelled'
+            WHERE entity_id = $1
+              AND related_type = 'Invoice'
+              AND related_id = $2
+              AND event_type = 'InvoiceReminder'
+              AND status IN ('queued', 'pending')
+            RETURNING 1
+        )
+        SELECT COUNT(*) FROM updated"#,
+    )
+    .bind(engine.entity_id())
+    .bind(invoice_id)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(0);
+
+    // Step 3: Transition invoice status from Overdue to Paid or PartiallyPaid
+    let new_status = if new_balance <= Decimal::ZERO {
+        "paid"
+    } else {
+        "partially_paid"
+    };
+
+    sqlx::query(
+        "UPDATE invoices SET status = $1, paid_at = CASE WHEN $1 = 'paid' THEN NOW() ELSE paid_at END WHERE id = $2 AND entity_id = $3",
+    )
+    .bind(new_status)
+    .bind(invoice_id)
+    .bind(engine.entity_id())
+    .execute(engine.pool())
+    .await?;
+
+    // Step 4: Record an audit event for the reminder cancellation
+    let audit_event = serde_json::json!({
+        "event_type": "reminders_cancelled",
+        "object_type": "invoice",
+        "object_id": invoice_id,
+        "actor": "payment-engine",
+        "previous_status": "overdue",
+        "new_status": new_status,
+        "new_balance": new_balance.to_string(),
+        "reminders_cancelled": cancelled,
+        "reason": "payment_received",
+        "timestamp": Utc::now(),
+    });
+    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
+
+    tracing::info!(
+        invoice_id = %invoice_id,
+        previous_status = "overdue",
+        new_status = new_status,
+        reminders_cancelled = cancelled,
+        "Cancelled pending reminders on payment for overdue invoice"
+    );
+
+    Ok(CancelRemindersResult {
+        was_overdue: true,
+        reminders_cancelled: cancelled as u32,
+        new_status: new_status.to_string(),
+    })
 }

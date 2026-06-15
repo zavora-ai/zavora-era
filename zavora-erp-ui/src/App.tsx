@@ -24,6 +24,7 @@ import InventoryPage from './pages/inventory/InventoryPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
+import ReceiptCapturePage from './pages/receipts/ReceiptCapturePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="estimates" element={<EstimatesPage />} />
             <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
+            <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="customers/:id" element={<CustomerDetailPage />} />

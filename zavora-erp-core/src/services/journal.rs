@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::ledger::journal::*;
+use crate::period::{FiscalPeriod, PeriodStatus};
 use crate::types::AgentOrUserId;
 
 /// Validate a journal entry request without posting.
@@ -131,6 +132,58 @@ pub async fn validate_entry(
     })
 }
 
+/// Enforce period status rules for journal entry insertion.
+///
+/// - If the period is **SoftClosed**, only entries with source `Manual` are allowed
+///   (prior-period adjustments). All other sources are rejected.
+/// - If the period is **HardClosed**, ALL entries are rejected as a defence-in-depth
+///   measure alongside the database trigger.
+/// - Open or Future periods allow all entries (Future is unlikely in practice).
+pub async fn enforce_period_status(
+    engine: &ErpEngine,
+    period_id: Uuid,
+    source: &JournalSource,
+) -> ErpResult<()> {
+    let period = sqlx::query_as::<_, FiscalPeriod>(
+        "SELECT * FROM fiscal_periods WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(period_id)
+    .bind(engine.entity_id())
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "fiscal_period".to_string(),
+        id: period_id,
+    })?;
+
+    let status = period.parsed_status();
+
+    match status {
+        PeriodStatus::HardClosed => {
+            return Err(ErpError::PeriodClosedDetailed {
+                period_name: period.name.clone(),
+                status: "HardClosed".to_string(),
+                period_id: period.id,
+            });
+        }
+        PeriodStatus::SoftClosed => {
+            if *source != JournalSource::Manual {
+                return Err(ErpError::PeriodClosedDetailed {
+                    period_name: period.name.clone(),
+                    status: "SoftClosed".to_string(),
+                    period_id: period.id,
+                });
+            }
+            // Manual entries (prior-period adjustments) are allowed in SoftClosed
+        }
+        PeriodStatus::Open | PeriodStatus::Future => {
+            // All entries allowed
+        }
+    }
+
+    Ok(())
+}
+
 /// Create and immediately post a journal entry.
 pub async fn create_and_post(
     engine: &ErpEngine,
@@ -138,6 +191,9 @@ pub async fn create_and_post(
     period_id: Uuid,
     posted_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
+    // Enforce period status before inserting any journal entry
+    enforce_period_status(engine, period_id, &req.source).await?;
+
     let now = Utc::now();
     let entry_id = Uuid::new_v4();
 

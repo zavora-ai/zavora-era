@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoice, postInvoice, sendInvoice, createCreditNote, getAuditForObject, getPayments } from '../../api/client';
+import { getInvoice, postInvoice, sendInvoice, createCreditNote, getAuditForObject, getPayments, mpesaStkPush } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import {
-  ArrowLeft, Send, CheckCircle, CreditCard, FileText,
-  Clock, User, Calendar, Hash, Download, ReceiptText
+  ArrowLeft, Send, CheckCircle, CreditCard,
+  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2
 } from 'lucide-react';
 
 export default function InvoiceDetailPage() {
@@ -16,6 +16,8 @@ export default function InvoiceDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreditNote, setShowCreditNote] = useState(false);
+  const [showMpesaModal, setShowMpesaModal] = useState(false);
+  const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: invoice, isLoading } = useQuery<Invoice>({
     queryKey: ['invoice', id],
@@ -269,11 +271,166 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
+      {/* M-Pesa Payment Section */}
+      {(invoice.status === 'sent' || invoice.status === 'viewed' || invoice.status === 'partially_paid' || invoice.status === 'overdue') && (
+        <div className="card p-5 mt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-gray-700">Mobile Payment</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Pay this invoice using M-Pesa STK Push</p>
+            </div>
+            <button
+              onClick={() => setShowMpesaModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Phone className="w-4 h-4" />
+              Pay with M-Pesa
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* M-Pesa Notification Toast */}
+      {mpesaNotification && (
+        <div className={`fixed bottom-6 right-6 z-50 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-slideUp ${
+          mpesaNotification.type === 'success'
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          {mpesaNotification.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+          ) : (
+            <Phone className="w-4 h-4 text-red-600 shrink-0" />
+          )}
+          <span>{mpesaNotification.message}</span>
+          <button
+            onClick={() => setMpesaNotification(null)}
+            className="ml-auto text-gray-400 hover:text-gray-600"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* M-Pesa Payment Modal */}
+      {showMpesaModal && (
+        <MpesaPaymentModal
+          invoiceId={id!}
+          balanceDue={invoice.balance_due}
+          currency={invoice.currency}
+          onClose={() => setShowMpesaModal(false)}
+          onSuccess={() => {
+            setShowMpesaModal(false);
+            setMpesaNotification({ type: 'success', message: 'M-Pesa payment initiated successfully. You will receive a prompt on your phone.' });
+            queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+            setTimeout(() => setMpesaNotification(null), 8000);
+          }}
+          onError={(msg) => {
+            setMpesaNotification({ type: 'error', message: msg });
+            setTimeout(() => setMpesaNotification(null), 8000);
+          }}
+        />
+      )}
+
       {/* Credit Note Modal */}
       {showCreditNote && (
         <CreditNoteModal invoiceId={id!} onClose={() => setShowCreditNote(false)} />
       )}
     </div>
+  );
+}
+
+function MpesaPaymentModal({
+  invoiceId,
+  balanceDue,
+  currency,
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  invoiceId: string;
+  balanceDue: number;
+  currency: string;
+  onClose: () => void;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [phone, setPhone] = useState('+254');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const cleaned = phone.replace(/\s/g, '');
+    if (!/^\+254\d{9}$/.test(cleaned)) {
+      onError('Please enter a valid Kenyan phone number (e.g. +254712345678)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await mpesaStkPush({ invoice_id: invoiceId, phone: cleaned });
+      onSuccess();
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to initiate M-Pesa payment. Please try again.';
+      onError(message);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title="Pay with M-Pesa" subtitle="Enter the phone number to receive the STK push" size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <p className="text-sm text-green-800">
+            Amount to pay: <span className="font-semibold">{formatCurrency(balanceDue, currency)}</span>
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="mpesa-phone" className="label">Phone Number *</label>
+          <div className="relative">
+            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              id="mpesa-phone"
+              type="tel"
+              className="input pl-10"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+254712345678"
+              required
+              disabled={isSubmitting}
+            />
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Safaricom number that will receive the payment prompt</p>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className="btn-secondary" disabled={isSubmitting}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || phone.length < 13}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Sending STK Push...
+              </>
+            ) : (
+              <>
+                <Phone className="w-4 h-4" />
+                Send Payment Request
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

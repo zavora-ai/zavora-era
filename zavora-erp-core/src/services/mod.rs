@@ -1,6 +1,7 @@
 pub mod journal;
 pub mod accounts;
 pub mod periods;
+pub mod period_close;
 pub mod invoicing;
 pub mod bills;
 pub mod payments;

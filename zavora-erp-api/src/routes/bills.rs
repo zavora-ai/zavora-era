@@ -3,6 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_APPROVE, ROLES_POST_JOURNAL};
 use super::err_response;
 use zavora_erp_core::ap::*;
 use zavora_erp_core::services::bills as svc;
@@ -40,10 +41,12 @@ pub async fn get_one(
 }
 
 pub async fn create(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateBillRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "create bill").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_bill(&state.engine, req, &actor).await {
         Ok(bill) => Ok(Json(serde_json::to_value(bill).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -51,12 +54,14 @@ pub async fn create(
 }
 
 pub async fn approve(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_APPROVE, &ctx, "approve bill").map_err(err_response)?;
     let req = ApproveBillRequest {
         bill_id: id,
-        approved_by: Uuid::new_v4(),
+        approved_by: ctx.user_id,
     };
     match svc::approve_bill(&state.engine, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "approved" }))),
@@ -65,9 +70,11 @@ pub async fn approve(
 }
 
 pub async fn post_bill(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_POST_JOURNAL, &ctx, "post bill").map_err(err_response)?;
     // Post bill to GL: DR Expense / CR AP / DR VAT Input / CR WHT Payable
     let bill = sqlx::query_as::<_, BillRow>(
         "SELECT * FROM bills WHERE id = $1 AND entity_id = $2",
@@ -136,7 +143,7 @@ pub async fn post_bill(
                 post_immediately: true,
             };
 
-            let actor = AgentOrUserId::Agent("api".to_string());
+            let actor = AgentOrUserId::User(ctx.user_id);
             let period = zavora_erp_core::services::periods::period_for_date(&state.engine, b.issue_date).await;
             match period {
                 Ok(p) => {

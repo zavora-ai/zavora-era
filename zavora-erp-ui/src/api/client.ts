@@ -85,8 +85,10 @@ export const approveBill = (id: string) => api.post(`/bills/${id}/approve`);
 export const postBill = (id: string) => api.post(`/bills/${id}/post`);
 
 // === Payments ===
-export const getPayments = () => api.get('/payments');
+export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
 export const recordPayment = (data: any) => api.post('/payments', data);
+export const applyPayment = (data: { payment_id: string; document_id: string; amount: number }) =>
+  api.post('/payments/apply', data);
 
 // === Payroll ===
 export const runPayroll = (data: any) => api.post('/payroll/run', data);
@@ -110,6 +112,7 @@ export const excludeTransaction = (id: string, data: any) => api.post(`/transact
 // === Bank ===
 export const getBankAccounts = () => api.get('/bank-accounts');
 export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
+export const deleteBankAccount = (id: string) => api.delete(`/bank-accounts/${id}`);
 export const importStatement = (data: any) => api.post('/bank/import', data);
 export const reconcileStatement = (id: string) => api.post(`/bank/reconcile/${id}`);
 export const confirmMatch = (data: any) => api.post('/bank/confirm-match', data);
@@ -133,6 +136,16 @@ export const runFxRevaluation = () => api.post('/fx/revaluation');
 // === Audit ===
 export const getAuditEvents = (params?: any) => api.get('/audit', { params });
 export const getAuditForObject = (type: string, id: string) => api.get(`/audit/${type}/${id}`);
+
+// === M-Pesa ===
+export const mpesaStkPush = (data: { invoice_id: string; phone: string }) =>
+  api.post('/payments/mpesa-stk-push', data);
+
+// === Receipts ===
+export const captureReceipt = (formData: FormData) =>
+  api.post('/receipts/capture', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export const confirmReceipt = (data: { capture_id: string; vendor_id: string; adjustments: any }) =>
+  api.post('/receipts/confirm', data);
 
 // === Accounts Seed ===
 export const seedAccounts = () => api.post('/accounts/seed');

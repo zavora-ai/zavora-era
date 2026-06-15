@@ -2,6 +2,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
+use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
 use super::err_response;
 use zavora_erp_core::settings::*;
 use zavora_erp_core::services::settings as svc;
@@ -17,10 +18,12 @@ pub async fn get(
 }
 
 pub async fn update(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<SettingsPatch>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_MANAGE, &ctx, "update settings").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::update_settings(&state.engine, req, &actor).await {
         Ok(config) => Ok(Json(serde_json::to_value(config).unwrap_or_default())),
         Err(e) => Err(err_response(e)),

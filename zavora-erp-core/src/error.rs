@@ -17,6 +17,13 @@ pub enum ErpError {
         date: chrono::NaiveDate,
     },
 
+    #[error("period '{period_name}' is {status}; posting is not allowed")]
+    PeriodClosedDetailed {
+        period_name: String,
+        status: String,
+        period_id: Uuid,
+    },
+
     #[error("account not found: {code}")]
     AccountNotFound { code: String },
 
@@ -45,6 +52,16 @@ pub enum ErpError {
 
     #[error("duplicate entry: {message}")]
     Duplicate { message: String },
+
+    // === Credit Limit ===
+    #[error("credit limit exceeded for customer {customer_name}: outstanding={outstanding}, new_invoice={invoice_total}, limit={credit_limit}")]
+    CreditLimitExceeded {
+        customer_name: String,
+        customer_id: Uuid,
+        outstanding: rust_decimal::Decimal,
+        invoice_total: rust_decimal::Decimal,
+        credit_limit: rust_decimal::Decimal,
+    },
 
     // === Inventory ===
     #[error("insufficient stock for item {sku}: available={available}, requested={requested}")]

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use zavora_erp_core::{ErpConfig, ErpEngine};
 
+pub mod middleware;
 mod routes;
 
 /// Application state shared across handlers.
@@ -101,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
         // Periods
         .route("/api/v1/periods", get(routes::periods::list).post(routes::periods::generate))
         .route("/api/v1/periods/{id}/close", post(routes::periods::close))
+        .route("/api/v1/periods/{id}/reopen", post(routes::periods::reopen))
         // Journal entries
         .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
@@ -136,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bills/{id}/post", post(routes::bills::post_bill))
         // Payments
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
+        .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
@@ -152,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payroll/run", post(routes::payroll::run))
         .route("/api/v1/payroll/{id}/approve", post(routes::payroll::approve))
         .route("/api/v1/payroll/{id}/post", post(routes::payroll::post_run))
+        .route("/api/v1/payroll/{id}/paid", post(routes::payroll::mark_paid))
         // Inventory
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))
@@ -168,6 +172,9 @@ async fn main() -> anyhow::Result<()> {
         // Reports
         .route("/api/v1/reports", post(routes::reports::generate))
         .route("/api/v1/reports/export", post(routes::reports::export))
+        // Receipts (OCR capture and confirm)
+        .route("/api/v1/receipts/capture", post(routes::receipts::capture))
+        .route("/api/v1/receipts/confirm", post(routes::receipts::confirm))
         // Agent API
         .route("/api/v1/agent/post", post(routes::agent::post_from_agent))
         .route("/api/v1/agent/report", post(routes::agent::run_report))

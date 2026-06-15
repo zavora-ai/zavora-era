@@ -1,11 +1,27 @@
 use chrono::Utc;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::inventory::*;
 use crate::types::AgentOrUserId;
+
+/// Result of issuing inventory, including cost information for COGS posting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueInventoryResult {
+    /// The stock movement ID created for this issue.
+    pub movement_id: Uuid,
+    /// The unit cost at which goods were issued (WAC).
+    pub unit_cost: Decimal,
+    /// The total cost of goods issued (unit_cost × quantity).
+    pub total_cost: Decimal,
+    /// The GL account code for Inventory (e.g. "1500").
+    pub gl_inventory: String,
+    /// The GL account code for COGS (e.g. "6000").
+    pub gl_cogs: String,
+}
 
 /// Receive inventory (purchase receipt).
 pub async fn receive_inventory(
@@ -55,11 +71,14 @@ pub async fn receive_inventory(
 }
 
 /// Issue inventory (sale/consumption).
+///
+/// Returns an `IssueInventoryResult` containing the movement ID and the cost
+/// of goods issued, which callers (e.g. invoice posting) use for COGS journal lines.
 pub async fn issue_inventory(
     engine: &ErpEngine,
     req: IssueInventoryRequest,
     issued_by: &AgentOrUserId,
-) -> ErpResult<Uuid> {
+) -> ErpResult<IssueInventoryResult> {
     // Check available stock
     let item = sqlx::query_as::<_, InventoryItemRow>(
         "SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2",
@@ -83,6 +102,7 @@ pub async fn issue_inventory(
 
     let movement_id = Uuid::new_v4();
     let today = req.date.unwrap_or_else(|| Utc::now().date_naive());
+    let total_cost = req.quantity * item.unit_cost;
 
     // Update on-hand
     sqlx::query(
@@ -110,12 +130,18 @@ pub async fn issue_inventory(
     .bind(today)
     .bind(req.quantity)
     .bind(item.unit_cost)
-    .bind(req.quantity * item.unit_cost)
+    .bind(total_cost)
     .bind(req.reference_id)
     .bind(serde_json::to_value(issued_by).unwrap_or_default())
     .bind(Utc::now())
     .execute(engine.pool())
     .await?;
 
-    Ok(movement_id)
+    Ok(IssueInventoryResult {
+        movement_id,
+        unit_cost: item.unit_cost,
+        total_cost,
+        gl_inventory: item.gl_inventory,
+        gl_cogs: item.gl_cogs,
+    })
 }

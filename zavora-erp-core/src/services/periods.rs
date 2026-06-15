@@ -1,10 +1,11 @@
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
+use crate::notifications::{NotificationEventType, SendNotificationRequest};
 use crate::period::*;
-use crate::types::AgentOrUserId;
+use crate::types::Channel;
 
 /// Generate fiscal periods for a year.
 pub async fn generate_periods(
@@ -83,26 +84,41 @@ pub async fn generate_periods(
 }
 
 /// Close a fiscal period (soft or hard).
+///
+/// Soft close: Open → SoftClosed. While SoftClosed, only manual journal entries allowed.
+/// Hard close: SoftClosed → HardClosed. If period is still Open, reject (must soft-close first).
 pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpResult<FiscalPeriod> {
     let period = get_period(engine, req.period_id).await?;
 
-    // Validate current state allows closing
-    match period.parsed_status() {
-        PeriodStatus::Open => {} // Can soft or hard close
-        PeriodStatus::SoftClosed => {
-            if req.close_type == PeriodCloseType::Soft {
-                return Err(ErpError::ValidationFailed {
-                    message: "Period is already soft-closed".to_string(),
-                });
-            }
-            // Can hard close from soft-closed
+    // Validate current state allows the requested close type
+    match (&period.parsed_status(), &req.close_type) {
+        // Soft close: only from Open
+        (PeriodStatus::Open, PeriodCloseType::Soft) => {}
+        // Hard close: only from SoftClosed
+        (PeriodStatus::SoftClosed, PeriodCloseType::Hard) => {}
+        // Hard close from Open is rejected — must soft-close first
+        (PeriodStatus::Open, PeriodCloseType::Hard) => {
+            return Err(ErpError::ValidationFailed {
+                message: format!(
+                    "Period '{}' is still Open; you must soft-close it before hard-closing",
+                    period.name
+                ),
+            });
         }
-        PeriodStatus::HardClosed => {
+        // Already soft-closed
+        (PeriodStatus::SoftClosed, PeriodCloseType::Soft) => {
+            return Err(ErpError::ValidationFailed {
+                message: "Period is already soft-closed".to_string(),
+            });
+        }
+        // Already hard-closed
+        (PeriodStatus::HardClosed, _) => {
             return Err(ErpError::ValidationFailed {
                 message: "Period is already hard-closed and cannot be modified".to_string(),
             });
         }
-        PeriodStatus::Future => {
+        // Cannot close a future period
+        (PeriodStatus::Future, _) => {
             return Err(ErpError::ValidationFailed {
                 message: "Cannot close a future period".to_string(),
             });
@@ -125,15 +141,59 @@ pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpRes
     .execute(engine.pool())
     .await?;
 
-    let mut updated = period;
+    let mut updated = period.clone();
     updated.status = new_status.to_string();
     updated.closed_at = Some(now);
     updated.closed_by = Some(serde_json::to_value(&req.closed_by).unwrap_or_default());
+
+    // On soft close, send PeriodCloseWarning notification to Accountant and Admin users
+    if req.close_type == PeriodCloseType::Soft {
+        let notification = SendNotificationRequest {
+            event_type: NotificationEventType::PeriodCloseWarning,
+            channels: vec![Channel::InApp, Channel::Email],
+            recipients: vec!["role:Accountant".to_string(), "role:Admin".to_string()],
+            subject: Some(format!("Period '{}' has been soft-closed", updated.name)),
+            body: format!(
+                "Fiscal period '{}' has been soft-closed. Only manual journal entries (prior-period adjustments) are allowed until the period is hard-closed or reopened.",
+                updated.name
+            ),
+            related_type: Some("fiscal_period".to_string()),
+            related_id: Some(updated.id),
+            schedule_at: None,
+        };
+        // Best-effort notification — don't fail the close operation on notification errors
+        let _ = super::notifications::send_notification(engine, notification).await;
+    }
+
+    // Record PeriodClosed audit event
+    let audit_event = serde_json::json!({
+        "event_type": "PeriodClosed",
+        "object_type": "fiscal_period",
+        "object_id": updated.id,
+        "actor": req.closed_by,
+        "close_type": new_status,
+        "period_name": updated.name,
+        "before_status": period.status,
+        "after_status": new_status,
+        "timestamp": now,
+    });
+    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
 
     Ok(updated)
 }
 
 /// Reopen a soft-closed period.
+///
+/// Only SoftClosed periods can be reopened (HardClosed periods are immutable).
+/// A reason must be provided for audit trail purposes.
 pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpResult<FiscalPeriod> {
     let period = get_period(engine, req.period_id).await?;
 
@@ -143,6 +203,14 @@ pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpR
         });
     }
 
+    if req.reason.trim().is_empty() {
+        return Err(ErpError::ValidationFailed {
+            message: "A reason is required to reopen a period".to_string(),
+        });
+    }
+
+    let now = Utc::now();
+
     sqlx::query(
         "UPDATE fiscal_periods SET status = 'open', closed_by = NULL, closed_at = NULL WHERE id = $1",
     )
@@ -150,10 +218,32 @@ pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpR
     .execute(engine.pool())
     .await?;
 
-    let mut updated = period;
+    let mut updated = period.clone();
     updated.status = "open".to_string();
     updated.closed_by = None;
     updated.closed_at = None;
+
+    // Record PeriodReopened audit event
+    let audit_event = serde_json::json!({
+        "event_type": "PeriodReopened",
+        "object_type": "fiscal_period",
+        "object_id": updated.id,
+        "actor": req.reopened_by,
+        "reason": req.reason,
+        "period_name": updated.name,
+        "before_status": "soft_closed",
+        "after_status": "open",
+        "timestamp": now,
+    });
+    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
 
     Ok(updated)
 }

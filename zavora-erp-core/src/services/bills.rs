@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::ap::*;
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
+use crate::period::PeriodStatus;
 use crate::types::AgentOrUserId;
 
 /// Create a new bill (AP document).
@@ -119,6 +120,13 @@ pub async fn create_bill(
 }
 
 /// Approve a bill.
+///
+/// Validates that:
+/// 1. The bill is in PendingApproval status
+/// 2. The target fiscal period (for the bill's issue_date) is Open
+///
+/// If the period is SoftClosed or HardClosed, the approval is rejected with
+/// an error identifying the closed period (Requirements 10.3, 10.5, 10.6).
 pub async fn approve_bill(engine: &ErpEngine, req: ApproveBillRequest) -> ErpResult<()> {
     let bill = sqlx::query_as::<_, BillRow>("SELECT * FROM bills WHERE id = $1 AND entity_id = $2")
         .bind(req.bill_id)
@@ -134,6 +142,23 @@ pub async fn approve_bill(engine: &ErpEngine, req: ApproveBillRequest) -> ErpRes
         return Err(ErpError::ValidationFailed {
             message: format!("Bill {} is not pending approval (status: {})", bill.number, bill.status),
         });
+    }
+
+    // Validate target fiscal period is Open (Requirements 10.5, 10.6)
+    let period = crate::services::periods::period_for_date(engine, bill.issue_date).await?;
+    let period_status = period.parsed_status();
+
+    match period_status {
+        PeriodStatus::SoftClosed | PeriodStatus::HardClosed => {
+            return Err(ErpError::PeriodClosedDetailed {
+                period_name: period.name.clone(),
+                status: format!("{:?}", period_status),
+                period_id: period.id,
+            });
+        }
+        PeriodStatus::Open | PeriodStatus::Future => {
+            // OK — posting is allowed
+        }
     }
 
     sqlx::query(
