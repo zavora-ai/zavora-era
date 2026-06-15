@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::ledger::CoaTemplate;
+use crate::posting::PostingSetup;
 use crate::types::{CurrencyCode, VatTreatment};
 
 /// Complete engine configuration for an entity.
@@ -16,6 +17,8 @@ pub struct ErpConfig {
     pub sequences: DocumentSequences,
     pub tax_config: TaxConfig,
     pub payment_config: PaymentConfig,
+    /// GL account determination (control/clearing/default accounts).
+    pub posting: PostingSetup,
 }
 
 /// Month and day (e.g. December 31 = { month: 12, day: 31 })
@@ -171,6 +174,7 @@ pub struct SettingsRow {
     pub sequences: serde_json::Value,
     pub tax_config: serde_json::Value,
     pub payment_config: serde_json::Value,
+    pub posting_setup: serde_json::Value,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub updated_by: Option<uuid::Uuid>,
 }

@@ -8,20 +8,29 @@ use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest
 use crate::payments::*;
 use crate::types::AgentOrUserId;
 
-/// Well-known account codes used for payment journal entries.
-mod account_codes {
-    /// Accounts Receivable
-    pub const AR: &str = "1200";
-    /// Accounts Payable
-    pub const AP: &str = "3010";
-    /// Unapplied Payments (liability)
-    pub const UNAPPLIED_PAYMENTS: &str = "3050";
-    /// WHT Payable - Vendors (liability cleared on bill payment)
-    pub const WHT_PAYABLE: &str = "3210";
-    /// Realised FX Gain (credit when payment rate > invoice rate)
-    pub const REALISED_FX_GAIN: &str = "8120";
-    /// Realised FX Loss (debit when payment rate < invoice rate)
-    pub const REALISED_FX_LOSS: &str = "8130";
+/// GL account codes used for payment journal entries, resolved from the entity's
+/// posting setup (`crate::posting::PostingSetup`) rather than hardcoded literals.
+struct PaymentAccounts {
+    ar: String,
+    ap: String,
+    unapplied_payments: String,
+    wht_payable: String,
+    realised_fx_gain: String,
+    realised_fx_loss: String,
+}
+
+impl PaymentAccounts {
+    fn resolve(engine: &ErpEngine) -> Self {
+        let p = &engine.config().posting;
+        Self {
+            ar: p.accounts_receivable.clone(),
+            ap: p.accounts_payable.clone(),
+            unapplied_payments: p.unapplied_payments.clone(),
+            wht_payable: p.wht_payable.clone(),
+            realised_fx_gain: p.realised_fx_gain.clone(),
+            realised_fx_loss: p.realised_fx_loss.clone(),
+        }
+    }
 }
 
 /// Helper row for fetching bill balance + status for payment validation.
@@ -365,10 +374,10 @@ async fn resolve_bank_account_code(
     engine: &ErpEngine,
     bank_account_id: Option<Uuid>,
 ) -> ErpResult<String> {
-    const DEFAULT_BANK_ACCOUNT: &str = "1020";
+    let default_bank = engine.config().posting.default_bank.clone();
 
     let Some(ba_id) = bank_account_id else {
-        return Ok(DEFAULT_BANK_ACCOUNT.to_string());
+        return Ok(default_bank);
     };
 
     let code = sqlx::query_scalar::<_, String>(
@@ -376,10 +385,10 @@ async fn resolve_bank_account_code(
     )
     .bind(ba_id)
     .bind(engine.entity_id())
-    .bind(DEFAULT_BANK_ACCOUNT)
+    .bind(&default_bank)
     .fetch_optional(engine.pool())
     .await?
-    .unwrap_or_else(|| DEFAULT_BANK_ACCOUNT.to_string());
+    .unwrap_or(default_bank);
 
     Ok(code)
 }
@@ -415,6 +424,7 @@ async fn post_payment_journal_entry(
     wht_amount: Decimal,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
+    let acct = PaymentAccounts::resolve(engine);
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     match payment_type {
@@ -433,7 +443,7 @@ async fn post_payment_journal_entry(
             // CR AR (applied portion)
             if applied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: account_codes::AR.to_string(),
+                    account_code: acct.ar.clone(),
                     debit: None,
                     credit: Some(applied_amount),
                     currency: currency.to_string(),
@@ -446,7 +456,7 @@ async fn post_payment_journal_entry(
             // CR Unapplied Payments (excess portion)
             if unapplied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+                    account_code: acct.unapplied_payments.clone(),
                     debit: None,
                     credit: Some(unapplied_amount),
                     currency: currency.to_string(),
@@ -460,7 +470,7 @@ async fn post_payment_journal_entry(
             // DR AP (applied portion — the full balance being cleared, which is net of WHT)
             if applied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: account_codes::AP.to_string(),
+                    account_code: acct.ap.clone(),
                     debit: Some(applied_amount),
                     credit: None,
                     currency: currency.to_string(),
@@ -485,7 +495,7 @@ async fn post_payment_journal_entry(
             // DR WHT Payable (clearing liability) / CR Bank (WHT remitted to KRA)
             if wht_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: account_codes::WHT_PAYABLE.to_string(),
+                    account_code: acct.wht_payable.clone(),
                     debit: Some(wht_amount),
                     credit: None,
                     currency: currency.to_string(),
@@ -507,7 +517,7 @@ async fn post_payment_journal_entry(
             // CR Unapplied Payments (excess portion)
             if unapplied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+                    account_code: acct.unapplied_payments.clone(),
                     debit: None,
                     credit: Some(unapplied_amount),
                     currency: currency.to_string(),
@@ -855,10 +865,11 @@ pub async fn apply_unapplied_payment(
         }
     }
 
-    // 6. Create JE: DR Unapplied Payments (3050) / CR AR (1200) or AP (3010) (Requirement 24.3)
+    // 6. Create JE: DR Unapplied Payments / CR AR or AP (Requirement 24.3)
+    let acct = PaymentAccounts::resolve(engine);
     let receivable_payable_code = match payment_type {
-        PaymentType::CustomerPayment => account_codes::AR,
-        PaymentType::VendorPayment => account_codes::AP,
+        PaymentType::CustomerPayment => acct.ar.clone(),
+        PaymentType::VendorPayment => acct.ap.clone(),
     };
 
     let currency = row.currency.clone();
@@ -867,7 +878,7 @@ pub async fn apply_unapplied_payment(
 
     let je_lines = vec![
         CreateJournalLineRequest {
-            account_code: account_codes::UNAPPLIED_PAYMENTS.to_string(),
+            account_code: acct.unapplied_payments.clone(),
             debit: Some(effective_apply),
             credit: None,
             currency: currency.clone(),
@@ -1046,9 +1057,10 @@ async fn post_fx_gain_loss_entry(
     let fx_difference = functional_at_payment_rate - functional_at_invoice_rate;
 
     // Determine the AR/AP account for the offsetting entry
+    let acct = PaymentAccounts::resolve(engine);
     let ar_ap_code = match payment_type {
-        PaymentType::CustomerPayment => account_codes::AR,
-        PaymentType::VendorPayment => account_codes::AP,
+        PaymentType::CustomerPayment => acct.ar.clone(),
+        PaymentType::VendorPayment => acct.ap.clone(),
     };
 
     let abs_difference = fx_difference.abs();
@@ -1071,7 +1083,7 @@ async fn post_fx_gain_loss_entry(
             dimensions: None,
         });
         lines.push(CreateJournalLineRequest {
-            account_code: account_codes::REALISED_FX_GAIN.to_string(),
+            account_code: acct.realised_fx_gain.clone(),
             debit: None,
             credit: Some(abs_difference),
             currency: base_currency.clone(),
@@ -1085,7 +1097,7 @@ async fn post_fx_gain_loss_entry(
     } else {
         // FX Loss: DR 8130 Realised FX Loss, CR AR/AP
         lines.push(CreateJournalLineRequest {
-            account_code: account_codes::REALISED_FX_LOSS.to_string(),
+            account_code: acct.realised_fx_loss.clone(),
             debit: Some(abs_difference),
             credit: None,
             currency: base_currency.clone(),

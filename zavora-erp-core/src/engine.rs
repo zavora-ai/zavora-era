@@ -47,6 +47,11 @@ impl ErpEngine {
         &self.config
     }
 
+    /// Get the posting setup (GL account determination) for this entity.
+    pub fn posting(&self) -> &crate::posting::PostingSetup {
+        &self.config.posting
+    }
+
     /// Get the entity ID for this engine instance.
     pub fn entity_id(&self) -> Uuid {
         self.config.entity_id

@@ -274,6 +274,10 @@ async fn load_or_create_config(
     let fiscal_year_end: MonthDay = serde_json::from_str(&row.fiscal_year_end)
         .unwrap_or(MonthDay { month: 12, day: 31 });
 
+    // Posting setup: empty object falls back to code defaults.
+    let posting: zavora_erp_core::PostingSetup =
+        serde_json::from_value(row.posting_setup).unwrap_or_default();
+
     Ok(ErpConfig {
         entity_id,
         base_currency: row.base_currency,
@@ -283,5 +287,6 @@ async fn load_or_create_config(
         sequences,
         tax_config,
         payment_config,
+        posting,
     })
 }

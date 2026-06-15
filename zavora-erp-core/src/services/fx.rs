@@ -153,7 +153,7 @@ pub async fn run_fx_revaluation(
             });
             // CR Unrealised FX Gain
             journal_lines.push(CreateJournalLineRequest {
-                account_code: "8100".to_string(),
+                account_code: engine.config().posting.unrealised_fx_gain.clone(),
                 debit: None,
                 credit: Some(gain_loss),
                 currency: base_ccy.clone(),
@@ -165,7 +165,7 @@ pub async fn run_fx_revaluation(
             let loss_amount = gain_loss.abs();
             // DR Unrealised FX Loss
             journal_lines.push(CreateJournalLineRequest {
-                account_code: "8110".to_string(),
+                account_code: engine.config().posting.unrealised_fx_loss.clone(),
                 debit: Some(loss_amount),
                 credit: None,
                 currency: base_ccy.clone(),
