@@ -86,8 +86,12 @@ export const register = (data: { email: string; display_name: string; password: 
   api.post('/auth/register', data);
 export const logout = () => api.post('/auth/logout', {});
 export const getUsers = () => api.get('/users');
-export const createUser = (data: { email: string; display_name: string; role: string }) =>
-  api.post('/users', data);
+export const createUser = (data: {
+  email: string;
+  display_name: string;
+  role: string;
+  password?: string;
+}) => api.post('/users', data);
 
 // === Dashboard ===
 export const getDashboard = () => api.get('/dashboard');

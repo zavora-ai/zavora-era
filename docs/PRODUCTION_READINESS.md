@@ -24,6 +24,11 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 - ✅ Token storage: access token kept in memory only; refresh token moved to an
   httpOnly, SameSite=Strict cookie (no tokens in localStorage); `/auth/logout`
   revokes + clears; `ErpError::Unauthorized` now maps to HTTP 401
+- ✅ Role checks on the `parties` update handlers (customer/vendor/employee)
+- ✅ User management UI (Settings → Users & Roles): list users, invite with role +
+  optional initial password; invite-with-password creates an active account that
+  can sign in immediately, invite-without-password creates an `invited` stub
+- ✅ Sidebar shows the signed-in user's real name/role (from the session)
 
 ---
 
@@ -91,8 +96,14 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
   no delete for draft invoices/bills; customers/vendors/products only toggle
   `is_active`.
 - ⬜ **P1 — Pagination** on list endpoints (and the spec's paginated GL detail).
-- 🟡 **P1 — User management UI.** Backend `/users` exists; no screen to invite
-  users or assign roles.
+- ✅ **User management UI** — Settings → Users & Roles (list + invite with role +
+  optional initial password). Remaining: an **accept-invite / set-password** flow
+  (invited users with no password still cannot self-activate; today an admin sets
+  an initial password), plus edit/deactivate-user actions.
+- ⬜ **P2 — Tenant management is not implemented.** The process serves a single
+  entity fixed at startup (`ENTITY_ID`); there is no create/switch-tenant API or
+  UI. Multi-tenant onboarding is a backend architecture change (tied to the
+  per-request tenant-scoping item in §2).
 - 🟡 **P1 — Settings save.** Only the Posting Accounts tab persists. The Company /
   Tax / Payments / Document Numbers tabs render values but their Save button is
   not wired; and non-posting settings need full live reload (`reload_config` only

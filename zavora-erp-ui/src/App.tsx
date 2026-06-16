@@ -23,6 +23,7 @@ import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
@@ -93,6 +94,7 @@ export default function App() {
             <Route path="journal-entries" element={<JournalEntriesPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="users" element={<UsersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />

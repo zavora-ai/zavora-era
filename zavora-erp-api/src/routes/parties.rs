@@ -58,10 +58,12 @@ pub async fn create_customer(
 }
 
 pub async fn update_customer(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update customer") { return Err(err_response(e)); }
     // Update all provided fields
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE customers SET name = $1 WHERE id = $2 AND entity_id = $3")
@@ -137,7 +139,7 @@ pub async fn update_customer(
             .bind(is_active).bind(id).bind(state.engine.entity_id())
             .execute(state.engine.pool()).await.ok();
     }
-    Json(serde_json::json!({ "id": id, "updated": true }))
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 pub async fn customer_statement(
@@ -206,10 +208,12 @@ pub async fn create_vendor(
 }
 
 pub async fn update_vendor(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update vendor") { return Err(err_response(e)); }
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE vendors SET name = $1 WHERE id = $2 AND entity_id = $3")
             .bind(name).bind(id).bind(state.engine.entity_id())
@@ -289,7 +293,7 @@ pub async fn update_vendor(
             .bind(is_active).bind(id).bind(state.engine.entity_id())
             .execute(state.engine.pool()).await.ok();
     }
-    Json(serde_json::json!({ "id": id, "updated": true }))
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 // === Employees ===
@@ -339,10 +343,12 @@ pub async fn create_employee(
 }
 
 pub async fn update_employee(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update employee") { return Err(err_response(e)); }
     if let Some(full_name) = patch.get("full_name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE employees SET full_name = $1 WHERE id = $2 AND entity_id = $3")
             .bind(full_name).bind(id).bind(state.engine.entity_id())
@@ -422,5 +428,5 @@ pub async fn update_employee(
             .bind(is_active).bind(id).bind(state.engine.entity_id())
             .execute(state.engine.pool()).await.ok();
     }
-    Json(serde_json::json!({ "id": id, "updated": true }))
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }

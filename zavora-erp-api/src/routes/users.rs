@@ -354,17 +354,32 @@ pub async fn create(
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| "Viewer".to_string());
 
+    // Optional initial password → active account; otherwise an invited stub.
+    let (password_hash, status) = match req.password.as_deref() {
+        Some(pw) => {
+            if pw.len() < 8 {
+                return Err(er(ErpError::ValidationFailed {
+                    message: "Password must be at least 8 characters".to_string(),
+                }));
+            }
+            (Some(auth::hash_password(pw).map_err(er)?), "active")
+        }
+        None => (None, "invited"),
+    };
+
     let id = Uuid::new_v4();
     let result = sqlx::query(
-        "INSERT INTO era_users (id, entity_id, email, display_name, role, invited_by, invited_at, status) \
-         VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'invited')",
+        "INSERT INTO era_users (id, entity_id, email, display_name, role, password_hash, invited_by, invited_at, status) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)",
     )
     .bind(id)
     .bind(ctx.entity_id)
     .bind(&req.email)
     .bind(&req.display_name)
     .bind(&role_str)
+    .bind(&password_hash)
     .bind(ctx.user_id)
+    .bind(status)
     .execute(state.engine.pool())
     .await;
 
@@ -374,6 +389,7 @@ pub async fn create(
             "email": req.email,
             "display_name": req.display_name,
             "role": role_str,
+            "status": status,
         }))),
         Err(e) => Err(er(ErpError::Database(e))),
     }
