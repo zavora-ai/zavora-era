@@ -930,7 +930,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
         post_immediately: true,
     };
 
-    let je = crate::services::journal::create_and_post(engine, je_request, period, req.posted_by.clone()).await?;
+    let je = crate::services::journal::create_and_post(engine, engine.entity_id(), je_request, period, req.posted_by.clone()).await?;
 
     // Link the transaction to the new journal entry and mark as posted
     sqlx::query(

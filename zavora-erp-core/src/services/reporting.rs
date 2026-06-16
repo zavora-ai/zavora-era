@@ -9,34 +9,35 @@ use crate::reporting::*;
 /// Generate a report based on the request type.
 pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResult<ReportData> {
     let now = Utc::now();
+    let entity_id = req.entity_id;
 
     let content = match req.report_type {
         ReportType::TrialBalance => {
-            let report = trial_balance(engine, req.parameters).await?;
+            let report = trial_balance(engine, entity_id, req.parameters).await?;
             ReportContent::TrialBalance(report)
         }
         ReportType::BalanceSheet => {
-            let report = balance_sheet(engine, req.parameters).await?;
+            let report = balance_sheet(engine, entity_id, req.parameters).await?;
             ReportContent::BalanceSheet(report)
         }
         ReportType::ProfitAndLoss => {
-            let report = profit_and_loss(engine, req.parameters).await?;
+            let report = profit_and_loss(engine, entity_id, req.parameters).await?;
             ReportContent::ProfitAndLoss(report)
         }
         ReportType::CashFlow => {
-            let report = cash_flow(engine, req.parameters).await?;
+            let report = cash_flow(engine, entity_id, req.parameters).await?;
             ReportContent::CashFlow(report)
         }
         ReportType::ArAgeing => {
-            let report = ar_ageing(engine, req.parameters).await?;
+            let report = ar_ageing(engine, entity_id, req.parameters).await?;
             ReportContent::ArAgeing(report)
         }
         ReportType::ApAgeing => {
-            let report = ap_ageing(engine, req.parameters).await?;
+            let report = ap_ageing(engine, entity_id, req.parameters).await?;
             ReportContent::ApAgeing(report)
         }
         ReportType::GlDetail => {
-            let report = gl_detail(engine, req.parameters).await?;
+            let report = gl_detail(engine, entity_id, req.parameters).await?;
             ReportContent::GlDetail(report)
         }
         _ => {
@@ -167,7 +168,7 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
 }
 
 /// Trial balance report.
-async fn trial_balance(engine: &ErpEngine, params: ReportParameters) -> ErpResult<TrialBalanceReport> {
+async fn trial_balance(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<TrialBalanceReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
     let lines = sqlx::query_as::<_, TrialBalanceQueryRow>(
@@ -184,7 +185,7 @@ async fn trial_balance(engine: &ErpEngine, params: ReportParameters) -> ErpResul
            HAVING COALESCE(SUM(jl.functional_debit), 0) != 0 OR COALESCE(SUM(jl.functional_credit), 0) != 0
            ORDER BY a.code"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(as_at)
     .fetch_all(engine.pool())
     .await?;
@@ -226,7 +227,7 @@ struct TrialBalanceQueryRow {
 }
 
 /// Balance sheet report.
-async fn balance_sheet(engine: &ErpEngine, params: ReportParameters) -> ErpResult<BalanceSheetReport> {
+async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<BalanceSheetReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
     // Query balances grouped by account type
@@ -243,7 +244,7 @@ async fn balance_sheet(engine: &ErpEngine, params: ReportParameters) -> ErpResul
            HAVING COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) != 0
            ORDER BY a.code"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(as_at)
     .fetch_all(engine.pool())
     .await?;
@@ -291,7 +292,7 @@ struct BalanceSheetQueryRow {
 }
 
 /// Profit & Loss report.
-async fn profit_and_loss(engine: &ErpEngine, params: ReportParameters) -> ErpResult<ProfitAndLossReport> {
+async fn profit_and_loss(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<ProfitAndLossReport> {
     let today = Utc::now().date_naive();
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
     let period_to = params.period_to.unwrap_or(today);
@@ -310,7 +311,7 @@ async fn profit_and_loss(engine: &ErpEngine, params: ReportParameters) -> ErpRes
            HAVING COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) != 0
            ORDER BY a.code"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_all(engine.pool())
@@ -381,7 +382,7 @@ struct PnlQueryRow {
 /// Operating: Net income + depreciation + changes in working capital (AR, AP, inventory)
 /// Investing: Asset purchases/disposals
 /// Financing: Loan movements, equity changes
-async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<CashFlowReport> {
+async fn cash_flow(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<CashFlowReport> {
     let today = Utc::now().date_naive();
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
     let period_to = params.period_to.unwrap_or(today);
@@ -400,7 +401,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND je.date >= $2 AND je.date <= $3
              AND a.account_type IN ('revenue', 'contra_revenue', 'expense', 'contra_expense')"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_one(engine.pool())
@@ -417,7 +418,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND je.date >= $2 AND je.date <= $3
              AND a.account_type IN ('revenue', 'contra_revenue')"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_one(engine.pool())
@@ -433,7 +434,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND je.date >= $2 AND je.date <= $3
              AND a.account_type IN ('expense', 'contra_expense')"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_one(engine.pool())
@@ -451,7 +452,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND je.date >= $2 AND je.date <= $3
              AND je.source = '"Depreciation"'"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_one(engine.pool())
@@ -460,13 +461,13 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
 
     // --- Changes in working capital ---
     // Change in AR (increase = cash outflow, decrease = cash inflow)
-    let ar_change = working_capital_change(engine, "1200", "1299", period_from, period_to).await?;
+    let ar_change = working_capital_change(engine, entity_id, "1200", "1299", period_from, period_to).await?;
 
     // Change in AP (increase = cash inflow, decrease = cash outflow)
-    let ap_change = working_capital_change(engine, "3000", "3099", period_from, period_to).await?;
+    let ap_change = working_capital_change(engine, entity_id, "3000", "3099", period_from, period_to).await?;
 
     // Change in Inventory (increase = cash outflow)
-    let inventory_change = working_capital_change(engine, "1300", "1399", period_from, period_to).await?;
+    let inventory_change = working_capital_change(engine, entity_id, "1300", "1399", period_from, period_to).await?;
 
     let mut operating_lines = Vec::new();
     operating_lines.push(CashFlowLine { description: "Net income".to_string(), amount: computed_net_income });
@@ -498,7 +499,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND a.code >= '2500' AND a.code < '2700'
              AND a.account_type = 'asset'"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .fetch_one(engine.pool())
@@ -512,8 +513,8 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
     let investing_total: Decimal = investing_lines.iter().map(|l| l.amount).sum();
 
     // --- Financing activities: Long-term liabilities and equity ---
-    let loan_movements = working_capital_change(engine, "3200", "3999", period_from, period_to).await?;
-    let equity_movements = working_capital_change(engine, "4000", "4999", period_from, period_to).await?;
+    let loan_movements = working_capital_change(engine, entity_id, "3200", "3999", period_from, period_to).await?;
+    let equity_movements = working_capital_change(engine, entity_id, "4000", "4999", period_from, period_to).await?;
 
     let mut financing_lines = Vec::new();
     if loan_movements != Decimal::ZERO {
@@ -534,7 +535,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
              AND je.date < $2
              AND a.code >= '1000' AND a.code < '1100'"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .fetch_one(engine.pool())
     .await
@@ -559,6 +560,7 @@ async fn cash_flow(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ca
 /// Returns positive for net debit increase, negative for net credit increase.
 async fn working_capital_change(
     engine: &ErpEngine,
+    entity_id: Uuid,
     code_from: &str,
     code_to: &str,
     period_from: NaiveDate,
@@ -572,7 +574,7 @@ async fn working_capital_change(
              AND je.date >= $2 AND je.date <= $3
              AND jl.account_code >= $4 AND jl.account_code <= $5"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(period_from)
     .bind(period_to)
     .bind(code_from)
@@ -739,7 +741,7 @@ fn csv_escape(s: &str) -> String {
 }
 
 /// AR ageing report.
-async fn ar_ageing(engine: &ErpEngine, params: ReportParameters) -> ErpResult<AgeingReport> {
+async fn ar_ageing(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<AgeingReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
     let rows = sqlx::query_as::<_, AgeingQueryRow>(
@@ -752,7 +754,7 @@ async fn ar_ageing(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ag
            JOIN customers c ON c.id = i.customer_id
            WHERE i.entity_id = $1 AND i.status NOT IN ('paid', 'voided') AND i.balance_due > 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -799,7 +801,7 @@ async fn ar_ageing(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ag
 }
 
 /// AP ageing report.
-async fn ap_ageing(engine: &ErpEngine, params: ReportParameters) -> ErpResult<AgeingReport> {
+async fn ap_ageing(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<AgeingReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
     let rows = sqlx::query_as::<_, AgeingQueryRow>(
@@ -812,7 +814,7 @@ async fn ap_ageing(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Ag
            JOIN vendors v ON v.id = b.vendor_id
            WHERE b.entity_id = $1 AND b.status NOT IN ('paid', 'cancelled') AND b.balance_due > 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -867,7 +869,7 @@ struct AgeingQueryRow {
 }
 
 /// GL detail report.
-async fn gl_detail(engine: &ErpEngine, params: ReportParameters) -> ErpResult<GlDetailReport> {
+async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<GlDetailReport> {
     let account_code = params.account_code.unwrap_or_default();
     let today = Utc::now().date_naive();
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
@@ -876,7 +878,7 @@ async fn gl_detail(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Gl
     let account_name = sqlx::query_scalar::<_, String>(
         "SELECT name FROM accounts WHERE entity_id = $1 AND code = $2",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&account_code)
     .fetch_optional(engine.pool())
     .await?
@@ -894,7 +896,7 @@ async fn gl_detail(engine: &ErpEngine, params: ReportParameters) -> ErpResult<Gl
            AND je.date >= $3 AND je.date <= $4
            ORDER BY je.date, je.number"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&account_code)
     .bind(period_from)
     .bind(period_to)
@@ -938,3 +940,4 @@ struct GlDetailQueryRow {
     debit: Decimal,
     credit: Decimal,
 }
+

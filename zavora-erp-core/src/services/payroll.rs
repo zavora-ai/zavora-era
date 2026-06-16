@@ -13,7 +13,7 @@ use crate::types::AgentOrUserId;
 ///
 /// Validates that active employees exist for the period before computation.
 /// Rejects the run if no active employees are found (R12.7).
-pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResult<PayRun> {
+pub async fn run_payroll(engine: &ErpEngine, entity_id: Uuid, req: RunPayrollRequest) -> ErpResult<PayRun> {
     let id = Uuid::new_v4();
 
     // Get active employees
@@ -21,7 +21,7 @@ pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResul
         sqlx::query_as::<_, EmployeeRow>(
             "SELECT * FROM employees WHERE entity_id = $1 AND id = ANY($2) AND is_active = true",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(ids)
         .fetch_all(engine.pool())
         .await?
@@ -29,7 +29,7 @@ pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResul
         sqlx::query_as::<_, EmployeeRow>(
             "SELECT * FROM employees WHERE entity_id = $1 AND is_active = true",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_all(engine.pool())
         .await?
     };
@@ -71,7 +71,7 @@ pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResul
 
     let mut pay_run = PayRun {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         period_id: req.period_id,
         pay_date: req.pay_date,
         payslips,
@@ -99,7 +99,7 @@ pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResul
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(req.period_id)
     .bind(req.pay_date)
     .bind(pay_run.total_gross)
@@ -122,12 +122,12 @@ pub async fn run_payroll(engine: &ErpEngine, req: RunPayrollRequest) -> ErpResul
 ///
 /// State transition: Draft → Approved.
 /// Rejects if pay run is not in Draft status.
-pub async fn approve_pay_run(engine: &ErpEngine, req: ApprovePayRunRequest) -> ErpResult<()> {
+pub async fn approve_pay_run(engine: &ErpEngine, entity_id: Uuid, req: ApprovePayRunRequest) -> ErpResult<()> {
     let pay_run = sqlx::query_as::<_, PayRunRow>(
         "SELECT * FROM pay_runs WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.pay_run_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -151,7 +151,7 @@ pub async fn approve_pay_run(engine: &ErpEngine, req: ApprovePayRunRequest) -> E
     .bind(serde_json::to_value(&req.approved_by).unwrap_or_default())
     .bind(Utc::now())
     .bind(req.pay_run_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
     Ok(())
@@ -176,6 +176,7 @@ pub async fn approve_pay_run(engine: &ErpEngine, req: ApprovePayRunRequest) -> E
 /// CR 3400 Net Pay Payable (total_net)
 pub async fn post_pay_run(
     engine: &ErpEngine,
+    entity_id: Uuid,
     pay_run_id: Uuid,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -183,7 +184,7 @@ pub async fn post_pay_run(
         "SELECT * FROM pay_runs WHERE id = $1 AND entity_id = $2",
     )
     .bind(pay_run_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -199,7 +200,7 @@ pub async fn post_pay_run(
     }
 
     // Validate fiscal period for pay_date is Open before posting (R13.5)
-    let period = crate::services::periods::period_for_date(engine, pay_run.pay_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, pay_run.pay_date).await?;
     if period.parsed_status() != PeriodStatus::Open {
         return Err(ErpError::PeriodClosedDetailed {
             period_name: period.name.clone(),
@@ -319,7 +320,7 @@ pub async fn post_pay_run(
     };
 
     // create_and_post also enforces period status internally (defence-in-depth)
-    let entry = crate::services::journal::create_and_post(engine, entry_req, period.id, posted_by.clone()).await?;
+    let entry = crate::services::journal::create_and_post(engine, entity_id, entry_req, period.id, posted_by.clone()).await?;
 
     // Transition: Approved → Posted (R13.3)
     sqlx::query("UPDATE pay_runs SET status = 'posted', journal_entry_id = $1 WHERE id = $2")
@@ -337,6 +338,7 @@ pub async fn post_pay_run(
 /// Rejects if pay run is not in Posted status.
 pub async fn mark_pay_run_paid(
     engine: &ErpEngine,
+    entity_id: Uuid,
     pay_run_id: Uuid,
     paid_by: &AgentOrUserId,
 ) -> ErpResult<()> {
@@ -344,7 +346,7 @@ pub async fn mark_pay_run_paid(
         "SELECT * FROM pay_runs WHERE id = $1 AND entity_id = $2",
     )
     .bind(pay_run_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -364,7 +366,7 @@ pub async fn mark_pay_run_paid(
 
     sqlx::query("UPDATE pay_runs SET status = 'paid' WHERE id = $1 AND entity_id = $2")
         .bind(pay_run_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .execute(engine.pool())
         .await?;
 
@@ -376,7 +378,7 @@ pub async fn mark_pay_run_paid(
         "actor": paid_by,
         "timestamp": Utc::now(),
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)

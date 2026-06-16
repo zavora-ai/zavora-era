@@ -9,7 +9,7 @@ use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest
 use crate::types::AgentOrUserId;
 
 /// Upsert an exchange rate.
-pub async fn upsert_rate(engine: &ErpEngine, req: UpsertRateRequest) -> ErpResult<ExchangeRate> {
+pub async fn upsert_rate(engine: &ErpEngine, entity_id: Uuid, req: UpsertRateRequest) -> ErpResult<ExchangeRate> {
     let id = Uuid::new_v4();
 
     sqlx::query(
@@ -19,7 +19,7 @@ pub async fn upsert_rate(engine: &ErpEngine, req: UpsertRateRequest) -> ErpResul
            DO UPDATE SET rate = $7, source = $8"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.from_ccy)
     .bind(&req.to_ccy)
     .bind(req.rate_date)
@@ -31,7 +31,7 @@ pub async fn upsert_rate(engine: &ErpEngine, req: UpsertRateRequest) -> ErpResul
 
     Ok(ExchangeRate {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         from_ccy: req.from_ccy,
         to_ccy: req.to_ccy,
         rate_date: req.rate_date,
@@ -52,6 +52,7 @@ pub async fn upsert_rate(engine: &ErpEngine, req: UpsertRateRequest) -> ErpResul
 /// Returns the ID of the main journal entry.
 pub async fn run_fx_revaluation(
     engine: &ErpEngine,
+    entity_id: Uuid,
     period_id: Uuid,
     rate_date: NaiveDate,
     triggered_by: AgentOrUserId,
@@ -59,7 +60,7 @@ pub async fn run_fx_revaluation(
     let base_ccy = engine.config().base_currency.clone();
 
     // Get the period to determine date range
-    let period = crate::services::periods::get_period(engine, period_id).await?;
+    let period = crate::services::periods::get_period(engine, entity_id, period_id).await?;
 
     // Find all accounts with foreign currency balances as of the rate_date.
     // We look at journal lines where currency != base currency and sum their transaction amounts.
@@ -80,7 +81,7 @@ pub async fn run_fx_revaluation(
            GROUP BY jl.account_code, a.name, jl.currency
            HAVING COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0) != 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(rate_date)
     .bind(&base_ccy)
     .fetch_all(engine.pool())
@@ -100,7 +101,7 @@ pub async fn run_fx_revaluation(
 
     for bal in &fcy_balances {
         // Get the new rate for this currency pair on rate_date
-        let new_rate = get_rate(engine, &bal.currency, &base_ccy, rate_date).await?;
+        let new_rate = get_rate(engine, entity_id, &bal.currency, &base_ccy, rate_date).await?;
 
         // New value in local currency
         let new_value_lcy = bal.balance_fcy * new_rate;
@@ -204,6 +205,7 @@ pub async fn run_fx_revaluation(
 
     let entry = crate::services::journal::create_and_post(
         engine,
+        entity_id,
         entry_req,
         period_id,
         triggered_by.clone(),
@@ -235,10 +237,11 @@ pub async fn run_fx_revaluation(
     };
 
     // Get or create the next period for the reversal
-    let next_period = crate::services::periods::period_for_date(engine, reversal_date).await?;
+    let next_period = crate::services::periods::period_for_date(engine, entity_id, reversal_date).await?;
 
     let _reversal_entry = crate::services::journal::create_and_post(
         engine,
+        entity_id,
         reversal_req,
         next_period.id,
         triggered_by,
@@ -252,6 +255,7 @@ pub async fn run_fx_revaluation(
 /// Falls back to the most recent rate before that date.
 async fn get_rate(
     engine: &ErpEngine,
+    entity_id: Uuid,
     from_ccy: &str,
     to_ccy: &str,
     date: NaiveDate,
@@ -263,7 +267,7 @@ async fn get_rate(
            ORDER BY rate_date DESC
            LIMIT 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(from_ccy)
     .bind(to_ccy)
     .bind(date)

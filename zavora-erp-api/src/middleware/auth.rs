@@ -5,9 +5,10 @@
 //! verified token claims — the legacy `X-User-*` headers are ignored entirely,
 //! so a browser cannot spoof identity.
 //!
-//! Tenant isolation: this process serves a single entity (loaded at startup).
-//! A token whose `entity_id` differs from the served entity is rejected, so a
-//! valid token for one tenant cannot read another tenant's data.
+//! Tenant scope: identity (`user_id`, `entity_id`, `role`) comes from the verified
+//! token claims, and the verified `entity_id` claim is the authoritative per-request
+//! tenant scope. `served_entity()` is retained only for the legacy `register`
+//! bootstrap path.
 
 use std::sync::OnceLock;
 
@@ -77,11 +78,12 @@ pub fn verify_bearer(headers: &axum::http::HeaderMap) -> Result<AuthContext, Res
     let role = parse_role(&claims.role)
         .ok_or_else(|| unauthorized("Token carries an unrecognised role"))?;
 
-    // Tenant isolation (Req 3.3): reject tokens minted for a different tenant.
-    if claims.entity_id != served_entity() {
-        return Err(unauthorized("Token entity is not served by this instance"));
-    }
-
+    // Per-request tenant scope (Req 4.1–4.4, 5.1): the verified `entity_id` claim is
+    // the authoritative scope. The token's signature, type, and expiry have already
+    // been checked by `decode_access_token` (Req 5.4). The legacy single-tenant gate
+    // (`claims.entity_id != served_entity()`) is intentionally removed so tokens for
+    // any tenant verify; `served_entity()` is retained only for the legacy `register`
+    // bootstrap path (Req 9.1, 9.4).
     Ok(AuthContext {
         user_id: claims.sub,
         entity_id: claims.entity_id,

@@ -9,6 +9,7 @@ use crate::types::AgentOrUserId;
 /// Create a product/service.
 pub async fn create_product(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateProductRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -26,7 +27,7 @@ pub async fn create_product(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.name)
     .bind(&req.description)
     .bind(serde_json::to_string(&req.product_type).unwrap_or_default())

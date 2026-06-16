@@ -9,6 +9,7 @@ use crate::types::AgentOrUserId;
 /// Create a customer.
 pub async fn create_customer(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateCustomerRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -25,7 +26,7 @@ pub async fn create_customer(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.name)
     .bind(&req.kra_pin)
     .bind(&req.vat_number)
@@ -49,6 +50,7 @@ pub async fn create_customer(
 /// Create a vendor.
 pub async fn create_vendor(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateVendorRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -64,7 +66,7 @@ pub async fn create_vendor(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, true, $17)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.name)
     .bind(&req.kra_pin)
     .bind(&req.vat_number)
@@ -89,6 +91,7 @@ pub async fn create_vendor(
 /// Create an employee.
 pub async fn create_employee(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateEmployeeRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -102,7 +105,7 @@ pub async fn create_employee(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.staff_number)
     .bind(&req.full_name)
     .bind(&req.kra_pin)

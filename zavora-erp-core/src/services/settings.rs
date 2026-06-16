@@ -1,4 +1,5 @@
 use chrono::Utc;
+use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::ErpResult;
@@ -16,6 +17,7 @@ pub async fn get_settings(engine: &ErpEngine) -> ErpResult<ErpConfig> {
 /// Update settings — persists the patch to the database and returns the updated config.
 pub async fn update_settings(
     engine: &ErpEngine,
+    entity_id: Uuid,
     patch: SettingsPatch,
     updated_by: &AgentOrUserId,
 ) -> ErpResult<ErpConfig> {
@@ -75,7 +77,7 @@ pub async fn update_settings(
     .bind(&posting_json)
     .bind(now)
     .bind(updated_by_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
 

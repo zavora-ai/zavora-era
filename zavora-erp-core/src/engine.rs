@@ -71,6 +71,20 @@ impl ErpEngine {
         self.config.entity_id
     }
 
+    /// Create a request-scoped handle bound to a specific tenant `entity_id`.
+    ///
+    /// Handlers build `engine.scoped(ctx.entity_id)` from the per-request
+    /// `AuthContext` so data access is scoped to the verified token's tenant
+    /// rather than the process-global `engine.entity_id()`. In legacy
+    /// single-tenant mode `ctx.entity_id == served_entity()`, so behaviour is
+    /// identical.
+    pub fn scoped(&self, entity_id: Uuid) -> TenantScope<'_> {
+        TenantScope {
+            engine: self,
+            entity_id,
+        }
+    }
+
     /// Reload configuration from the database.
     pub async fn reload_config(&mut self) -> ErpResult<()> {
         let row = sqlx::query_as::<_, crate::settings::SettingsRow>(
@@ -145,7 +159,7 @@ impl ErpEngine {
         &self,
         req: &CreateJournalEntryRequest,
     ) -> ErpResult<ValidationReport> {
-        crate::services::journal::validate_entry(self, req).await
+        crate::services::journal::validate_entry(self, self.entity_id(), req).await
     }
 
     // === Internal helpers ===
@@ -173,7 +187,54 @@ impl ErpEngine {
         period_id: Uuid,
         posted_by: AgentOrUserId,
     ) -> ErpResult<JournalEntry> {
-        crate::services::journal::create_and_post(self, req, period_id, posted_by).await
+        crate::services::journal::create_and_post(self, self.entity_id(), req, period_id, posted_by).await
+    }
+}
+
+/// A request-scoped handle that binds an [`ErpEngine`] to a single tenant's
+/// `entity_id` for the duration of a request.
+///
+/// This is the recommended low-risk shape for threading the per-request tenant
+/// through the service layer: handlers construct `engine.scoped(ctx.entity_id)`
+/// and pass the `TenantScope` where a `&ErpEngine` was previously used. It
+/// forwards the engine's shared resources (`pool`, `redis`, `config`,
+/// `posting`) while exposing the request tenant via [`TenantScope::entity_id`].
+#[derive(Clone, Copy)]
+pub struct TenantScope<'a> {
+    engine: &'a ErpEngine,
+    entity_id: Uuid,
+}
+
+impl<'a> TenantScope<'a> {
+    /// The tenant this scope is bound to (the verified token's `entity_id`).
+    pub fn entity_id(&self) -> Uuid {
+        self.entity_id
+    }
+
+    /// The underlying engine, for operations not yet migrated to the scope.
+    pub fn engine(&self) -> &'a ErpEngine {
+        self.engine
+    }
+
+    /// Get a reference to the database pool (forwarded from the engine).
+    pub fn pool(&self) -> &'a PgPool {
+        self.engine.pool()
+    }
+
+    /// Get a clone of the Redis connection for async operations
+    /// (forwarded from the engine).
+    pub async fn redis(&self) -> redis::aio::MultiplexedConnection {
+        self.engine.redis_conn().await
+    }
+
+    /// Get the current configuration (forwarded from the engine).
+    pub fn config(&self) -> &'a ErpConfig {
+        self.engine.config()
+    }
+
+    /// Get the posting setup (GL account determination) (forwarded from the engine).
+    pub fn posting(&self) -> crate::posting::PostingSetup {
+        self.engine.posting()
     }
 }
 

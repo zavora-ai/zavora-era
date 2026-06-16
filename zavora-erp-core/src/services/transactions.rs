@@ -7,26 +7,26 @@ use crate::error::{ErpError, ErpResult};
 use crate::transactions::*;
 
 /// Categorise a transaction (assign a GL account).
-pub async fn categorise(engine: &ErpEngine, req: CategoriseRequest) -> ErpResult<()> {
+pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequest) -> ErpResult<()> {
     sqlx::query(
         "UPDATE imported_transactions SET assigned_account = $1, category_status = 'categorised' WHERE id = $2 AND entity_id = $3",
     )
     .bind(&req.account_code)
     .bind(req.transaction_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
     Ok(())
 }
 
 /// Split a transaction into multiple GL parts.
-pub async fn split_transaction(engine: &ErpEngine, req: SplitRequest) -> ErpResult<Vec<Uuid>> {
+pub async fn split_transaction(engine: &ErpEngine, entity_id: Uuid, req: SplitRequest) -> ErpResult<Vec<Uuid>> {
     // Validate parts sum to original amount
     let original = sqlx::query_as::<_, ImportedTransactionRow>(
         "SELECT * FROM imported_transactions WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.transaction_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -58,7 +58,7 @@ pub async fn split_transaction(engine: &ErpEngine, req: SplitRequest) -> ErpResu
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'categorised', $10, $11, $12)"#,
         )
         .bind(child_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(original.bank_account)
         .bind(original.value_date)
         .bind(&part.description)
@@ -87,7 +87,7 @@ pub async fn split_transaction(engine: &ErpEngine, req: SplitRequest) -> ErpResu
 }
 
 /// Merge duplicate transactions.
-pub async fn merge_transactions(engine: &ErpEngine, req: MergeRequest) -> ErpResult<()> {
+pub async fn merge_transactions(engine: &ErpEngine, entity_id: Uuid, req: MergeRequest) -> ErpResult<()> {
     // Mark duplicates as merged into primary
     for dup_id in &req.duplicate_ids {
         sqlx::query(
@@ -95,7 +95,7 @@ pub async fn merge_transactions(engine: &ErpEngine, req: MergeRequest) -> ErpRes
         )
         .bind(req.primary_id)
         .bind(dup_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .execute(engine.pool())
         .await?;
     }

@@ -10,6 +10,7 @@ use crate::types::AgentOrUserId;
 /// Create a new account in the chart of accounts.
 pub async fn create_account(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateAccountRequest,
     created_by: &AgentOrUserId,
 ) -> ErpResult<Account> {
@@ -17,7 +18,7 @@ pub async fn create_account(
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM accounts WHERE entity_id = $1 AND code = $2)",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.code)
     .fetch_one(engine.pool())
     .await?;
@@ -33,7 +34,7 @@ pub async fn create_account(
         let parent_exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM accounts WHERE entity_id = $1 AND code = $2)",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(parent)
         .fetch_one(engine.pool())
         .await?;
@@ -59,7 +60,7 @@ pub async fn create_account(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.code)
     .bind(&req.name)
     .bind(&account_type_str)
@@ -74,7 +75,7 @@ pub async fn create_account(
 
     Ok(Account {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         code: req.code,
         name: req.name,
         account_type: account_type_str,
@@ -90,6 +91,7 @@ pub async fn create_account(
 /// Seed the chart of accounts from a template.
 pub async fn seed_coa(
     engine: &ErpEngine,
+    entity_id: Uuid,
     template: &CoaTemplate,
     created_by: &AgentOrUserId,
 ) -> ErpResult<u32> {
@@ -104,7 +106,7 @@ pub async fn seed_coa(
 
     let mut count = 0u32;
     for req in accounts {
-        match create_account(engine, req, created_by).await {
+        match create_account(engine, entity_id, req, created_by).await {
             Ok(_) => count += 1,
             Err(ErpError::Duplicate { .. }) => {
                 // Already exists, skip
@@ -118,11 +120,11 @@ pub async fn seed_coa(
 }
 
 /// Get account by code.
-pub async fn get_account(engine: &ErpEngine, code: &str) -> ErpResult<Account> {
+pub async fn get_account(engine: &ErpEngine, entity_id: Uuid, code: &str) -> ErpResult<Account> {
     sqlx::query_as::<_, Account>(
         "SELECT * FROM accounts WHERE entity_id = $1 AND code = $2",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(code)
     .fetch_optional(engine.pool())
     .await?
@@ -132,19 +134,19 @@ pub async fn get_account(engine: &ErpEngine, code: &str) -> ErpResult<Account> {
 }
 
 /// List all accounts for the entity.
-pub async fn list_accounts(engine: &ErpEngine, active_only: bool) -> ErpResult<Vec<Account>> {
+pub async fn list_accounts(engine: &ErpEngine, entity_id: Uuid, active_only: bool) -> ErpResult<Vec<Account>> {
     let accounts = if active_only {
         sqlx::query_as::<_, Account>(
             "SELECT * FROM accounts WHERE entity_id = $1 AND is_active = true ORDER BY code",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_all(engine.pool())
         .await?
     } else {
         sqlx::query_as::<_, Account>(
             "SELECT * FROM accounts WHERE entity_id = $1 ORDER BY code",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_all(engine.pool())
         .await?
     };
@@ -155,11 +157,12 @@ pub async fn list_accounts(engine: &ErpEngine, active_only: bool) -> ErpResult<V
 /// Update an account.
 pub async fn update_account(
     engine: &ErpEngine,
+    entity_id: Uuid,
     code: &str,
     req: UpdateAccountRequest,
 ) -> ErpResult<Account> {
     // Verify account exists
-    let mut account = get_account(engine, code).await?;
+    let mut account = get_account(engine, entity_id, code).await?;
 
     if let Some(name) = req.name {
         account.name = name;
@@ -191,7 +194,7 @@ pub async fn update_account(
     .bind(account.is_control)
     .bind(account.is_active)
     .bind(&account.tags)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(code)
     .execute(engine.pool())
     .await?;

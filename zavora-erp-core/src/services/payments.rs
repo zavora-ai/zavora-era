@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+use crate::money::round_money;
 use crate::payments::*;
 use crate::types::AgentOrUserId;
 
@@ -51,6 +52,7 @@ struct BillBalanceRow {
 ///   DR Bank / CR AR (applied portion) + CR Unapplied Payments (excess portion)
 pub async fn record_payment(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: RecordPaymentRequest,
     recorded_by: &AgentOrUserId,
 ) -> ErpResult<Payment> {
@@ -69,7 +71,7 @@ pub async fn record_payment(
     }
 
     // Generate payment number
-    let number = generate_payment_number(engine).await?;
+    let number = generate_payment_number(engine, entity_id).await?;
 
     // --- Overpayment handling ---
     // For each application, cap the applied amount to the document's balance_due.
@@ -78,7 +80,7 @@ pub async fn record_payment(
     let mut total_actually_applied = Decimal::ZERO;
 
     for app_req in &req.applications {
-        let doc_balance = fetch_document_balance(engine, app_req.document_id, &req.payment_type).await?;
+        let doc_balance = fetch_document_balance(engine, entity_id, app_req.document_id, &req.payment_type).await?;
 
         // Apply only up to balance_due; remainder becomes unapplied
         let effective_apply = app_req.amount.min(doc_balance);
@@ -101,7 +103,7 @@ pub async fn record_payment(
     let reference = req.reference.unwrap_or_else(|| number.clone());
 
     // Determine the bank account code for the JE
-    let bank_account_code = resolve_bank_account_code(engine, req.bank_account_id).await?;
+    let bank_account_code = resolve_bank_account_code(engine, entity_id, req.bank_account_id).await?;
 
     // Everything that touches the ledger (payment record, document balances, and
     // the journal entry) commits or rolls back together (Requirement 2.1).
@@ -115,7 +117,7 @@ pub async fn record_payment(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&number)
     .bind(serde_json::to_string(&req.payment_type).unwrap_or_default())
     .bind(req.party_id)
@@ -185,7 +187,7 @@ pub async fn record_payment(
             if app.amount_applied == Decimal::ZERO {
                 continue;
             }
-            let bill_wht = fetch_bill_wht_amount(engine, app.document_id).await.unwrap_or(Decimal::ZERO);
+            let bill_wht = fetch_bill_wht_amount(engine, entity_id, app.document_id).await.unwrap_or(Decimal::ZERO);
             wht_sum += bill_wht;
         }
         wht_sum
@@ -199,6 +201,7 @@ pub async fn record_payment(
     let journal_entry_id = post_payment_journal_entry(
         &mut tx,
         engine,
+        entity_id,
         &number,
         payment_date,
         &currency,
@@ -231,11 +234,12 @@ pub async fn record_payment(
             if app.amount_applied == Decimal::ZERO {
                 continue;
             }
-            let new_balance = fetch_document_balance(engine, app.document_id, &req.payment_type)
+            let new_balance = fetch_document_balance(engine, entity_id, app.document_id, &req.payment_type)
                 .await
                 .unwrap_or(Decimal::ZERO);
             let _ = crate::services::scheduler::cancel_reminders_on_payment(
                 engine,
+                entity_id,
                 app.document_id,
                 new_balance,
             )
@@ -250,12 +254,13 @@ pub async fn record_payment(
         if app.amount_applied == Decimal::ZERO {
             continue;
         }
-        let doc_fx_rate = fetch_document_fx_rate(engine, app.document_id, &req.payment_type).await?;
+        let doc_fx_rate = fetch_document_fx_rate(engine, entity_id, app.document_id, &req.payment_type).await?;
 
         // Only post FX gain/loss if the rates differ
         if doc_fx_rate != fx_rate {
             post_fx_gain_loss_entry(
                 engine,
+                entity_id,
                 &number,
                 payment_date,
                 &currency,
@@ -279,7 +284,7 @@ pub async fn record_payment(
                 "currency": currency,
                 "timestamp": Utc::now().to_rfc3339(),
             });
-            let stream_key = format!("erp:audit:{}", engine.entity_id());
+            let stream_key = format!("erp:audit:{}", entity_id);
             let mut redis_conn = engine.redis_conn().await;
             let _: Result<(), _> = redis::cmd("XADD")
                 .arg(&stream_key)
@@ -293,7 +298,7 @@ pub async fn record_payment(
 
     Ok(Payment {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         number,
         payment_type: req.payment_type,
         party_id: req.party_id,
@@ -319,6 +324,7 @@ pub async fn record_payment(
 /// bills in Draft or PendingApproval status are rejected (Requirement 11.6).
 async fn fetch_document_balance(
     engine: &ErpEngine,
+    entity_id: Uuid,
     document_id: Uuid,
     payment_type: &PaymentType,
 ) -> ErpResult<Decimal> {
@@ -328,7 +334,7 @@ async fn fetch_document_balance(
                 "SELECT balance_due FROM invoices WHERE id = $1 AND entity_id = $2",
             )
             .bind(document_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?
             .ok_or_else(|| ErpError::NotFound {
@@ -342,7 +348,7 @@ async fn fetch_document_balance(
                 "SELECT balance_due, status FROM bills WHERE id = $1 AND entity_id = $2",
             )
             .bind(document_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?
             .ok_or_else(|| ErpError::NotFound {
@@ -373,13 +379,14 @@ async fn fetch_document_balance(
 /// Used during vendor payment to determine how much WHT liability to clear.
 async fn fetch_bill_wht_amount(
     engine: &ErpEngine,
+    entity_id: Uuid,
     bill_id: Uuid,
 ) -> ErpResult<Decimal> {
     let wht = sqlx::query_scalar::<_, Decimal>(
         "SELECT COALESCE(wht_amount, 0) FROM bills WHERE id = $1 AND entity_id = $2",
     )
     .bind(bill_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .unwrap_or(Decimal::ZERO);
@@ -392,6 +399,7 @@ async fn fetch_bill_wht_amount(
 /// or if the bank account has no linked GL account.
 async fn resolve_bank_account_code(
     engine: &ErpEngine,
+    entity_id: Uuid,
     bank_account_id: Option<Uuid>,
 ) -> ErpResult<String> {
     let default_bank = engine.posting().default_bank.clone();
@@ -404,7 +412,7 @@ async fn resolve_bank_account_code(
         "SELECT COALESCE(gl_account, $3) FROM bank_accounts WHERE id = $1 AND entity_id = $2",
     )
     .bind(ba_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&default_bank)
     .fetch_optional(engine.pool())
     .await?
@@ -434,6 +442,7 @@ async fn resolve_bank_account_code(
 async fn post_payment_journal_entry(
     tx: &mut crate::services::journal::PgTx<'_>,
     engine: &ErpEngine,
+    entity_id: Uuid,
     payment_number: &str,
     payment_date: chrono::NaiveDate,
     currency: &str,
@@ -591,11 +600,12 @@ async fn post_payment_journal_entry(
     };
 
     // Resolve the fiscal period for the payment date
-    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, payment_date).await?;
 
     let entry = crate::services::journal::create_and_post_in_tx(
         tx,
         engine,
+        entity_id,
         je_req,
         period.id,
         posted_by.clone(),
@@ -613,6 +623,7 @@ async fn post_payment_journal_entry(
 /// to handle the split automatically.
 pub async fn record_mpesa_payment(
     engine: &ErpEngine,
+    entity_id: Uuid,
     invoice_id: Uuid,
     callback: MpesaCallback,
 ) -> ErpResult<Payment> {
@@ -634,7 +645,7 @@ pub async fn record_mpesa_payment(
         "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
     )
     .bind(invoice_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -651,7 +662,7 @@ pub async fn record_mpesa_payment(
                (entity_id, receipt_number, transaction_type, amount, phone_number, timestamp, invoice_id, reconciled)
                VALUES ($1, $2, 'c2b', $3, $4, $5, $6, false)"#,
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&receipt)
         .bind(amount)
         .bind(&phone)
@@ -659,7 +670,6 @@ pub async fn record_mpesa_payment(
         .bind(invoice_id)
         .execute(engine.pool())
         .await;
-
         if let Err(e) = claim {
             let is_dup = matches!(&e, sqlx::Error::Database(db) if db.is_unique_violation());
             if !is_dup {
@@ -672,7 +682,7 @@ pub async fn record_mpesa_payment(
                    JOIN mpesa_transactions m ON m.payment_id = p.id
                    WHERE m.entity_id = $1 AND m.receipt_number = $2"#,
             )
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .bind(&receipt)
             .fetch_optional(engine.pool())
             .await?;
@@ -713,7 +723,7 @@ pub async fn record_mpesa_payment(
     };
 
     let actor = AgentOrUserId::Agent("mpesa-webhook".to_string());
-    let payment = record_payment(engine, req, &actor).await?;
+    let payment = record_payment(engine, entity_id, req, &actor).await?;
 
     // Link the recorded payment back to the claimed M-Pesa transaction.
     if !receipt.is_empty() {
@@ -721,7 +731,7 @@ pub async fn record_mpesa_payment(
             "UPDATE mpesa_transactions SET payment_id = $1, reconciled = true WHERE entity_id = $2 AND receipt_number = $3",
         )
         .bind(payment.id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&receipt)
         .execute(engine.pool())
         .await;
@@ -768,6 +778,7 @@ fn payment_from_row(row: PaymentRow) -> Payment {
 /// - Records an audit event with before/after amounts.
 pub async fn apply_unapplied_payment(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: ApplyPaymentRequest,
     actor: &AgentOrUserId,
 ) -> ErpResult<Payment> {
@@ -776,7 +787,7 @@ pub async fn apply_unapplied_payment(
         "SELECT * FROM payments WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.payment_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -805,7 +816,7 @@ pub async fn apply_unapplied_payment(
     }
 
     // 3. Fetch target document's current balance_due
-    let doc_balance = fetch_document_balance(engine, req.document_id, &payment_type).await?;
+    let doc_balance = fetch_document_balance(engine, entity_id, req.document_id, &payment_type).await?;
 
     // Cap application at document's balance_due
     let effective_apply = req.amount.min(doc_balance);
@@ -934,10 +945,11 @@ pub async fn apply_unapplied_payment(
         post_immediately: true,
     };
 
-    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, payment_date).await?;
     let _entry = crate::services::journal::create_and_post_in_tx(
         &mut tx,
         engine,
+        entity_id,
         je_req,
         period.id,
         actor.clone(),
@@ -948,11 +960,12 @@ pub async fn apply_unapplied_payment(
 
     // Cancel pending reminders for a paid-down customer invoice (post-commit).
     if payment_type == PaymentType::CustomerPayment {
-        let updated_balance = fetch_document_balance(engine, req.document_id, &payment_type)
+        let updated_balance = fetch_document_balance(engine, entity_id, req.document_id, &payment_type)
             .await
             .unwrap_or(Decimal::ZERO);
         let _ = crate::services::scheduler::cancel_reminders_on_payment(
             engine,
+            entity_id,
             req.document_id,
             updated_balance,
         )
@@ -978,7 +991,7 @@ pub async fn apply_unapplied_payment(
         },
         "timestamp": Utc::now(),
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -1010,14 +1023,14 @@ pub async fn apply_unapplied_payment(
     })
 }
 
-async fn generate_payment_number(engine: &ErpEngine) -> ErpResult<String> {
+async fn generate_payment_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
            SET sequences = jsonb_set(sequences, '{payment_next}', to_jsonb((sequences->>'payment_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'payment_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(engine.pool())
     .await?;
 
@@ -1031,6 +1044,7 @@ async fn generate_payment_number(engine: &ErpEngine) -> ErpResult<String> {
 /// This is needed to compute realised FX gain/loss when the payment rate differs.
 async fn fetch_document_fx_rate(
     engine: &ErpEngine,
+    entity_id: Uuid,
     document_id: Uuid,
     payment_type: &PaymentType,
 ) -> ErpResult<Decimal> {
@@ -1040,7 +1054,7 @@ async fn fetch_document_fx_rate(
                 "SELECT fx_rate FROM invoices WHERE id = $1 AND entity_id = $2",
             )
             .bind(document_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?
             .ok_or_else(|| ErpError::NotFound {
@@ -1053,7 +1067,7 @@ async fn fetch_document_fx_rate(
                 "SELECT fx_rate FROM bills WHERE id = $1 AND entity_id = $2",
             )
             .bind(document_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?
             .ok_or_else(|| ErpError::NotFound {
@@ -1078,6 +1092,7 @@ async fn fetch_document_fx_rate(
 ///   DR 8130 Realised FX Loss / CR AR/AP (abs difference)
 async fn post_fx_gain_loss_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     payment_number: &str,
     payment_date: chrono::NaiveDate,
     _currency: &str,
@@ -1087,8 +1102,12 @@ async fn post_fx_gain_loss_entry(
     payment_type: &PaymentType,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
-    let functional_at_invoice_rate = applied_amount * invoice_fx_rate;
-    let functional_at_payment_rate = applied_amount * payment_fx_rate;
+    // Round each functional-currency conversion to 2dp independently before
+    // differencing, mirroring the journal posting policy (Req 5.1). This keeps
+    // the realised FX gain/loss a true 2-decimal monetary value at source rather
+    // than relying solely on the ledger layer to round it.
+    let functional_at_invoice_rate = round_money(applied_amount * invoice_fx_rate);
+    let functional_at_payment_rate = round_money(applied_amount * payment_fx_rate);
     let fx_difference = functional_at_payment_rate - functional_at_invoice_rate;
 
     // Determine the AR/AP account for the offsetting entry
@@ -1178,10 +1197,11 @@ async fn post_fx_gain_loss_entry(
         post_immediately: true,
     };
 
-    let period = crate::services::periods::period_for_date(engine, payment_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, payment_date).await?;
 
     let entry = crate::services::journal::create_and_post(
         engine,
+        entity_id,
         je_req,
         period.id,
         posted_by.clone(),

@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::middleware::auth::{jwt_config, require_role, served_entity, AuthContext, ROLES_MANAGE};
 use zavora_erp_core::auth::{self, TokenPair};
-use zavora_erp_core::rbac::{CreateUserRequest, EraUserRow};
+use zavora_erp_core::rbac::{CreateUserRequest, EraUserRow, UpdateUserRequest};
 use zavora_erp_core::ErpError;
 
 /// Map an `ErpError` to a concrete HTTP `Response`.
@@ -265,8 +265,23 @@ pub struct RegisterRequest {
 
 /// POST /auth/register — bootstrap the first Owner account for the served entity.
 ///
+/// **Deprecated.** This is the legacy single-tenant bootstrap path: it only
+/// creates the first Owner for the process-global served entity (the one fixed
+/// by the `ENTITY_ID` environment variable) and does **not** create a new
+/// tenant. Its bootstrap behaviour is retained unchanged for backward
+/// compatibility with existing single-tenant deployments (Requirement 9.2).
+///
+/// New tenants MUST be created through the supported public tenant-creation
+/// path, `POST /api/v1/auth/signup` (the `Signup_Service`), which provisions a
+/// brand-new isolated tenant, its `entity_settings`, and its first Owner in a
+/// single transaction. Prefer `/api/v1/auth/signup` for all new integrations
+/// (Requirement 9.3).
+///
 /// Only permitted when the entity has no active users yet; subsequent accounts
 /// are added through the authenticated invite flow (`POST /users`).
+#[deprecated(
+    note = "Legacy single-tenant bootstrap. Use POST /api/v1/auth/signup (Signup_Service) to create new tenants."
+)]
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RegisterRequest>,
@@ -393,4 +408,100 @@ pub async fn create(
         }))),
         Err(e) => Err(er(ErpError::Database(e))),
     }
+}
+
+/// PUT /users/{id} — update a user within the caller's tenant (Owner/Admin only).
+///
+/// Enforces first-Owner protection (Req 13.1, 13.2): while a tenant has exactly one
+/// active Owner, that Owner can neither be deactivated nor have their role changed
+/// to a non-Owner role. The target user is always loaded and updated scoped to the
+/// caller's token `entity_id`, so the handler cannot touch another tenant's users
+/// (Req 5.1, 5.2).
+pub async fn update(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateUserRequest>,
+) -> Result<Json<serde_json::Value>, Response> {
+    require_role(ROLES_MANAGE, &ctx, "update user").map_err(er)?;
+
+    // Load the target user scoped to the caller's tenant (cross-tenant isolation).
+    let target = sqlx::query_as::<_, EraUserRow>(
+        "SELECT * FROM era_users WHERE entity_id = $1 AND id = $2",
+    )
+    .bind(ctx.entity_id)
+    .bind(id)
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?
+    .ok_or_else(|| {
+        er(ErpError::NotFound {
+            entity_type: "user".to_string(),
+            id,
+        })
+    })?;
+
+    // Resolve the requested role (if any) to its stored string form.
+    let new_role: Option<String> = req.role.as_ref().map(|r| {
+        serde_json::to_value(r)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "Viewer".to_string())
+    });
+
+    // First-Owner protection (Req 13.1, 13.2): if this change would deactivate the
+    // target Owner, or move the target Owner off the Owner role, the tenant must
+    // retain at least one other active Owner.
+    let target_is_owner = target.role == "Owner";
+    let would_deactivate = matches!(req.is_active, Some(false));
+    let would_demote = new_role.as_deref().is_some_and(|r| r != "Owner");
+
+    if target_is_owner && (would_deactivate || would_demote) {
+        let active_owners = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM era_users \
+             WHERE entity_id = $1 AND role = 'Owner' AND is_active = true",
+        )
+        .bind(ctx.entity_id)
+        .fetch_one(state.engine.pool())
+        .await
+        .map_err(|e| er(ErpError::Database(e)))?;
+
+        if active_owners <= 1 {
+            return Err(er(ErpError::ValidationFailed {
+                message: "Cannot deactivate or change the role of the tenant's sole active Owner"
+                    .to_string(),
+            }));
+        }
+    }
+
+    // Apply the update, scoped by entity_id. COALESCE leaves omitted fields unchanged.
+    let result = sqlx::query(
+        "UPDATE era_users SET \
+            display_name = COALESCE($3, display_name), \
+            role = COALESCE($4, role), \
+            is_active = COALESCE($5, is_active) \
+         WHERE entity_id = $1 AND id = $2",
+    )
+    .bind(ctx.entity_id)
+    .bind(id)
+    .bind(req.display_name.as_ref())
+    .bind(new_role.as_ref())
+    .bind(req.is_active)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(er(ErpError::NotFound {
+            entity_type: "user".to_string(),
+            id,
+        }));
+    }
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "display_name": req.display_name.unwrap_or(target.display_name),
+        "role": new_role.unwrap_or(target.role),
+        "is_active": req.is_active.unwrap_or(target.is_active),
+    })))
 }

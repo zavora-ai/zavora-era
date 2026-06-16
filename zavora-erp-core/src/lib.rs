@@ -57,6 +57,7 @@ pub mod documents;
 pub mod rbac;
 pub mod settings;
 pub mod audit;
+pub mod tenant;
 pub mod posting;
 pub mod auth;
 pub mod money;

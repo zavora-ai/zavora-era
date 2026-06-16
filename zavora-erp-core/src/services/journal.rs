@@ -15,6 +15,7 @@ pub type PgTx<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// Validate a journal entry request without posting.
 pub async fn validate_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: &CreateJournalEntryRequest,
 ) -> ErpResult<ValidationReport> {
     let mut errors = Vec::new();
@@ -82,7 +83,7 @@ pub async fn validate_entry(
         let account = sqlx::query_scalar::<_, bool>(
             "SELECT is_active FROM accounts WHERE entity_id = $1 AND code = $2",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&line.account_code)
         .fetch_optional(engine.pool())
         .await?;
@@ -101,7 +102,7 @@ pub async fn validate_entry(
         let is_control = sqlx::query_scalar::<_, bool>(
             "SELECT is_control FROM accounts WHERE entity_id = $1 AND code = $2",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&line.account_code)
         .fetch_optional(engine.pool())
         .await?;
@@ -119,7 +120,7 @@ pub async fn validate_entry(
         let exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM journal_entries WHERE entity_id = $1 AND reference = $2)",
         )
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&req.reference)
         .fetch_one(engine.pool())
         .await?;
@@ -145,6 +146,7 @@ pub async fn validate_entry(
 /// - Open or Future periods allow all entries (Future is unlikely in practice).
 pub async fn enforce_period_status(
     engine: &ErpEngine,
+    entity_id: Uuid,
     period_id: Uuid,
     source: &JournalSource,
 ) -> ErpResult<()> {
@@ -152,7 +154,7 @@ pub async fn enforce_period_status(
         "SELECT * FROM fiscal_periods WHERE id = $1 AND entity_id = $2",
     )
     .bind(period_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -194,14 +196,15 @@ pub async fn enforce_period_status(
 /// surrounding transaction to thread through.
 pub async fn create_and_post(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateJournalEntryRequest,
     period_id: Uuid,
     posted_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
     let mut tx = engine.pool().begin().await?;
-    let entry = create_and_post_in_tx(&mut tx, engine, req, period_id, posted_by).await?;
+    let entry = create_and_post_in_tx(&mut tx, engine, entity_id, req, period_id, posted_by).await?;
     tx.commit().await?;
-    emit_journal_audit(engine, &entry).await;
+    emit_journal_audit(engine, entity_id, &entry).await;
     Ok(entry)
 }
 
@@ -218,15 +221,16 @@ pub async fn create_and_post(
 pub async fn create_and_post_in_tx(
     tx: &mut PgTx<'_>,
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateJournalEntryRequest,
     period_id: Uuid,
     posted_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
-    enforce_period_status_in_tx(tx, engine.entity_id(), period_id, &req.source).await?;
+    enforce_period_status_in_tx(tx, entity_id, period_id, &req.source).await?;
 
     let now = Utc::now();
     let entry_id = Uuid::new_v4();
-    let number = generate_journal_number_in_tx(tx, engine).await?;
+    let number = generate_journal_number_in_tx(tx, engine, entity_id).await?;
 
     // Build journal lines with rounded transaction and functional amounts.
     let mut lines: Vec<JournalLine> = req
@@ -291,7 +295,7 @@ pub async fn create_and_post_in_tx(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
     )
     .bind(entry_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&number)
     .bind(req.date)
     .bind(period_id)
@@ -329,7 +333,7 @@ pub async fn create_and_post_in_tx(
 
     Ok(JournalEntry {
         id: entry_id,
-        entity_id: engine.entity_id(),
+        entity_id,
         number,
         date: req.date,
         period_id,
@@ -347,7 +351,7 @@ pub async fn create_and_post_in_tx(
 /// Emit a best-effort audit event for a posted journal entry to the Redis stream.
 /// Runs after the database transaction commits, so a Redis hiccup never rolls
 /// back accounting data.
-async fn emit_journal_audit(engine: &ErpEngine, entry: &JournalEntry) {
+async fn emit_journal_audit(engine: &ErpEngine, entity_id: Uuid, entry: &JournalEntry) {
     let audit_event = serde_json::json!({
         "event_type": "posted",
         "object_type": "journal_entry",
@@ -355,7 +359,7 @@ async fn emit_journal_audit(engine: &ErpEngine, entry: &JournalEntry) {
         "actor": entry.created_by,
         "timestamp": entry.created_at,
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -370,6 +374,7 @@ async fn emit_journal_audit(engine: &ErpEngine, entry: &JournalEntry) {
 async fn generate_journal_number_in_tx(
     tx: &mut PgTx<'_>,
     engine: &ErpEngine,
+    entity_id: Uuid,
 ) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings
@@ -381,7 +386,7 @@ async fn generate_journal_number_in_tx(
            WHERE entity_id = $1
            RETURNING (sequences->>'journal_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(&mut **tx)
     .await?;
 

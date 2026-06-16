@@ -1,6 +1,6 @@
 use axum::{
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -96,11 +96,23 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Build router — public routes need no authentication.
+    // NOTE: `#[allow(deprecated)]` covers the legacy `/api/v1/auth/register`
+    // bootstrap route below. `register` is deprecated in favour of the
+    // supported tenant-creation path `/api/v1/auth/signup` (Requirement 9.3);
+    // it is kept wired for backward compatibility with single-tenant
+    // deployments (Requirement 9.2).
+    #[allow(deprecated)]
     let public = Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(routes::users::login))
         .route("/api/v1/auth/refresh", post(routes::users::refresh))
+        // DEPRECATED: legacy single-tenant Owner bootstrap. Use
+        // `/api/v1/auth/signup` to create new tenants. Retained unchanged for
+        // backward compatibility (Requirement 9.2, 9.3).
         .route("/api/v1/auth/register", post(routes::users::register))
+        // Public tenant signup — creates a new tenant + first Owner.
+        // Supported path for creating new tenants (Requirement 9.3).
+        .route("/api/v1/auth/signup", post(routes::auth_signup::signup))
         .route("/api/v1/auth/logout", post(routes::users::logout))
         // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback));
@@ -197,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
+        .route("/api/v1/users/{id}", put(routes::users::update))
         // Every route above requires a valid access token.
         .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
 
@@ -208,7 +221,11 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting Zavora ERP API on {}", bind_addr);
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

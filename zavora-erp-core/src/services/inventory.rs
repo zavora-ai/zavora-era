@@ -28,11 +28,12 @@ type PgTx<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// Receive inventory (purchase receipt).
 pub async fn receive_inventory(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: ReceiveInventoryRequest,
     received_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
     let mut tx = engine.pool().begin().await?;
-    let id = receive_inventory_in_tx(&mut tx, engine.entity_id(), req, received_by).await?;
+    let id = receive_inventory_in_tx(&mut tx, entity_id, req, received_by).await?;
     tx.commit().await?;
     Ok(id)
 }
@@ -91,11 +92,12 @@ pub async fn receive_inventory_in_tx(
 /// of goods issued, which callers (e.g. invoice posting) use for COGS journal lines.
 pub async fn issue_inventory(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: IssueInventoryRequest,
     issued_by: &AgentOrUserId,
 ) -> ErpResult<IssueInventoryResult> {
     let mut tx = engine.pool().begin().await?;
-    let result = issue_inventory_in_tx(&mut tx, engine.entity_id(), req, issued_by).await?;
+    let result = issue_inventory_in_tx(&mut tx, entity_id, req, issued_by).await?;
     tx.commit().await?;
     Ok(result)
 }
