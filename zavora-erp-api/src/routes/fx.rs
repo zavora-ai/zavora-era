@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
+use crate::middleware::auth::{require_role, AuthContext, ROLES_MANAGE};
 use zavora_erp_core::fx::*;
 use zavora_erp_core::services::fx as svc;
 
@@ -22,9 +23,11 @@ pub async fn list(
 }
 
 pub async fn upsert(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpsertRateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_MANAGE, &ctx, "upsert FX rate").map_err(err_response)?;
     match svc::upsert_rate(&state.engine, req).await {
         Ok(rate) => Ok(Json(serde_json::to_value(rate).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -32,8 +35,10 @@ pub async fn upsert(
 }
 
 pub async fn revaluation(
+    ctx: AuthContext,
     State(_state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_MANAGE, &ctx, "run FX revaluation") { return Err(err_response(e)); }
     // TODO: implement FX revaluation
-    Json(serde_json::json!({ "status": "todo", "message": "FX revaluation not yet implemented" }))
+    Ok(Json(serde_json::json!({ "status": "todo", "message": "FX revaluation not yet implemented" })))
 }

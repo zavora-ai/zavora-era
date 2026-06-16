@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
+use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
 use zavora_erp_core::inventory::*;
 use zavora_erp_core::services::inventory as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -23,17 +24,21 @@ pub async fn list(
 }
 
 pub async fn create(
+    ctx: AuthContext,
     State(_state): State<Arc<AppState>>,
     Json(_req): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "status": "todo" }))
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_CREATE, &ctx, "create inventory item") { return Err(err_response(e)); }
+    Ok(Json(serde_json::json!({ "status": "todo" })))
 }
 
 pub async fn receive(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<ReceiveInventoryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "receive inventory").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::receive_inventory(&state.engine, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "movement_id": id }))),
         Err(e) => Err(err_response(e)),
@@ -41,10 +46,12 @@ pub async fn receive(
 }
 
 pub async fn issue(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<IssueInventoryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "issue inventory").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::issue_inventory(&state.engine, req, &actor).await {
         Ok(result) => Ok(Json(serde_json::json!({ "movement_id": result.movement_id }))),
         Err(e) => Err(err_response(e)),

@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
+use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
 use zavora_erp_core::catalog::*;
 use zavora_erp_core::services::catalog as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -40,10 +41,12 @@ pub async fn get_product(
 }
 
 pub async fn create_product(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateProductRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "create product").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_product(&state.engine, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
@@ -51,14 +54,16 @@ pub async fn create_product(
 }
 
 pub async fn update_product(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update product") { return Err(err_response(e)); }
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE products SET name = $1 WHERE id = $2 AND entity_id = $3")
             .bind(name).bind(id).bind(state.engine.entity_id())
             .execute(state.engine.pool()).await.ok();
     }
-    Json(serde_json::json!({ "id": id, "updated": true }))
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }

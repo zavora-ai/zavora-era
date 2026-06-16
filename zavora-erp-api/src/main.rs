@@ -95,10 +95,18 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Build router
-    let app = Router::new()
-        // Health check
+    // Build router — public routes need no authentication.
+    let public = Router::new()
         .route("/health", get(health))
+        .route("/api/v1/auth/login", post(routes::users::login))
+        .route("/api/v1/auth/refresh", post(routes::users::refresh))
+        .route("/api/v1/auth/register", post(routes::users::register))
+        .route("/api/v1/auth/logout", post(routes::users::logout))
+        // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
+        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback));
+
+    // Protected routes — gated by the auth middleware applied below.
+    let protected = Router::new()
         // Dashboard
         .route("/api/v1/dashboard", get(routes::dashboard::summary))
         // Accounts
@@ -146,7 +154,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
-        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
         .route("/api/v1/transactions/{id}/categorise", post(routes::transactions::categorise))
@@ -188,12 +195,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/agent/report", post(routes::agent::run_report))
         // Settings
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
-        // Auth & Users
-        .route("/api/v1/auth/login", post(routes::users::login))
-        .route("/api/v1/auth/refresh", post(routes::users::refresh))
-        .route("/api/v1/auth/register", post(routes::users::register))
+        // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
-        // Middleware
+        // Every route above requires a valid access token.
+        .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
+
+    let app = public
+        .merge(protected)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state);

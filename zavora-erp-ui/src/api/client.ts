@@ -1,53 +1,58 @@
 import axios from 'axios';
 
-const ACCESS_KEY = 'era_access_token';
-const REFRESH_KEY = 'era_refresh_token';
-const IDENTITY_KEY = 'era_identity';
+// ── Session state ───────────────────────────────────────────────────────────
+// The access token lives in memory only (never localStorage), so an XSS payload
+// cannot read it from storage and it is gone when the tab closes. The refresh
+// token is held in an httpOnly cookie the browser sends automatically and JS
+// cannot read at all.
+let accessToken: string | null = null;
+let identity: unknown = null;
 
-export const getAccessToken = () => localStorage.getItem(ACCESS_KEY);
+export const getAccessToken = () => accessToken;
+export const getIdentity = () => identity;
 
-export function storeSession(data: {
-  access_token: string;
-  refresh_token: string;
-  user?: unknown;
-}) {
-  localStorage.setItem(ACCESS_KEY, data.access_token);
-  localStorage.setItem(REFRESH_KEY, data.refresh_token);
-  if (data.user) localStorage.setItem(IDENTITY_KEY, JSON.stringify(data.user));
+export function storeSession(data: { access_token: string; user?: unknown }) {
+  accessToken = data.access_token ?? null;
+  if (data.user !== undefined) identity = data.user;
 }
 
 export function clearSession() {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  localStorage.removeItem(IDENTITY_KEY);
+  accessToken = null;
+  identity = null;
 }
 
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // send/receive the httpOnly refresh cookie
 });
 
-// Attach the JWT access token as a Bearer credential on every request.
+// Attach the in-memory access token as a Bearer credential on every request.
 api.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) config.headers['Authorization'] = `Bearer ${token}`;
+  if (accessToken) config.headers['Authorization'] = `Bearer ${accessToken}`;
   return config;
 });
 
-// On 401, try a one-shot refresh; if that fails, clear the session and redirect.
+// Exchange the httpOnly refresh cookie for a fresh access token. The cookie is
+// sent automatically; no token is read or written by JS.
 let refreshing: Promise<string | null> | null = null;
 
 async function tryRefresh(): Promise<string | null> {
-  const refresh_token = localStorage.getItem(REFRESH_KEY);
-  if (!refresh_token) return null;
   try {
-    // Bare axios call to avoid the interceptor recursing.
-    const resp = await axios.post('/api/v1/auth/refresh', { refresh_token });
+    const resp = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true });
     storeSession(resp.data);
     return resp.data.access_token as string;
   } catch {
+    clearSession();
     return null;
   }
+}
+
+/** Restore a session on app load using the refresh cookie. Returns true if authed. */
+export async function bootstrapAuth(): Promise<boolean> {
+  if (accessToken) return true;
+  const token = await tryRefresh();
+  return token != null;
 }
 
 api.interceptors.response.use(
@@ -79,8 +84,7 @@ export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password });
 export const register = (data: { email: string; display_name: string; password: string }) =>
   api.post('/auth/register', data);
-export const refreshSession = (refresh_token: string) =>
-  api.post('/auth/refresh', { refresh_token });
+export const logout = () => api.post('/auth/logout', {});
 export const getUsers = () => api.get('/users');
 export const createUser = (data: { email: string; display_name: string; role: string }) =>
   api.post('/users', data);

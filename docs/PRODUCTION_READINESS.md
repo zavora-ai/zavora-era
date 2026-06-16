@@ -18,6 +18,12 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 - ✅ M-Pesa webhook idempotency (unique receipt claim; migration 004)
 - ✅ Atomic draft creation for invoices and estimates (single transaction)
 - ✅ Posting setup (Phase 1 resolver + Phase 3 editable UI, live reload) — see `POSTING_SETUP.md`
+- ✅ Auth hardening: global middleware gates **every** protected route (no
+  unauthenticated access); role checks added to all master-data write handlers
+  (accounts, parties, catalog, inventory, assets, bank, fx, transactions)
+- ✅ Token storage: access token kept in memory only; refresh token moved to an
+  httpOnly, SameSite=Strict cookie (no tokens in localStorage); `/auth/logout`
+  revokes + clears; `ErpError::Unauthorized` now maps to HTTP 401
 
 ---
 

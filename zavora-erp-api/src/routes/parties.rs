@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
+use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
 use zavora_erp_core::parties::*;
 use zavora_erp_core::services::parties as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -44,10 +45,12 @@ pub async fn get_customer(
 }
 
 pub async fn create_customer(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateCustomerRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "create customer").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_customer(&state.engine, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
@@ -190,10 +193,12 @@ pub async fn get_vendor(
 }
 
 pub async fn create_vendor(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateVendorRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "create vendor").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_vendor(&state.engine, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
@@ -321,10 +326,12 @@ pub async fn get_employee(
 }
 
 pub async fn create_employee(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let actor = AgentOrUserId::Agent("api".to_string());
+    require_role(ROLES_CREATE, &ctx, "create employee").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_employee(&state.engine, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),

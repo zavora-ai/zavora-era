@@ -60,7 +60,50 @@ pub struct AuthContext {
     pub role: UserRole,
 }
 
-/// Extract `AuthContext` from a verified `Authorization: Bearer` access token.
+/// Verify an `Authorization: Bearer <jwt>` access token from request headers and
+/// build the `AuthContext`. Shared by the global middleware and the extractor.
+pub fn verify_bearer(headers: &axum::http::HeaderMap) -> Result<AuthContext, Response> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| unauthorized("Missing or malformed Authorization bearer token"))?;
+
+    let claims = auth::decode_access_token(jwt_config(), token)
+        .map_err(|e| unauthorized(&e.to_string()))?;
+
+    let role = parse_role(&claims.role)
+        .ok_or_else(|| unauthorized("Token carries an unrecognised role"))?;
+
+    // Tenant isolation (Req 3.3): reject tokens minted for a different tenant.
+    if claims.entity_id != served_entity() {
+        return Err(unauthorized("Token entity is not served by this instance"));
+    }
+
+    Ok(AuthContext {
+        user_id: claims.sub,
+        entity_id: claims.entity_id,
+        role,
+    })
+}
+
+/// Global authentication gate. Applied to every protected route so that no
+/// endpoint can be reached without a valid access token, regardless of whether
+/// its handler extracts `AuthContext`. The verified context is stashed in the
+/// request extensions for handlers that need it (see the extractor below).
+pub async fn require_authenticated(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<Response, Response> {
+    let ctx = verify_bearer(req.headers())?;
+    req.extensions_mut().insert(ctx);
+    Ok(next.run(req).await)
+}
+
+/// Extract `AuthContext` — populated by `require_authenticated`. If it is absent,
+/// the route was not placed behind the auth middleware (a wiring bug); fail closed.
 impl<S> FromRequestParts<S> for AuthContext
 where
     S: Send + Sync,
@@ -68,31 +111,11 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let token = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| unauthorized("Missing or malformed Authorization bearer token"))?;
-
-        let claims = auth::decode_access_token(jwt_config(), token)
-            .map_err(|e| unauthorized(&e.to_string()))?;
-
-        let role = parse_role(&claims.role)
-            .ok_or_else(|| unauthorized("Token carries an unrecognised role"))?;
-
-        // Tenant isolation (Req 3.3): reject tokens minted for a different tenant.
-        if claims.entity_id != served_entity() {
-            return Err(unauthorized("Token entity is not served by this instance"));
-        }
-
-        Ok(AuthContext {
-            user_id: claims.sub,
-            entity_id: claims.entity_id,
-            role,
-        })
+        parts
+            .extensions
+            .get::<AuthContext>()
+            .cloned()
+            .ok_or_else(|| unauthorized("Not authenticated"))
     }
 }
 

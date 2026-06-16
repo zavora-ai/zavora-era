@@ -34,9 +34,10 @@ pub struct LoginRequest {
 }
 
 fn token_response(user: &AuthUserRow, pair: &TokenPair) -> serde_json::Value {
+    // Note: the refresh token is intentionally NOT in the body — it is delivered
+    // only as an httpOnly cookie so it is never exposed to JavaScript.
     serde_json::json!({
         "access_token": pair.access_token,
-        "refresh_token": pair.refresh_token,
         "token_type": "Bearer",
         "expires_in": pair.expires_in,
         "user": {
@@ -47,6 +48,50 @@ fn token_response(user: &AuthUserRow, pair: &TokenPair) -> serde_json::Value {
             "email": user.email,
         }
     })
+}
+
+const REFRESH_COOKIE: &str = "era_refresh";
+
+fn is_production() -> bool {
+    std::env::var("APP_ENV")
+        .map(|v| v.eq_ignore_ascii_case("production"))
+        .unwrap_or(false)
+}
+
+/// Build the `Set-Cookie` value carrying the refresh token. httpOnly so JS can
+/// never read it; SameSite=Strict to defeat CSRF; scoped to the auth path.
+fn set_refresh_cookie(token: &str, max_age_secs: i64) -> String {
+    let secure = if is_production() { "; Secure" } else { "" };
+    format!(
+        "{REFRESH_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/api/v1/auth; Max-Age={max_age_secs}{secure}"
+    )
+}
+
+fn clear_refresh_cookie() -> String {
+    let secure = if is_production() { "; Secure" } else { "" };
+    format!("{REFRESH_COOKIE}=; HttpOnly; SameSite=Strict; Path=/api/v1/auth; Max-Age=0{secure}")
+}
+
+fn read_refresh_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
+    let raw = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+    raw.split(';').find_map(|kv| {
+        let (k, v) = kv.trim().split_once('=')?;
+        (k == REFRESH_COOKIE).then(|| v.to_string())
+    })
+}
+
+/// Build a success response: access token + user in the body, refresh token in
+/// an httpOnly cookie.
+fn auth_success(user: &AuthUserRow, pair: &TokenPair) -> Response {
+    let max_age = (pair.refresh_expires_at - chrono::Utc::now())
+        .num_seconds()
+        .max(0);
+    let cookie = set_refresh_cookie(&pair.refresh_token, max_age);
+    (
+        [(axum::http::header::SET_COOKIE, cookie)],
+        Json(token_response(user, pair)),
+    )
+        .into_response()
 }
 
 /// Persist a freshly issued refresh token so it can later be revoked.
@@ -92,7 +137,7 @@ async fn fetch_auth_user(
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<serde_json::Value>, Response> {
+) -> Result<Response, Response> {
     // Uniform error for unknown user / bad password / inactive (no enumeration).
     let invalid = || er(ErpError::Unauthorized {
         message: "Invalid email or password".to_string(),
@@ -124,21 +169,19 @@ pub async fn login(
         .execute(state.engine.pool())
         .await;
 
-    Ok(Json(token_response(&user, &pair)))
+    Ok(auth_success(&user, &pair))
 }
 
-#[derive(serde::Deserialize)]
-pub struct RefreshRequest {
-    pub refresh_token: String,
-}
-
-/// POST /auth/refresh — exchange a valid, non-revoked refresh token for a new
-/// token pair (rotating the refresh token).
+/// POST /auth/refresh — exchange the httpOnly refresh-token cookie for a new
+/// token pair (rotating the refresh token and re-issuing the cookie).
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<RefreshRequest>,
-) -> Result<Json<serde_json::Value>, Response> {
-    let claims = auth::decode_refresh_token(jwt_config(), &req.refresh_token).map_err(er)?;
+    headers: axum::http::HeaderMap,
+) -> Result<Response, Response> {
+    let refresh_token = read_refresh_cookie(&headers).ok_or_else(|| er(ErpError::Unauthorized {
+        message: "Missing refresh token".to_string(),
+    }))?;
+    let claims = auth::decode_refresh_token(jwt_config(), &refresh_token).map_err(er)?;
     let jti = claims.jti.ok_or_else(|| er(ErpError::Unauthorized {
         message: "Refresh token missing id".to_string(),
     }))?;
@@ -188,7 +231,29 @@ pub async fn refresh(
     .map_err(|e| er(ErpError::Database(e)))?;
     tx.commit().await.map_err(|e| er(ErpError::Database(e)))?;
 
-    Ok(Json(token_response(&user, &pair)))
+    Ok(auth_success(&user, &pair))
+}
+
+/// POST /auth/logout — revoke the current refresh token and clear its cookie.
+pub async fn logout(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, Response> {
+    if let Some(token) = read_refresh_cookie(&headers) {
+        if let Ok(claims) = auth::decode_refresh_token(jwt_config(), &token) {
+            if let Some(jti) = claims.jti {
+                let _ = sqlx::query("UPDATE refresh_tokens SET revoked = true WHERE jti = $1")
+                    .bind(jti)
+                    .execute(state.engine.pool())
+                    .await;
+            }
+        }
+    }
+    Ok((
+        [(axum::http::header::SET_COOKIE, clear_refresh_cookie())],
+        Json(serde_json::json!({ "ok": true })),
+    )
+        .into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -205,7 +270,7 @@ pub struct RegisterRequest {
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RegisterRequest>,
-) -> Result<Json<serde_json::Value>, Response> {
+) -> Result<Response, Response> {
     if req.password.len() < 8 {
         return Err(er(ErpError::ValidationFailed {
             message: "Password must be at least 8 characters".to_string(),
@@ -253,7 +318,7 @@ pub async fn register(
     let pair = auth::issue_token_pair(jwt_config(), id, served_entity(), "Owner").map_err(er)?;
     store_refresh_token(state.engine.pool(), &pair, &user).await.map_err(er)?;
 
-    Ok(Json(token_response(&user, &pair)))
+    Ok(auth_success(&user, &pair))
 }
 
 /// GET /users — list users for the entity (Owner/Admin only).

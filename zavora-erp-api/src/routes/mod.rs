@@ -34,6 +34,7 @@ pub fn err_response(e: ErpError) -> impl IntoResponse {
         ErpError::Duplicate { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::DuplicateReference { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::PermissionDenied { .. } => (StatusCode::FORBIDDEN, e.to_string()),
+        ErpError::Unauthorized { .. } => (StatusCode::UNAUTHORIZED, e.to_string()),
         ErpError::InsufficientStock { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::CreditLimitExceeded { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::Overpayment { .. } => (StatusCode::BAD_REQUEST, e.to_string()),
