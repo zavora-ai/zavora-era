@@ -637,22 +637,23 @@ fn parse_csv_amount(s: &str) -> Option<Decimal> {
 /// Pass 1: Exact match — stmt.amount = je.amount AND stmt.date = je.date AND stmt.reference = je.reference
 /// Pass 2: Near match — stmt.amount = je.amount AND |stmt.date - je.date| <= 3 days AND fuzzy(stmt.ref, je.ref) > 0.8
 /// Pass 3: AI suggestion — remaining unmatched lines get account suggestions from historical categorisations
-pub async fn match_bank_lines(engine: &ErpEngine, statement_id: Uuid) -> ErpResult<MatchReport> {
+pub async fn match_bank_lines(engine: &ErpEngine, entity_id: Uuid, statement_id: Uuid) -> ErpResult<MatchReport> {
     // ─── Pass 1: Exact Match ─────────────────────────────────────────────────
     let exact_matches = sqlx::query_as::<_, ExactMatchRow>(
         r#"SELECT DISTINCT ON (it.id)
-               it.id as stmt_line_id, je.id as journal_entry_id, 
+               it.id as stmt_line_id, je.id as journal_entry_id,
                COALESCE(it.debit, it.credit) as amount, it.value_date as date
            FROM imported_transactions it
            JOIN journal_entries je ON je.entity_id = it.entity_id AND je.status = 'posted'
            JOIN journal_lines jl ON jl.entry_id = je.id
-           WHERE it.import_batch_id = $1 AND it.category_status = 'uncategorised'
+           WHERE it.import_batch_id = $1 AND it.entity_id = $2 AND it.category_status = 'uncategorised'
            AND je.date = it.value_date
            AND (jl.functional_debit = it.credit OR jl.functional_credit = it.debit)
            AND je.reference = it.reference
            AND je.reference != ''"#,
     )
     .bind(statement_id)
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -681,7 +682,7 @@ pub async fn match_bank_lines(engine: &ErpEngine, statement_id: Uuid) -> ErpResu
            FROM imported_transactions it
            JOIN journal_entries je ON je.entity_id = it.entity_id AND je.status = 'posted'
            JOIN journal_lines jl ON jl.entry_id = je.id
-           WHERE it.import_batch_id = $1 AND it.category_status = 'uncategorised'
+           WHERE it.import_batch_id = $1 AND it.entity_id = $4 AND it.category_status = 'uncategorised'
            AND (jl.functional_debit = it.credit OR jl.functional_credit = it.debit)
            AND ABS(je.date - it.value_date) <= 3
            AND it.id != ALL($2)
@@ -690,6 +691,7 @@ pub async fn match_bank_lines(engine: &ErpEngine, statement_id: Uuid) -> ErpResu
     .bind(statement_id)
     .bind(&matched_stmt_ids)
     .bind(&matched_je_ids)
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -732,11 +734,12 @@ pub async fn match_bank_lines(engine: &ErpEngine, statement_id: Uuid) -> ErpResu
     let unmatched_lines = sqlx::query_as::<_, UnmatchedLineRow>(
         r#"SELECT id, entity_id, description, reference, debit, credit, value_date
            FROM imported_transactions
-           WHERE import_batch_id = $1 AND category_status = 'uncategorised'
+           WHERE import_batch_id = $1 AND entity_id = $3 AND category_status = 'uncategorised'
            AND id != ALL($2)"#,
     )
     .bind(statement_id)
     .bind(&all_matched_stmt_ids)
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -763,7 +766,7 @@ pub async fn match_bank_lines(engine: &ErpEngine, statement_id: Uuid) -> ErpResu
 
 /// Confirm a reconciliation match — links statement line to journal entry
 /// and marks both as reconciled.
-pub async fn confirm_match(engine: &ErpEngine, req: ConfirmMatchRequest) -> ErpResult<()> {
+pub async fn confirm_match(engine: &ErpEngine, entity_id: Uuid, req: ConfirmMatchRequest) -> ErpResult<()> {
     let mut tx = engine.pool().begin().await?;
 
     // Link statement line to journal entry and mark as reconciled/posted
@@ -809,7 +812,7 @@ pub async fn confirm_match(engine: &ErpEngine, req: ConfirmMatchRequest) -> ErpR
         "timestamp": chrono::Utc::now(),
     });
 
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -829,7 +832,7 @@ pub async fn confirm_match(engine: &ErpEngine, req: ConfirmMatchRequest) -> ErpR
 /// Creates a JE with:
 /// - If the transaction is a credit (money in): DR Bank account / CR assigned account
 /// - If the transaction is a debit (money out): DR assigned account / CR Bank account
-pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> ErpResult<Uuid> {
+pub async fn post_unmatched(engine: &ErpEngine, entity_id: Uuid, req: PostUnmatchedRequest) -> ErpResult<Uuid> {
     // Fetch the unmatched transaction
     let txn = sqlx::query_as::<_, crate::transactions::ImportedTransactionRow>(
         "SELECT * FROM imported_transactions WHERE id = $1",
@@ -847,7 +850,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
         "SELECT gl_account FROM bank_accounts WHERE id = $1 AND entity_id = $2",
     )
     .bind(txn.bank_account)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .unwrap_or_else(|| "1020".to_string()); // Default to bank account code
@@ -859,7 +862,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
         });
     }
 
-    let base_currency = engine.config().base_currency.clone();
+    let base_currency = engine.config_for(entity_id).await?.base_currency.clone();
 
     // Build journal entry lines based on whether it's a debit or credit transaction
     let lines = if txn.debit.is_some() {
@@ -912,7 +915,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
     let period = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM fiscal_periods WHERE entity_id = $1 AND start_date <= $2 AND end_date >= $2",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(txn.value_date)
     .fetch_optional(engine.pool())
     .await?
@@ -930,7 +933,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
         post_immediately: true,
     };
 
-    let je = crate::services::journal::create_and_post(engine, engine.entity_id(), je_request, period, req.posted_by.clone()).await?;
+    let je = crate::services::journal::create_and_post(engine, entity_id, je_request, period, req.posted_by.clone()).await?;
 
     // Link the transaction to the new journal entry and mark as posted
     sqlx::query(
@@ -963,6 +966,7 @@ pub async fn post_unmatched(engine: &ErpEngine, req: PostUnmatchedRequest) -> Er
 /// Returns a ReconciliationSummary with the reconciliation status.
 pub async fn verify_reconciliation_balance(
     engine: &ErpEngine,
+    entity_id: Uuid,
     statement_id: Uuid,
 ) -> ErpResult<ReconciliationSummary> {
     // Get statement import details
@@ -970,7 +974,7 @@ pub async fn verify_reconciliation_balance(
         "SELECT * FROM statement_imports WHERE id = $1 AND entity_id = $2",
     )
     .bind(statement_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -999,7 +1003,7 @@ pub async fn verify_reconciliation_balance(
            AND jl.account_code = (SELECT gl_account FROM bank_accounts WHERE id = $2 AND entity_id = $1)
            AND je.reconciled = true"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(import.bank_account_id)
     .fetch_one(engine.pool())
     .await?;

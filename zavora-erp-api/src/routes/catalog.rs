@@ -10,12 +10,13 @@ use zavora_erp_core::services::catalog as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list_products(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, ProductRow>(
         "SELECT * FROM products WHERE entity_id = $1 AND is_active = true ORDER BY name",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -25,13 +26,14 @@ pub async fn list_products(
 }
 
 pub async fn get_product(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let row = sqlx::query_as::<_, ProductRow>(
         "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
     )
-    .bind(id).bind(state.engine.entity_id())
+    .bind(id).bind(ctx.entity_id)
     .fetch_optional(state.engine.pool()).await;
     match row {
         Ok(Some(r)) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
@@ -62,7 +64,7 @@ pub async fn update_product(
     if let Err(e) = require_role(ROLES_CREATE, &ctx, "update product") { return Err(err_response(e)); }
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE products SET name = $1 WHERE id = $2 AND entity_id = $3")
-            .bind(name).bind(id).bind(state.engine.entity_id())
+            .bind(name).bind(id).bind(ctx.entity_id)
             .execute(state.engine.pool()).await.ok();
     }
     Ok(Json(serde_json::json!({ "id": id, "updated": true })))

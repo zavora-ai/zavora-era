@@ -9,12 +9,13 @@ use zavora_erp_core::services::assets as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, FixedAssetRow>(
         "SELECT * FROM fixed_assets WHERE entity_id = $1 ORDER BY asset_number",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {

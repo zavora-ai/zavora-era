@@ -49,7 +49,8 @@ pub async fn validate_entry(
     }
 
     // Rule 3: Sum of debits must equal sum of credits (in functional currency)
-    let base_ccy = &engine.config().base_currency;
+    let cfg = engine.config_for(entity_id).await?;
+    let base_ccy = &cfg.base_currency;
     let mut total_func_debits = Decimal::ZERO;
     let mut total_func_credits = Decimal::ZERO;
 
@@ -267,12 +268,13 @@ pub async fn create_and_post_in_tx(
             } else {
                 (None, Some(amount))
             };
+            let tcfg = engine.config_for(entity_id).await?;
             lines.push(JournalLine {
                 id: Uuid::new_v4(),
-                account_code: engine.posting().rounding_adjustment.clone(),
+                account_code: tcfg.posting.rounding_adjustment.clone(),
                 debit: debit_amt,
                 credit: credit_amt,
-                currency: engine.config().base_currency.clone(),
+                currency: tcfg.base_currency.clone(),
                 fx_rate: Decimal::ONE,
                 functional_debit: debit_amt,
                 functional_credit: credit_amt,
@@ -390,10 +392,11 @@ async fn generate_journal_number_in_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    let prefix = &engine.config().sequences.journal_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.journal_prefix;
     let fiscal_year = chrono::Utc::now().format("%Y").to_string();
 
-    if engine.config().sequences.year_reset {
+    if cfg.sequences.year_reset {
         Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
     } else {
         Ok(format!("{}-{:06}", prefix, row))

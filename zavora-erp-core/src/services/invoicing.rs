@@ -317,7 +317,7 @@ pub async fn create_credit_note(
 
     // CR Accounts Receivable (reduce AR)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting().accounts_receivable.clone(),
+        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
         debit: None,
         credit: Some(gross_total),
         currency: original.currency.clone(),
@@ -340,7 +340,7 @@ pub async fn create_credit_note(
 
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().vat_output.clone(),
+                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
                 debit: Some(line.vat_amount),
                 credit: None,
                 currency: original.currency.clone(),
@@ -761,7 +761,10 @@ async fn resolve_invoice_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(Decimal::ZERO),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or_else(|| engine.posting().default_sales.clone()),
+            account_code: match req.account_code.clone() {
+                Some(c) => c,
+                None => engine.posting_for(entity_id).await?.default_sales.clone(),
+            },
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
@@ -781,7 +784,8 @@ async fn generate_invoice_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResu
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.invoice_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.invoice_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
@@ -799,7 +803,8 @@ async fn generate_credit_note_number(engine: &ErpEngine, entity_id: Uuid) -> Erp
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.credit_note_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.credit_note_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
@@ -817,7 +822,8 @@ async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid) -> ErpRes
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.estimate_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.estimate_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
@@ -939,7 +945,7 @@ pub async fn post_invoice(
 
     // DR Accounts Receivable (total including tax)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting().accounts_receivable.clone(),
+        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
         debit: Some(invoice.gross_total),
         credit: None,
         currency: invoice.currency.clone(),
@@ -963,7 +969,7 @@ pub async fn post_invoice(
         // CR VAT Output (if applicable)
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().vat_output.clone(),
+                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: invoice.currency.clone(),
@@ -1116,10 +1122,10 @@ pub async fn resolve_bill_line(
             vat_amount: Decimal::ZERO,
         })
     } else {
-        let default_account = vendor
-            .default_expense_account
-            .clone()
-            .unwrap_or_else(|| engine.posting().default_expense.clone());
+        let default_account = match vendor.default_expense_account.clone() {
+            Some(a) => a,
+            None => engine.posting_for(entity_id).await?.default_expense.clone(),
+        };
 
         Ok(InvoiceLine {
             id,

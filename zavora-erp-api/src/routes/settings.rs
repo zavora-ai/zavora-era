@@ -9,9 +9,10 @@ use zavora_erp_core::services::settings as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn get(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::get_settings(&state.engine).await {
+    match svc::get_settings(&state.engine, ctx.entity_id).await {
         Ok(config) => Ok(Json(serde_json::to_value(config).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

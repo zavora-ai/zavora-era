@@ -9,12 +9,13 @@ use zavora_erp_core::services::payments as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, PaymentRow>(
         "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -78,7 +79,7 @@ pub async fn mpesa_stk_push(
         "SELECT EXISTS(SELECT 1 FROM invoices WHERE id = $1 AND entity_id = $2)",
     )
     .bind(req.invoice_id)
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_one(state.engine.pool())
     .await
     .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)))?;

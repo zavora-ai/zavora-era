@@ -10,12 +10,13 @@ use zavora_erp_core::services::bank as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list_accounts(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, BankAccountRow>(
         "SELECT * FROM bank_accounts WHERE entity_id = $1 AND is_active = true ORDER BY name",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -36,7 +37,7 @@ pub async fn create_account(
     let result = sqlx::query(
         "INSERT INTO bank_accounts (id, entity_id, name, bank_name, account_number, currency, gl_account, feed_provider, feed_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
     )
-    .bind(id).bind(state.engine.entity_id())
+    .bind(id).bind(ctx.entity_id)
     .bind(&req.name).bind(&req.bank_name).bind(&req.account_number)
     .bind(&currency).bind(&gl)
     .bind(req.feed_provider.as_ref().map(|f| serde_json::to_string(f).unwrap_or_default()))
@@ -66,7 +67,7 @@ pub async fn delete_account(
         "UPDATE bank_accounts SET is_active = false WHERE id = $1 AND entity_id = $2",
     )
     .bind(id)
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .execute(state.engine.pool())
     .await;
     match result {
@@ -81,7 +82,7 @@ pub async fn reconcile(
     Path(statement_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "reconcile bank statement").map_err(err_response)?;
-    match svc::match_bank_lines(&state.engine, statement_id).await {
+    match svc::match_bank_lines(&state.engine, ctx.entity_id, statement_id).await {
         Ok(report) => Ok(Json(serde_json::to_value(report).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -93,7 +94,7 @@ pub async fn confirm_match(
     Json(req): Json<ConfirmMatchRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "confirm bank match").map_err(err_response)?;
-    match svc::confirm_match(&state.engine, req).await {
+    match svc::confirm_match(&state.engine, ctx.entity_id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "confirmed" }))),
         Err(e) => Err(err_response(e)),
     }

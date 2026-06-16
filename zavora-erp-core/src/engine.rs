@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -15,10 +18,17 @@ use crate::types::AgentOrUserId;
 pub struct ErpEngine {
     pool: PgPool,
     redis: tokio::sync::Mutex<redis::aio::MultiplexedConnection>,
+    /// Startup/bootstrap entity config. Used by request-less paths (the
+    /// background scheduler, the agentic API). Per-request work resolves the
+    /// caller's tenant config via [`ErpEngine::config_for`].
     config: ErpConfig,
-    /// Live posting setup (GL account determination). Held behind a lock so it
-    /// can be updated at runtime when settings are saved, without restarting.
+    /// Live posting setup for the startup entity (legacy single-tenant accessor).
     posting: std::sync::RwLock<crate::posting::PostingSetup>,
+    /// Per-tenant configuration cache, keyed by `entity_id`. Populated lazily on
+    /// first access and invalidated when a tenant's settings are saved. This is
+    /// what makes the process genuinely multi-tenant: each request resolves its
+    /// own tenant's currency, sequences, and posting setup.
+    configs: tokio::sync::RwLock<HashMap<Uuid, Arc<ErpConfig>>>,
 }
 
 impl ErpEngine {
@@ -28,12 +38,44 @@ impl ErpEngine {
         redis: redis::aio::MultiplexedConnection,
         config: ErpConfig,
     ) -> ErpResult<Self> {
+        // Pre-seed the per-tenant cache with the startup entity so the common
+        // single-tenant deployment never pays a load on first request.
+        let mut configs = HashMap::new();
+        configs.insert(config.entity_id, Arc::new(config.clone()));
+
         Ok(Self {
             pool,
             redis: tokio::sync::Mutex::new(redis),
             posting: std::sync::RwLock::new(config.posting.clone()),
             config,
+            configs: tokio::sync::RwLock::new(configs),
         })
+    }
+
+    /// Resolve a tenant's configuration, loading and caching it on first use.
+    ///
+    /// This is the multi-tenant replacement for [`ErpEngine::config`]: services
+    /// pass the request's `entity_id` (from the verified JWT) and get that
+    /// tenant's currency, sequences, tax, and posting setup — not the startup
+    /// entity's.
+    pub async fn config_for(&self, entity_id: Uuid) -> ErpResult<Arc<ErpConfig>> {
+        if let Some(cfg) = self.configs.read().await.get(&entity_id) {
+            return Ok(cfg.clone());
+        }
+        let cfg = Arc::new(crate::settings::load_or_create_config(&self.pool, entity_id).await?);
+        self.configs.write().await.insert(entity_id, cfg.clone());
+        Ok(cfg)
+    }
+
+    /// Resolve a tenant's posting setup (GL account determination).
+    pub async fn posting_for(&self, entity_id: Uuid) -> ErpResult<crate::posting::PostingSetup> {
+        Ok(self.config_for(entity_id).await?.posting.clone())
+    }
+
+    /// Drop a tenant's cached config so the next access reloads it. Called after
+    /// that tenant's settings are saved.
+    pub async fn invalidate_config(&self, entity_id: Uuid) {
+        self.configs.write().await.remove(&entity_id);
     }
 
     /// Get a reference to the database pool.

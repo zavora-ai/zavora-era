@@ -57,7 +57,7 @@ pub async fn run_fx_revaluation(
     rate_date: NaiveDate,
     triggered_by: AgentOrUserId,
 ) -> ErpResult<Uuid> {
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
 
     // Get the period to determine date range
     let period = crate::services::periods::get_period(engine, entity_id, period_id).await?;
@@ -154,7 +154,7 @@ pub async fn run_fx_revaluation(
             });
             // CR Unrealised FX Gain
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().unrealised_fx_gain.clone(),
+                account_code: engine.posting_for(entity_id).await?.unrealised_fx_gain.clone(),
                 debit: None,
                 credit: Some(gain_loss),
                 currency: base_ccy.clone(),
@@ -166,7 +166,7 @@ pub async fn run_fx_revaluation(
             let loss_amount = gain_loss.abs();
             // DR Unrealised FX Loss
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().unrealised_fx_loss.clone(),
+                account_code: engine.posting_for(entity_id).await?.unrealised_fx_loss.clone(),
                 debit: Some(loss_amount),
                 credit: None,
                 currency: base_ccy.clone(),

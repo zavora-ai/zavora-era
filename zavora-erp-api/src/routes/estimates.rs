@@ -3,15 +3,17 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::middleware::auth::AuthContext;
 use super::err_response;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, zavora_erp_core::invoicing::EstimateRow>(
         "SELECT * FROM estimates WHERE entity_id = $1 ORDER BY created_at DESC",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -21,6 +23,7 @@ pub async fn list(
 }
 
 pub async fn get_one(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
@@ -28,7 +31,7 @@ pub async fn get_one(
         "SELECT * FROM estimates WHERE id = $1 AND entity_id = $2",
     )
     .bind(id)
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_optional(state.engine.pool())
     .await;
     match row {

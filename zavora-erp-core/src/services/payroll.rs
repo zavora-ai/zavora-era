@@ -220,8 +220,8 @@ pub async fn post_pay_run(
     // CR Housing Levy Payable (3350) — employee + employer housing levy
     // CR Net Salary Payable (3400) — total net
 
-    let base_ccy = engine.config().base_currency.clone();
-    let posting = engine.posting();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+    let posting = engine.posting_for(entity_id).await?;
     // NSSF total includes both employee + employer; employer portion is half
     let employer_nssf = pay_run.total_nssf / Decimal::new(2, 0);
     let employer_hl = pay_run.total_housing_levy / Decimal::new(2, 0);

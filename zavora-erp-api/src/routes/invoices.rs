@@ -10,12 +10,13 @@ use zavora_erp_core::services::invoicing as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, InvoiceRow>(
         "SELECT * FROM invoices WHERE entity_id = $1 ORDER BY created_at DESC",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -25,13 +26,14 @@ pub async fn list(
 }
 
 pub async fn get_one(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let invoice = sqlx::query_as::<_, InvoiceRow>(
         "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
     )
-    .bind(id).bind(state.engine.entity_id())
+    .bind(id).bind(ctx.entity_id)
     .fetch_optional(state.engine.pool()).await;
 
     let lines = sqlx::query_as::<_, InvoiceLineRow>(
@@ -128,7 +130,7 @@ pub async fn create_credit_note(
                 "timestamp": chrono::Utc::now(),
             });
 
-            let stream_key = format!("erp:audit:{}", state.engine.entity_id());
+            let stream_key = format!("erp:audit:{}", ctx.entity_id);
             let mut redis_conn = state.engine.redis_conn().await;
             let _: Result<(), _> = redis::cmd("XADD")
                 .arg(&stream_key)
@@ -159,12 +161,13 @@ pub async fn create_credit_note(
 }
 
 pub async fn list_recurring(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, RecurringInvoiceRow>(
         "SELECT * FROM recurring_invoices WHERE entity_id = $1 ORDER BY next_run",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {

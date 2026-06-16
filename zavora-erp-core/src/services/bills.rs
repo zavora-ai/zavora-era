@@ -185,7 +185,8 @@ async fn generate_bill_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.bill_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.bill_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }

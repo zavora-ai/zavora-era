@@ -14,7 +14,10 @@ pub async fn create_customer(
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
     let id = Uuid::new_v4();
-    let currency = req.currency.unwrap_or_else(|| engine.config().base_currency.clone());
+    let currency = match req.currency.clone() {
+        Some(c) => c,
+        None => engine.config_for(entity_id).await?.base_currency.clone(),
+    };
     let payment_terms = req.payment_terms.unwrap_or(crate::types::PaymentTerms::Net30);
     let ar_account = req.ar_account.unwrap_or_else(|| "1200".to_string());
     let reminder_policy = req.reminder_policy.unwrap_or_default();
@@ -55,7 +58,10 @@ pub async fn create_vendor(
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
     let id = Uuid::new_v4();
-    let currency = req.currency.unwrap_or_else(|| engine.config().base_currency.clone());
+    let currency = match req.currency.clone() {
+        Some(c) => c,
+        None => engine.config_for(entity_id).await?.base_currency.clone(),
+    };
     let payment_terms = req.payment_terms.unwrap_or(crate::types::PaymentTerms::Net30);
     let ap_account = req.ap_account.unwrap_or_else(|| "3010".to_string());
 

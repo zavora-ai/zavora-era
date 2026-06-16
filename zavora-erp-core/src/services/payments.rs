@@ -21,16 +21,16 @@ struct PaymentAccounts {
 }
 
 impl PaymentAccounts {
-    fn resolve(engine: &ErpEngine) -> Self {
-        let p = &engine.posting();
-        Self {
+    async fn resolve(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<Self> {
+        let p = engine.posting_for(entity_id).await?;
+        Ok(Self {
             ar: p.accounts_receivable.clone(),
             ap: p.accounts_payable.clone(),
             unapplied_payments: p.unapplied_payments.clone(),
             wht_payable: p.wht_payable.clone(),
             realised_fx_gain: p.realised_fx_gain.clone(),
             realised_fx_loss: p.realised_fx_loss.clone(),
-        }
+        })
     }
 }
 
@@ -59,7 +59,10 @@ pub async fn record_payment(
     let id = Uuid::new_v4();
     let today = Utc::now().date_naive();
     let payment_date = req.payment_date.unwrap_or(today);
-    let currency = req.currency.clone().unwrap_or_else(|| engine.config().base_currency.clone());
+    let currency = match req.currency.clone() {
+        Some(c) => c,
+        None => engine.config_for(entity_id).await?.base_currency.clone(),
+    };
     let fx_rate = req.fx_rate.unwrap_or(Decimal::ONE);
 
     // Validate applications don't exceed payment amount
@@ -402,7 +405,7 @@ async fn resolve_bank_account_code(
     entity_id: Uuid,
     bank_account_id: Option<Uuid>,
 ) -> ErpResult<String> {
-    let default_bank = engine.posting().default_bank.clone();
+    let default_bank = engine.posting_for(entity_id).await?.default_bank.clone();
 
     let Some(ba_id) = bank_account_id else {
         return Ok(default_bank);
@@ -455,7 +458,7 @@ async fn post_payment_journal_entry(
     wht_amount: Decimal,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
-    let acct = PaymentAccounts::resolve(engine);
+    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     match payment_type {
@@ -896,7 +899,7 @@ pub async fn apply_unapplied_payment(
     }
 
     // 6. Create JE: DR Unapplied Payments / CR AR or AP (Requirement 24.3)
-    let acct = PaymentAccounts::resolve(engine);
+    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
     let receivable_payable_code = match payment_type {
         PaymentType::CustomerPayment => acct.ar.clone(),
         PaymentType::VendorPayment => acct.ap.clone(),
@@ -1034,7 +1037,8 @@ async fn generate_payment_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResu
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.payment_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.payment_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
@@ -1111,14 +1115,14 @@ async fn post_fx_gain_loss_entry(
     let fx_difference = functional_at_payment_rate - functional_at_invoice_rate;
 
     // Determine the AR/AP account for the offsetting entry
-    let acct = PaymentAccounts::resolve(engine);
+    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
     let ar_ap_code = match payment_type {
         PaymentType::CustomerPayment => acct.ar.clone(),
         PaymentType::VendorPayment => acct.ap.clone(),
     };
 
     let abs_difference = fx_difference.abs();
-    let base_currency = engine.config().base_currency.clone();
+    let base_currency = engine.config_for(entity_id).await?.base_currency.clone();
 
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 

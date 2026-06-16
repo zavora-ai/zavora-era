@@ -58,7 +58,7 @@ pub async fn execute_year_end_close(
             message: "No periods found for fiscal year".to_string(),
         })?;
 
-    let closing_entry = build_closing_entry(engine, &pnl_balances, last_period, &req).await?;
+    let closing_entry = build_closing_entry(engine, entity_id, &pnl_balances, last_period, &req).await?;
     let closing_je = crate::services::journal::create_and_post(
         engine,
         entity_id,
@@ -81,7 +81,7 @@ pub async fn execute_year_end_close(
 
     let bs_balances = compute_balance_sheet_balances(engine, entity_id, &periods).await?;
     let opening_entry =
-        build_opening_entry(engine, &bs_balances, first_period_next_year, &req).await?;
+        build_opening_entry(engine, entity_id, &bs_balances, first_period_next_year, &req).await?;
     let opening_je = crate::services::journal::create_and_post(
         engine,
         entity_id,
@@ -285,12 +285,14 @@ async fn compute_balance_sheet_balances(
 ///   - If net loss (Expense > Revenue): DR Retained Earnings
 async fn build_closing_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     pnl_balances: &[AccountBalance],
     last_period: &FiscalPeriod,
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
-    let base_ccy = engine.config().base_currency.clone();
-    let retained_earnings = engine.posting().retained_earnings.clone();
+    let cfg = engine.config_for(entity_id).await?;
+    let base_ccy = cfg.base_currency.clone();
+    let retained_earnings = cfg.posting.retained_earnings.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in pnl_balances {
@@ -388,11 +390,12 @@ async fn build_closing_entry(
 /// Carries forward all Balance Sheet account balances plus the retained earnings adjustment.
 async fn build_opening_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     bs_balances: &[AccountBalance],
     first_period: &FiscalPeriod,
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in bs_balances {

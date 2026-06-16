@@ -3,6 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::middleware::auth::AuthContext;
 use super::err_response;
 use zavora_erp_core::audit::*;
 use zavora_erp_core::services::audit as svc;
@@ -14,11 +15,12 @@ pub struct AuditQueryParams {
 }
 
 pub async fn query(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Query(params): Query<AuditQueryParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let q = AuditQuery {
-        entity_id: state.engine.entity_id(),
+        entity_id: ctx.entity_id,
         object_type: None,
         object_id: None,
         actor: None,
@@ -35,11 +37,12 @@ pub async fn query(
 }
 
 pub async fn for_object(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path((object_type, object_id)): Path<(String, Uuid)>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let q = AuditQuery {
-        entity_id: state.engine.entity_id(),
+        entity_id: ctx.entity_id,
         object_type: Some(object_type),
         object_id: Some(object_id),
         actor: None,

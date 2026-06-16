@@ -9,12 +9,13 @@ use zavora_erp_core::services::inventory as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, InventoryItemRow>(
         "SELECT * FROM inventory_items WHERE entity_id = $1 AND is_active = true ORDER BY sku",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {

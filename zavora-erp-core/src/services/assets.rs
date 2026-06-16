@@ -82,7 +82,7 @@ pub async fn run_depreciation(
         return Ok(Vec::new());
     }
 
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
     let mut depreciated_ids = Vec::new();
     let mut journal_lines = Vec::new();
 

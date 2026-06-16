@@ -8,12 +8,13 @@ use zavora_erp_core::fx::*;
 use zavora_erp_core::services::fx as svc;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, ExchangeRateRow>(
         "SELECT * FROM exchange_rates WHERE entity_id = $1 ORDER BY rate_date DESC LIMIT 100",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
