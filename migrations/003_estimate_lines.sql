@@ -1,9 +1,7 @@
 -- Zavora ERP — Estimate line items
--- Fixes a missing table: services/invoicing.rs writes to and reads from
--- `estimate_lines`, but the initial schema only created `invoice_lines`.
 -- Mirrors the invoice_lines structure but keyed on estimate_id.
 
-CREATE TABLE estimate_lines (
+CREATE TABLE IF NOT EXISTS estimate_lines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     estimate_id UUID NOT NULL REFERENCES estimates(id),
     product_id UUID REFERENCES products(id),
@@ -17,4 +15,4 @@ CREATE TABLE estimate_lines (
     vat_amount NUMERIC NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_estimate_lines_estimate ON estimate_lines(estimate_id);
+CREATE INDEX IF NOT EXISTS idx_estimate_lines_estimate ON estimate_lines(estimate_id);

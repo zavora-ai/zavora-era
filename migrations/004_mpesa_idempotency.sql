@@ -1,11 +1,9 @@
 -- Zavora ERP — M-Pesa webhook idempotency
--- Daraja delivers callbacks with at-least-once semantics, so retries must not
--- create duplicate payments. A unique receipt per entity lets the application
--- "claim" a receipt before recording a payment; a duplicate claim is rejected
--- by this constraint.
+-- A unique receipt per entity prevents duplicate payment creation from
+-- at-least-once Daraja callbacks.
 
--- Replace the non-unique index with a unique one (per entity).
+-- Drop old non-unique index if it exists, then create unique one.
 DROP INDEX IF EXISTS idx_mpesa_receipt;
 
-CREATE UNIQUE INDEX idx_mpesa_receipt_unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mpesa_receipt_unique
     ON mpesa_transactions(entity_id, receipt_number);

@@ -1,5 +1,6 @@
 -- Zavora ERP — Immutability Guarantees (DB-level enforcement)
 -- Spec section 25.2: These guarantees cannot be bypassed via application code.
+-- All statements use CREATE OR REPLACE / IF NOT EXISTS for idempotency.
 
 -- ============================================================
 -- TRIGGER 1: Posted journal entries cannot be mutated
@@ -10,9 +11,7 @@ BEGIN
     IF OLD.status = 'posted' AND NEW.status != 'reversed' THEN
         RAISE EXCEPTION 'Cannot modify a posted journal entry (id: %). Use reversal instead.', OLD.id;
     END IF;
-    -- Allow only status change to 'reversed'
     IF OLD.status = 'posted' AND NEW.status = 'reversed' THEN
-        -- Only status may change
         IF NEW.number != OLD.number OR NEW.date != OLD.date OR 
            NEW.reference != OLD.reference OR NEW.description != OLD.description THEN
             RAISE EXCEPTION 'Only status may be updated on a posted journal entry (id: %).', OLD.id;
@@ -22,6 +21,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_prevent_posted_journal_update ON journal_entries;
 CREATE TRIGGER trg_prevent_posted_journal_update
     BEFORE UPDATE ON journal_entries
     FOR EACH ROW
@@ -47,6 +47,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_prevent_hardclosed_insert ON journal_lines;
 CREATE TRIGGER trg_prevent_hardclosed_insert
     BEFORE INSERT ON journal_lines
     FOR EACH ROW
@@ -68,6 +69,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_prevent_posted_line_update ON journal_lines;
 CREATE TRIGGER trg_prevent_posted_line_update
     BEFORE UPDATE ON journal_lines
     FOR EACH ROW
@@ -89,6 +91,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_prevent_posted_line_delete ON journal_lines;
 CREATE TRIGGER trg_prevent_posted_line_delete
     BEFORE DELETE ON journal_lines
     FOR EACH ROW
@@ -110,6 +113,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_audit_journal_post ON journal_entries;
 CREATE TRIGGER trg_audit_journal_post
     AFTER INSERT OR UPDATE ON journal_entries
     FOR EACH ROW
@@ -129,6 +133,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_enforce_nonneg_inventory ON inventory_items;
 CREATE TRIGGER trg_enforce_nonneg_inventory
     BEFORE UPDATE ON inventory_items
     FOR EACH ROW

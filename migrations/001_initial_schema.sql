@@ -1,5 +1,6 @@
 -- Zavora ERP — Initial Database Schema
 -- Covers all tables from spec sections 26.1–26.7 plus supporting tables.
+-- All statements are idempotent (IF NOT EXISTS) to survive cold starts.
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -8,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================
 -- ACCOUNTS (Chart of Accounts)
 -- ============================================================
-CREATE TABLE accounts (
+CREATE TABLE IF NOT EXISTS accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     code TEXT NOT NULL,
@@ -23,14 +24,14 @@ CREATE TABLE accounts (
     UNIQUE(entity_id, code)
 );
 
-CREATE INDEX idx_accounts_entity ON accounts(entity_id);
-CREATE INDEX idx_accounts_type ON accounts(entity_id, account_type);
-CREATE INDEX idx_accounts_parent ON accounts(entity_id, parent_code);
+CREATE INDEX IF NOT EXISTS idx_accounts_entity ON accounts(entity_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(entity_id, account_type);
+CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(entity_id, parent_code);
 
 -- ============================================================
 -- FISCAL PERIODS
 -- ============================================================
-CREATE TABLE fiscal_periods (
+CREATE TABLE IF NOT EXISTS fiscal_periods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -45,13 +46,13 @@ CREATE TABLE fiscal_periods (
     UNIQUE(entity_id, start_date)
 );
 
-CREATE INDEX idx_periods_entity ON fiscal_periods(entity_id);
-CREATE INDEX idx_periods_date ON fiscal_periods(entity_id, start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_periods_entity ON fiscal_periods(entity_id);
+CREATE INDEX IF NOT EXISTS idx_periods_date ON fiscal_periods(entity_id, start_date, end_date);
 
 -- ============================================================
 -- JOURNAL ENTRIES
 -- ============================================================
-CREATE TABLE journal_entries (
+CREATE TABLE IF NOT EXISTS journal_entries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     number TEXT NOT NULL,
@@ -67,11 +68,11 @@ CREATE TABLE journal_entries (
     UNIQUE(entity_id, number)
 );
 
-CREATE INDEX idx_je_entity_date ON journal_entries(entity_id, date);
-CREATE INDEX idx_je_entity_status ON journal_entries(entity_id, status);
-CREATE INDEX idx_je_reference ON journal_entries(entity_id, reference);
+CREATE INDEX IF NOT EXISTS idx_je_entity_date ON journal_entries(entity_id, date);
+CREATE INDEX IF NOT EXISTS idx_je_entity_status ON journal_entries(entity_id, status);
+CREATE INDEX IF NOT EXISTS idx_je_reference ON journal_entries(entity_id, reference);
 
-CREATE TABLE journal_lines (
+CREATE TABLE IF NOT EXISTS journal_lines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entry_id UUID NOT NULL REFERENCES journal_entries(id),
     account_code TEXT NOT NULL,
@@ -85,13 +86,13 @@ CREATE TABLE journal_lines (
     dimensions JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_jl_entry ON journal_lines(entry_id);
-CREATE INDEX idx_jl_account ON journal_lines(account_code);
+CREATE INDEX IF NOT EXISTS idx_jl_entry ON journal_lines(entry_id);
+CREATE INDEX IF NOT EXISTS idx_jl_account ON journal_lines(account_code);
 
 -- ============================================================
 -- ENTITY SETTINGS
 -- ============================================================
-CREATE TABLE entity_settings (
+CREATE TABLE IF NOT EXISTS entity_settings (
     entity_id UUID PRIMARY KEY,
     base_currency CHAR(3) NOT NULL DEFAULT 'KES',
     fiscal_year_end TEXT NOT NULL DEFAULT '{"month":12,"day":31}',
@@ -107,7 +108,7 @@ CREATE TABLE entity_settings (
 -- ============================================================
 -- CUSTOMERS
 -- ============================================================
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -127,13 +128,13 @@ CREATE TABLE customers (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_customers_entity ON customers(entity_id);
-CREATE INDEX idx_customers_name ON customers(entity_id, name);
+CREATE INDEX IF NOT EXISTS idx_customers_entity ON customers(entity_id);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(entity_id, name);
 
 -- ============================================================
 -- VENDORS
 -- ============================================================
-CREATE TABLE vendors (
+CREATE TABLE IF NOT EXISTS vendors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -154,13 +155,13 @@ CREATE TABLE vendors (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_vendors_entity ON vendors(entity_id);
-CREATE INDEX idx_vendors_name ON vendors(entity_id, name);
+CREATE INDEX IF NOT EXISTS idx_vendors_entity ON vendors(entity_id);
+CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(entity_id, name);
 
 -- ============================================================
 -- EMPLOYEES
 -- ============================================================
-CREATE TABLE employees (
+CREATE TABLE IF NOT EXISTS employees (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     staff_number TEXT NOT NULL,
@@ -182,12 +183,12 @@ CREATE TABLE employees (
     UNIQUE(entity_id, staff_number)
 );
 
-CREATE INDEX idx_employees_entity ON employees(entity_id);
+CREATE INDEX IF NOT EXISTS idx_employees_entity ON employees(entity_id);
 
 -- ============================================================
 -- PRODUCTS & SERVICES
 -- ============================================================
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -205,12 +206,12 @@ CREATE TABLE products (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_products_entity ON products(entity_id);
+CREATE INDEX IF NOT EXISTS idx_products_entity ON products(entity_id);
 
 -- ============================================================
 -- INVOICES
 -- ============================================================
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     number TEXT NOT NULL,
@@ -239,12 +240,12 @@ CREATE TABLE invoices (
     UNIQUE(entity_id, number)
 );
 
-CREATE INDEX idx_invoices_entity ON invoices(entity_id);
-CREATE INDEX idx_invoices_customer ON invoices(customer_id);
-CREATE INDEX idx_invoices_status ON invoices(entity_id, status);
-CREATE INDEX idx_invoices_due ON invoices(entity_id, due_date) WHERE status NOT IN ('paid', 'voided');
+CREATE INDEX IF NOT EXISTS idx_invoices_entity ON invoices(entity_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(entity_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices(entity_id, due_date) WHERE status NOT IN ('paid', 'voided');
 
-CREATE TABLE invoice_lines (
+CREATE TABLE IF NOT EXISTS invoice_lines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     invoice_id UUID NOT NULL REFERENCES invoices(id),
     product_id UUID REFERENCES products(id),
@@ -258,12 +259,12 @@ CREATE TABLE invoice_lines (
     vat_amount NUMERIC NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_invoice_lines_invoice ON invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines(invoice_id);
 
 -- ============================================================
 -- ESTIMATES
 -- ============================================================
-CREATE TABLE estimates (
+CREATE TABLE IF NOT EXISTS estimates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     number TEXT NOT NULL,
@@ -286,7 +287,7 @@ CREATE TABLE estimates (
 -- ============================================================
 -- RECURRING INVOICES
 -- ============================================================
-CREATE TABLE recurring_invoices (
+CREATE TABLE IF NOT EXISTS recurring_invoices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     customer_id UUID NOT NULL REFERENCES customers(id),
@@ -306,7 +307,7 @@ CREATE TABLE recurring_invoices (
 -- ============================================================
 -- BILLS (Accounts Payable)
 -- ============================================================
-CREATE TABLE bills (
+CREATE TABLE IF NOT EXISTS bills (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     number TEXT NOT NULL,
@@ -331,14 +332,14 @@ CREATE TABLE bills (
     UNIQUE(entity_id, number)
 );
 
-CREATE INDEX idx_bills_entity ON bills(entity_id);
-CREATE INDEX idx_bills_vendor ON bills(vendor_id);
-CREATE INDEX idx_bills_status ON bills(entity_id, status);
+CREATE INDEX IF NOT EXISTS idx_bills_entity ON bills(entity_id);
+CREATE INDEX IF NOT EXISTS idx_bills_vendor ON bills(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_bills_status ON bills(entity_id, status);
 
 -- ============================================================
 -- PAYMENTS
 -- ============================================================
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     number TEXT NOT NULL,
@@ -359,13 +360,13 @@ CREATE TABLE payments (
     UNIQUE(entity_id, number)
 );
 
-CREATE INDEX idx_payments_entity ON payments(entity_id);
-CREATE INDEX idx_payments_party ON payments(party_id);
+CREATE INDEX IF NOT EXISTS idx_payments_entity ON payments(entity_id);
+CREATE INDEX IF NOT EXISTS idx_payments_party ON payments(party_id);
 
 -- ============================================================
 -- IMPORTED TRANSACTIONS (Bank feed / categorisation queue)
 -- ============================================================
-CREATE TABLE imported_transactions (
+CREATE TABLE IF NOT EXISTS imported_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     bank_account UUID NOT NULL,
@@ -384,14 +385,14 @@ CREATE TABLE imported_transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_txn_entity ON imported_transactions(entity_id);
-CREATE INDEX idx_txn_status ON imported_transactions(entity_id, category_status);
-CREATE INDEX idx_txn_bank ON imported_transactions(bank_account);
+CREATE INDEX IF NOT EXISTS idx_txn_entity ON imported_transactions(entity_id);
+CREATE INDEX IF NOT EXISTS idx_txn_status ON imported_transactions(entity_id, category_status);
+CREATE INDEX IF NOT EXISTS idx_txn_bank ON imported_transactions(bank_account);
 
 -- ============================================================
 -- BANK ACCOUNTS
 -- ============================================================
-CREATE TABLE bank_accounts (
+CREATE TABLE IF NOT EXISTS bank_accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -409,7 +410,7 @@ CREATE TABLE bank_accounts (
 -- ============================================================
 -- PAY RUNS
 -- ============================================================
-CREATE TABLE pay_runs (
+CREATE TABLE IF NOT EXISTS pay_runs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     period_id UUID NOT NULL REFERENCES fiscal_periods(id),
@@ -429,7 +430,7 @@ CREATE TABLE pay_runs (
     approved_at TIMESTAMPTZ
 );
 
-CREATE TABLE payslips (
+CREATE TABLE IF NOT EXISTS payslips (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     pay_run_id UUID NOT NULL REFERENCES pay_runs(id),
     employee_id UUID NOT NULL REFERENCES employees(id),
@@ -441,7 +442,7 @@ CREATE TABLE payslips (
 -- ============================================================
 -- EXCHANGE RATES
 -- ============================================================
-CREATE TABLE exchange_rates (
+CREATE TABLE IF NOT EXISTS exchange_rates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     from_ccy CHAR(3) NOT NULL,
@@ -456,7 +457,7 @@ CREATE TABLE exchange_rates (
 -- ============================================================
 -- FIXED ASSETS
 -- ============================================================
-CREATE TABLE fixed_assets (
+CREATE TABLE IF NOT EXISTS fixed_assets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     asset_number TEXT NOT NULL,
@@ -482,7 +483,7 @@ CREATE TABLE fixed_assets (
 -- ============================================================
 -- INVENTORY
 -- ============================================================
-CREATE TABLE inventory_items (
+CREATE TABLE IF NOT EXISTS inventory_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     product_id UUID REFERENCES products(id),
@@ -505,7 +506,7 @@ CREATE TABLE inventory_items (
     UNIQUE(entity_id, sku)
 );
 
-CREATE TABLE stock_movements (
+CREATE TABLE IF NOT EXISTS stock_movements (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     item_id UUID NOT NULL REFERENCES inventory_items(id),
@@ -523,9 +524,24 @@ CREATE TABLE stock_movements (
 );
 
 -- ============================================================
+-- STATEMENT IMPORTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS statement_imports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    entity_id UUID NOT NULL,
+    bank_account_id UUID NOT NULL,
+    format TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    line_count INTEGER NOT NULL DEFAULT 0,
+    matched_count INTEGER NOT NULL DEFAULT 0,
+    unmatched_count INTEGER NOT NULL DEFAULT 0
+);
+
+-- ============================================================
 -- INVOICE TEMPLATES
 -- ============================================================
-CREATE TABLE invoice_templates (
+CREATE TABLE IF NOT EXISTS invoice_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     name TEXT NOT NULL,
@@ -544,7 +560,7 @@ CREATE TABLE invoice_templates (
 -- ============================================================
 -- USERS & RBAC
 -- ============================================================
-CREATE TABLE era_users (
+CREATE TABLE IF NOT EXISTS era_users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     email TEXT NOT NULL,
@@ -560,7 +576,7 @@ CREATE TABLE era_users (
 -- ============================================================
 -- AUDIT EVENTS
 -- ============================================================
-CREATE TABLE audit_events (
+CREATE TABLE IF NOT EXISTS audit_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     event_type TEXT NOT NULL,
@@ -573,14 +589,14 @@ CREATE TABLE audit_events (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_audit_entity ON audit_events(entity_id);
-CREATE INDEX idx_audit_object ON audit_events(entity_id, object_type, object_id);
-CREATE INDEX idx_audit_timestamp ON audit_events(entity_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events(entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_object ON audit_events(entity_id, object_type, object_id);
+CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(entity_id, timestamp DESC);
 
 -- ============================================================
 -- ATTACHMENTS
 -- ============================================================
-CREATE TABLE attachments (
+CREATE TABLE IF NOT EXISTS attachments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     linked_type TEXT NOT NULL,
@@ -593,12 +609,12 @@ CREATE TABLE attachments (
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_attachments_linked ON attachments(linked_type, linked_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_linked ON attachments(linked_type, linked_id);
 
 -- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     event_type TEXT NOT NULL,
@@ -620,7 +636,7 @@ CREATE TABLE notifications (
 -- ============================================================
 -- SUPPLIER CREDIT NOTES
 -- ============================================================
-CREATE TABLE supplier_credit_notes (
+CREATE TABLE IF NOT EXISTS supplier_credit_notes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     vendor_id UUID NOT NULL REFERENCES vendors(id),
@@ -636,7 +652,7 @@ CREATE TABLE supplier_credit_notes (
 -- ============================================================
 -- M-PESA TRANSACTION RECORDS
 -- ============================================================
-CREATE TABLE mpesa_transactions (
+CREATE TABLE IF NOT EXISTS mpesa_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     receipt_number TEXT NOT NULL,
@@ -650,12 +666,12 @@ CREATE TABLE mpesa_transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_mpesa_receipt ON mpesa_transactions(receipt_number);
+CREATE INDEX IF NOT EXISTS idx_mpesa_receipt ON mpesa_transactions(receipt_number);
 
 -- ============================================================
 -- RECEIPT CAPTURES (OCR)
 -- ============================================================
-CREATE TABLE receipt_captures (
+CREATE TABLE IF NOT EXISTS receipt_captures (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_id UUID NOT NULL,
     image_url TEXT NOT NULL,
