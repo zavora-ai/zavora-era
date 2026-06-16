@@ -47,7 +47,7 @@ pub async fn create(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "create bill").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::create_bill(&state.engine, req, &actor).await {
+    match svc::create_bill(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(bill) => Ok(Json(serde_json::to_value(bill).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -63,7 +63,7 @@ pub async fn approve(
         bill_id: id,
         approved_by: ctx.user_id,
     };
-    match svc::approve_bill(&state.engine, req).await {
+    match svc::approve_bill(&state.engine, ctx.entity_id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "approved" }))),
         Err(e) => Err(err_response(e)),
     }
@@ -144,10 +144,10 @@ pub async fn post_bill(
             };
 
             let actor = AgentOrUserId::User(ctx.user_id);
-            let period = zavora_erp_core::services::periods::period_for_date(&state.engine, b.issue_date).await;
+            let period = zavora_erp_core::services::periods::period_for_date(&state.engine, ctx.entity_id, b.issue_date).await;
             match period {
                 Ok(p) => {
-                    match zavora_erp_core::services::journal::create_and_post(&state.engine, entry_req, p.id, actor).await {
+                    match zavora_erp_core::services::journal::create_and_post(&state.engine, ctx.entity_id, entry_req, p.id, actor).await {
                         Ok(entry) => {
                             sqlx::query("UPDATE bills SET status = 'posted', journal_entry_id = $1 WHERE id = $2")
                                 .bind(entry.id).bind(id)

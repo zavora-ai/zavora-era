@@ -30,7 +30,7 @@ pub async fn create(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "create fixed asset").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::create_asset(&state.engine, req, &actor).await {
+    match svc::create_asset(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
     }

@@ -118,7 +118,7 @@ async fn balanced_entry_posts_and_persists_balanced() {
         post_immediately: true,
     };
 
-    let entry = create_and_post(&engine, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
+    let entry = create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
         .await
         .expect("post should succeed");
 
@@ -147,7 +147,7 @@ async fn subcent_imbalance_gets_rounding_line() {
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(99.99)))],
         post_immediately: true,
     };
-    let entry = create_and_post(&engine, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
+    let entry = create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
         .await
         .expect("post should succeed with rounding line");
     assert_eq!(entry.lines.len(), 3, "a rounding adjustment line should be appended");
@@ -175,7 +175,7 @@ async fn out_of_tolerance_entry_is_rejected() {
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(99.00)))],
         post_immediately: true,
     };
-    let res = create_and_post(&engine, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4())).await;
+    let res = create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4())).await;
     assert!(res.is_err(), "1.00 imbalance must be rejected");
 }
 
@@ -191,7 +191,7 @@ async fn posting_to_hard_closed_period_is_rejected() {
         lines: vec![line("1000", Some(dec!(10.00)), None), line("4000", None, Some(dec!(10.00)))],
         post_immediately: true,
     };
-    let res = create_and_post(&engine, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4())).await;
+    let res = create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4())).await;
     assert!(res.is_err(), "posting into a hard-closed period must be rejected");
 }
 

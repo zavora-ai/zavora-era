@@ -24,7 +24,7 @@ pub async fn update(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_MANAGE, &ctx, "update settings").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::update_settings(&state.engine, req, &actor).await {
+    match svc::update_settings(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(config) => Ok(Json(serde_json::to_value(config).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

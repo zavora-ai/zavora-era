@@ -28,7 +28,7 @@ pub async fn upsert(
     Json(req): Json<UpsertRateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_MANAGE, &ctx, "upsert FX rate").map_err(err_response)?;
-    match svc::upsert_rate(&state.engine, req).await {
+    match svc::upsert_rate(&state.engine, ctx.entity_id, req).await {
         Ok(rate) => Ok(Json(serde_json::to_value(rate).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

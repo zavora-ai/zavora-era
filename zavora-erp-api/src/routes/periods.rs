@@ -9,9 +9,10 @@ use zavora_erp_core::period::*;
 use zavora_erp_core::services::periods as svc;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::list_periods(&state.engine).await {
+    match svc::list_periods(&state.engine, ctx.entity_id).await {
         Ok(periods) => Ok(Json(serde_json::to_value(periods).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -23,7 +24,7 @@ pub async fn generate(
     Json(req): Json<GeneratePeriodsRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_MANAGE, &ctx, "generate fiscal periods").map_err(err_response)?;
-    match svc::generate_periods(&state.engine, req).await {
+    match svc::generate_periods(&state.engine, ctx.entity_id, req).await {
         Ok(periods) => Ok(Json(serde_json::to_value(periods).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -38,7 +39,7 @@ pub async fn close(
     require_role(ROLES_CLOSE_PERIOD, &ctx, "close fiscal period").map_err(err_response)?;
     let mut close_req = req;
     close_req.period_id = id;
-    match svc::close_period(&state.engine, close_req).await {
+    match svc::close_period(&state.engine, ctx.entity_id, close_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -53,7 +54,7 @@ pub async fn reopen(
     require_role(ROLES_CLOSE_PERIOD, &ctx, "reopen fiscal period").map_err(err_response)?;
     let mut reopen_req = req;
     reopen_req.period_id = id;
-    match svc::reopen_period(&state.engine, reopen_req).await {
+    match svc::reopen_period(&state.engine, ctx.entity_id, reopen_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

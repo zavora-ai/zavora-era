@@ -51,7 +51,7 @@ pub async fn create_customer(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "create customer").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::create_customer(&state.engine, req, &actor).await {
+    match svc::create_customer(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
     }
@@ -201,7 +201,7 @@ pub async fn create_vendor(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "create vendor").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::create_vendor(&state.engine, req, &actor).await {
+    match svc::create_vendor(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
     }
@@ -336,7 +336,7 @@ pub async fn create_employee(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "create employee").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::create_employee(&state.engine, req, &actor).await {
+    match svc::create_employee(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
         Err(e) => Err(err_response(e)),
     }

@@ -39,7 +39,7 @@ pub async fn receive(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "receive inventory").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::receive_inventory(&state.engine, req, &actor).await {
+    match svc::receive_inventory(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "movement_id": id }))),
         Err(e) => Err(err_response(e)),
     }
@@ -52,7 +52,7 @@ pub async fn issue(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "issue inventory").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::issue_inventory(&state.engine, req, &actor).await {
+    match svc::issue_inventory(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(result) => Ok(Json(serde_json::json!({ "movement_id": result.movement_id }))),
         Err(e) => Err(err_response(e)),
     }
