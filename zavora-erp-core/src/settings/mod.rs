@@ -179,3 +179,80 @@ pub struct SettingsRow {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub updated_by: Option<uuid::Uuid>,
 }
+
+/// Load the configuration for an entity, creating default settings if none exist.
+pub async fn load_or_create_config(
+    pool: &sqlx::PgPool,
+    entity_id: Uuid,
+) -> crate::error::ErpResult<ErpConfig> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM entity_settings WHERE entity_id = $1)",
+    )
+    .bind(entity_id)
+    .fetch_one(pool)
+    .await?;
+
+    if !exists {
+        sqlx::query("INSERT INTO entity_settings (entity_id) VALUES ($1)")
+            .bind(entity_id)
+            .execute(pool)
+            .await?;
+    }
+
+    let row = sqlx::query_as::<_, SettingsRow>("SELECT * FROM entity_settings WHERE entity_id = $1")
+        .bind(entity_id)
+        .fetch_one(pool)
+        .await?;
+
+    let branding: BrandingConfig = serde_json::from_value(row.branding).unwrap_or_else(|_| {
+        BrandingConfig {
+            company_name: "My Company".to_string(),
+            logo_url: None,
+            primary_color: "#1a56db".to_string(),
+            secondary_color: None,
+            font: "Inter".to_string(),
+            footer_text: None,
+            website: None,
+            phone: None,
+            email: None,
+            address: None,
+            kra_pin: None,
+            vat_number: None,
+        }
+    });
+    let sequences: DocumentSequences = serde_json::from_value(row.sequences).unwrap_or_default();
+    let tax_config: TaxConfig = serde_json::from_value(row.tax_config).unwrap_or_else(|_| TaxConfig {
+        vat_registered: false,
+        vat_number: None,
+        vat_period: VatPeriod::Monthly,
+        standard_vat_rate: Decimal::new(16, 2),
+        default_vat_treatment: VatTreatment::Standard16,
+        wht_enabled: true,
+        paye_enabled: true,
+    });
+    let payment_config: PaymentConfig =
+        serde_json::from_value(row.payment_config).unwrap_or_else(|_| PaymentConfig {
+            mpesa_enabled: false,
+            mpesa_paybill: None,
+            mpesa_till_number: None,
+            flutterwave_enabled: false,
+            flutterwave_public_key: None,
+            bank_transfer_enabled: true,
+            default_bank_account_id: None,
+        });
+    let fiscal_year_end: MonthDay =
+        serde_json::from_str(&row.fiscal_year_end).unwrap_or(MonthDay { month: 12, day: 31 });
+    let posting: PostingSetup = serde_json::from_value(row.posting_setup).unwrap_or_default();
+
+    Ok(ErpConfig {
+        entity_id,
+        base_currency: row.base_currency,
+        fiscal_year_end,
+        coa_template: CoaTemplate::KenyaStandard,
+        branding,
+        sequences,
+        tax_config,
+        payment_config,
+        posting,
+    })
+}

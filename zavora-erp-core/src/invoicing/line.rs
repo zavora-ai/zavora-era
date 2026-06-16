@@ -21,12 +21,15 @@ pub struct InvoiceLine {
 }
 
 impl InvoiceLine {
-    /// Calculate totals for this line.
+    /// Calculate totals for this line, rounding each monetary result to 2 decimal
+    /// places (banker's rounding). VAT is rounded per line before any summing, so
+    /// document-level totals are the sum of already-rounded line VAT (Req 5.1, 5.2).
     pub fn compute_totals(&mut self) {
+        use crate::money::round_money;
         let gross = self.quantity * self.unit_price;
         let discount = gross * self.discount_percent / Decimal::new(100, 0);
-        self.line_total = gross - discount;
-        self.vat_amount = self.line_total * self.vat_treatment.rate();
+        self.line_total = round_money(gross - discount);
+        self.vat_amount = round_money(self.line_total * self.vat_treatment.rate());
     }
 }
 

@@ -1,34 +1,69 @@
 import axios from 'axios';
 
+const ACCESS_KEY = 'era_access_token';
+const REFRESH_KEY = 'era_refresh_token';
+const IDENTITY_KEY = 'era_identity';
+
+export const getAccessToken = () => localStorage.getItem(ACCESS_KEY);
+
+export function storeSession(data: {
+  access_token: string;
+  refresh_token: string;
+  user?: unknown;
+}) {
+  localStorage.setItem(ACCESS_KEY, data.access_token);
+  localStorage.setItem(REFRESH_KEY, data.refresh_token);
+  if (data.user) localStorage.setItem(IDENTITY_KEY, JSON.stringify(data.user));
+}
+
+export function clearSession() {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(IDENTITY_KEY);
+}
+
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor for identity headers.
-// The API authenticates via X-User-Id / X-Entity-Id / X-User-Role headers
-// (set here from the stored identity established at login).
+// Attach the JWT access token as a Bearer credential on every request.
 api.interceptors.request.use((config) => {
-  const raw = localStorage.getItem('era_identity');
-  if (raw) {
-    try {
-      const id = JSON.parse(raw);
-      if (id.user_id) config.headers['X-User-Id'] = id.user_id;
-      if (id.entity_id) config.headers['X-Entity-Id'] = id.entity_id;
-      if (id.role) config.headers['X-User-Role'] = id.role;
-    } catch {
-      // ignore malformed identity
-    }
-  }
+  const token = getAccessToken();
+  if (token) config.headers['Authorization'] = `Bearer ${token}`;
   return config;
 });
 
-// Response interceptor for error handling
+// On 401, try a one-shot refresh; if that fails, clear the session and redirect.
+let refreshing: Promise<string | null> | null = null;
+
+async function tryRefresh(): Promise<string | null> {
+  const refresh_token = localStorage.getItem(REFRESH_KEY);
+  if (!refresh_token) return null;
+  try {
+    // Bare axios call to avoid the interceptor recursing.
+    const resp = await axios.post('/api/v1/auth/refresh', { refresh_token });
+    storeSession(resp.data);
+    return resp.data.access_token as string;
+  } catch {
+    return null;
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('era_identity');
+  async (error) => {
+    const original = error.config;
+    if (error.response?.status === 401 && original && !original._retried) {
+      original._retried = true;
+      refreshing = refreshing ?? tryRefresh();
+      const newToken = await refreshing;
+      refreshing = null;
+      if (newToken) {
+        original.headers['Authorization'] = `Bearer ${newToken}`;
+        return api(original);
+      }
+      clearSession();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
@@ -40,7 +75,12 @@ api.interceptors.response.use(
 export default api;
 
 // === Auth & Users ===
-export const login = (email: string) => api.post('/auth/login', { email });
+export const login = (email: string, password: string) =>
+  api.post('/auth/login', { email, password });
+export const register = (data: { email: string; display_name: string; password: string }) =>
+  api.post('/auth/register', data);
+export const refreshSession = (refresh_token: string) =>
+  api.post('/auth/refresh', { refresh_token });
 export const getUsers = () => api.get('/users');
 export const createUser = (data: { email: string; display_name: string; role: string }) =>
   api.post('/users', data);

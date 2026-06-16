@@ -44,6 +44,10 @@ pub struct PostingSetup {
     // --- Equity / period close ---
     pub retained_earnings: String,
 
+    /// Account that absorbs sub-cent rounding differences when VAT line
+    /// accumulation leaves a journal entry imbalanced by <= 0.01 (Req 5.3).
+    pub rounding_adjustment: String,
+
     // --- Cash ---
     /// Fallback bank/cash account when none is specified on a bank account.
     pub default_bank: String,
@@ -84,6 +88,10 @@ impl Default for PostingSetup {
             unrealised_fx_gain: "8100".to_string(),
             unrealised_fx_loss: "8110".to_string(),
             retained_earnings: "4600".to_string(),
+            // Sub-cent rounding differences. Defaults to the miscellaneous
+            // expense account; an accountant can point this at a dedicated
+            // "Rounding" GL account via the posting-setup UI.
+            rounding_adjustment: "7900".to_string(),
             default_bank: "1020".to_string(),
             default_sales: "5000".to_string(),
             default_purchase: "6000".to_string(),

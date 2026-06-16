@@ -71,7 +71,10 @@ pub enum ErpError {
         requested: rust_decimal::Decimal,
     },
 
-    // === Authorization ===
+    // === Authentication / Authorization ===
+    #[error("unauthorized: {message}")]
+    Unauthorized { message: String },
+
     #[error("permission denied: {action} requires role {required_role}")]
     PermissionDenied {
         action: String,

@@ -58,6 +58,8 @@ pub mod rbac;
 pub mod settings;
 pub mod audit;
 pub mod posting;
+pub mod auth;
+pub mod money;
 
 // Service layer — business logic implementations
 pub mod services;
@@ -68,3 +70,4 @@ pub use error::{ErpError, ErpResult};
 pub use settings::ErpConfig;
 pub use posting::PostingSetup;
 pub use types::AgentOrUserId;
+pub use money::{round_money, round_paye};

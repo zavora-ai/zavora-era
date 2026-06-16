@@ -250,9 +250,14 @@ pub async fn create_credit_note(
     let cn_number = generate_credit_note_number(engine).await?;
     let cn_id = Uuid::new_v4();
 
+    // The credit note record, its lines, the reversing journal entry, and the
+    // original invoice's balance adjustment all commit or roll back together
+    // (Requirement 2.3).
+    let mut tx = engine.pool().begin().await?;
+
     // Insert credit note as invoice record with type 'credit_note'
     sqlx::query(
-        r#"INSERT INTO invoices 
+        r#"INSERT INTO invoices
            (id, entity_id, number, invoice_type, customer_id, issue_date, due_date, currency, fx_rate,
             subtotal, discount_total, tax_total, gross_total, amount_paid, balance_due, status,
             credit_note_for, notes, created_at)
@@ -277,13 +282,13 @@ pub async fn create_credit_note(
     .bind(req.invoice_id)
     .bind(&req.reason)
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
 
     // Insert credit note lines
     for line in &cn_lines {
         sqlx::query(
-            r#"INSERT INTO invoice_lines 
+            r#"INSERT INTO invoice_lines
                (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
         )
@@ -298,7 +303,7 @@ pub async fn create_credit_note(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
-        .execute(engine.pool())
+        .execute(&mut *tx)
         .await?;
     }
 
@@ -395,8 +400,9 @@ pub async fn create_credit_note(
                         warehouse_id: None,
                     };
 
-                    crate::services::inventory::receive_inventory(
-                        engine,
+                    crate::services::inventory::receive_inventory_in_tx(
+                        &mut tx,
+                        engine.entity_id(),
                         receive_req,
                         created_by,
                     )
@@ -457,7 +463,8 @@ pub async fn create_credit_note(
     };
 
     let period = crate::services::periods::period_for_date(engine, cn_date).await?;
-    let entry = crate::services::journal::create_and_post(
+    let entry = crate::services::journal::create_and_post_in_tx(
+        &mut tx,
         engine,
         entry_req,
         period.id,
@@ -469,7 +476,7 @@ pub async fn create_credit_note(
     sqlx::query("UPDATE invoices SET journal_entry_id = $1 WHERE id = $2")
         .bind(entry.id)
         .bind(cn_id)
-        .execute(engine.pool())
+        .execute(&mut *tx)
         .await?;
 
     // Reduce balance_due on original invoice
@@ -490,8 +497,10 @@ pub async fn create_credit_note(
     .bind(new_amount_paid)
     .bind(new_status)
     .bind(req.invoice_id)
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(CreditNoteResult {
         credit_note_id: cn_id,
@@ -912,6 +921,10 @@ pub async fn post_invoice(
     .fetch_all(engine.pool())
     .await?;
 
+    // Stock issue, the journal entry, and the invoice status update all commit
+    // or roll back together (Requirement 2.2).
+    let mut tx = engine.pool().begin().await?;
+
     let mut journal_lines = Vec::new();
 
     // DR Accounts Receivable (total including tax)
@@ -985,8 +998,8 @@ pub async fn post_invoice(
                         warehouse_id: None,
                     };
 
-                    let issue_result = crate::services::inventory::issue_inventory(
-                        engine, issue_req, posted_by,
+                    let issue_result = crate::services::inventory::issue_inventory_in_tx(
+                        &mut tx, engine.entity_id(), issue_req, posted_by,
                     )
                     .await?;
 
@@ -1033,7 +1046,10 @@ pub async fn post_invoice(
     };
 
     let period = crate::services::periods::period_for_date(engine, invoice.issue_date).await?;
-    let entry = crate::services::journal::create_and_post(engine, entry_req, period.id, posted_by.clone()).await?;
+    let entry = crate::services::journal::create_and_post_in_tx(
+        &mut tx, engine, entry_req, period.id, posted_by.clone(),
+    )
+    .await?;
 
     // Update invoice status and link journal entry
     sqlx::query(
@@ -1041,8 +1057,10 @@ pub async fn post_invoice(
     )
     .bind(entry.id)
     .bind(invoice_id)
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(entry.id)
 }

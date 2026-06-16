@@ -11,6 +11,7 @@ zavora-erp-ui/dist/
 .env
 .env.local
 .env.*.local
+.kiro/
 
 # IDE
 .idea/

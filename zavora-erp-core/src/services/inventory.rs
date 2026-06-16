@@ -23,9 +23,24 @@ pub struct IssueInventoryResult {
     pub gl_cogs: String,
 }
 
+type PgTx<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
+
 /// Receive inventory (purchase receipt).
 pub async fn receive_inventory(
     engine: &ErpEngine,
+    req: ReceiveInventoryRequest,
+    received_by: &AgentOrUserId,
+) -> ErpResult<Uuid> {
+    let mut tx = engine.pool().begin().await?;
+    let id = receive_inventory_in_tx(&mut tx, engine.entity_id(), req, received_by).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Receive inventory within a caller-provided transaction.
+pub async fn receive_inventory_in_tx(
+    tx: &mut PgTx<'_>,
+    entity_id: Uuid,
     req: ReceiveInventoryRequest,
     received_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -44,18 +59,18 @@ pub async fn receive_inventory(
     .bind(req.quantity)
     .bind(req.unit_cost)
     .bind(req.item_id)
-    .bind(engine.entity_id())
-    .execute(engine.pool())
+    .bind(entity_id)
+    .execute(&mut **tx)
     .await?;
 
     // Record stock movement
     sqlx::query(
-        r#"INSERT INTO stock_movements 
+        r#"INSERT INTO stock_movements
            (id, entity_id, item_id, movement_type, date, quantity, unit_cost, total_cost, reference_id, created_by, created_at)
            VALUES ($1, $2, $3, 'receipt', $4, $5, $6, $7, $8, $9, $10)"#,
     )
     .bind(movement_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(req.item_id)
     .bind(today)
     .bind(req.quantity)
@@ -64,7 +79,7 @@ pub async fn receive_inventory(
     .bind(req.reference_id)
     .bind(serde_json::to_value(received_by).unwrap_or_default())
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut **tx)
     .await?;
 
     Ok(movement_id)
@@ -79,13 +94,26 @@ pub async fn issue_inventory(
     req: IssueInventoryRequest,
     issued_by: &AgentOrUserId,
 ) -> ErpResult<IssueInventoryResult> {
+    let mut tx = engine.pool().begin().await?;
+    let result = issue_inventory_in_tx(&mut tx, engine.entity_id(), req, issued_by).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+/// Issue inventory within a caller-provided transaction.
+pub async fn issue_inventory_in_tx(
+    tx: &mut PgTx<'_>,
+    entity_id: Uuid,
+    req: IssueInventoryRequest,
+    issued_by: &AgentOrUserId,
+) -> ErpResult<IssueInventoryResult> {
     // Check available stock
     let item = sqlx::query_as::<_, InventoryItemRow>(
         "SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.item_id)
-    .bind(engine.entity_id())
-    .fetch_optional(engine.pool())
+    .bind(entity_id)
+    .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| ErpError::NotFound {
         entity_type: "InventoryItem".to_string(),
@@ -114,18 +142,18 @@ pub async fn issue_inventory(
     )
     .bind(req.quantity)
     .bind(req.item_id)
-    .bind(engine.entity_id())
-    .execute(engine.pool())
+    .bind(entity_id)
+    .execute(&mut **tx)
     .await?;
 
     // Record movement
     sqlx::query(
-        r#"INSERT INTO stock_movements 
+        r#"INSERT INTO stock_movements
            (id, entity_id, item_id, movement_type, date, quantity, unit_cost, total_cost, reference_id, created_by, created_at)
            VALUES ($1, $2, $3, 'issue', $4, $5, $6, $7, $8, $9, $10)"#,
     )
     .bind(movement_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(req.item_id)
     .bind(today)
     .bind(req.quantity)
@@ -134,7 +162,7 @@ pub async fn issue_inventory(
     .bind(req.reference_id)
     .bind(serde_json::to_value(issued_by).unwrap_or_default())
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut **tx)
     .await?;
 
     Ok(IssueInventoryResult {

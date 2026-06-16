@@ -37,8 +37,8 @@ const queryClient = new QueryClient({
 });
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const identity = localStorage.getItem('era_identity');
-  if (!identity) {
+  const token = localStorage.getItem('era_access_token');
+  if (!token) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;

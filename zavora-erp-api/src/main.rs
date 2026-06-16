@@ -9,7 +9,8 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
-use zavora_erp_core::{ErpConfig, ErpEngine};
+use zavora_erp_core::auth::{JwtConfig, DEFAULT_ACCESS_TTL_SECS, DEFAULT_REFRESH_TTL_SECS};
+use zavora_erp_core::ErpEngine;
 
 pub mod middleware;
 mod routes;
@@ -61,7 +62,12 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse::<Uuid>().ok())
         .unwrap_or_else(Uuid::new_v4);
 
-    let config = load_or_create_config(&pool, entity_id).await?;
+    let config = zavora_erp_core::settings::load_or_create_config(&pool, entity_id).await?;
+
+    // Initialise the JWT auth layer (fails fast in production if secrets are missing).
+    let jwt_config = load_jwt_config()?;
+    middleware::auth::init_auth(jwt_config, entity_id);
+    tracing::info!("Auth layer initialised for entity {}", entity_id);
 
     // Create scheduler engine (uses its own clones)
     let scheduler_pool = pool.clone();
@@ -184,6 +190,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
         // Auth & Users
         .route("/api/v1/auth/login", post(routes::users::login))
+        .route("/api/v1/auth/refresh", post(routes::users::refresh))
+        .route("/api/v1/auth/register", post(routes::users::register))
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         // Middleware
         .layer(TraceLayer::new_for_http())
@@ -197,6 +205,36 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Load JWT signing configuration.
+///
+/// In production (`APP_ENV=production`) the secrets are mandatory and the server
+/// fails fast if they are missing (Req 9.4). Outside production we fall back to
+/// fixed development secrets so `cargo run` works locally, with a loud warning.
+fn load_jwt_config() -> anyhow::Result<JwtConfig> {
+    let is_prod = std::env::var("APP_ENV")
+        .map(|v| v.eq_ignore_ascii_case("production"))
+        .unwrap_or(false);
+
+    match JwtConfig::from_env() {
+        Ok(cfg) => Ok(cfg),
+        Err(e) if is_prod => Err(anyhow::anyhow!(
+            "refusing to start in production without JWT secrets: {e}"
+        )),
+        Err(e) => {
+            tracing::warn!(
+                "Using INSECURE development JWT secrets ({e}). \
+                 Set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET before deploying."
+            );
+            Ok(JwtConfig::new(
+                "dev-access-secret-not-for-production-use".to_string(),
+                "dev-refresh-secret-not-for-production-use".to_string(),
+                DEFAULT_ACCESS_TTL_SECS,
+                DEFAULT_REFRESH_TTL_SECS,
+            ))
+        }
+    }
+}
+
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "healthy",
@@ -205,88 +243,3 @@ async fn health() -> impl IntoResponse {
     }))
 }
 
-async fn load_or_create_config(
-    pool: &sqlx::PgPool,
-    entity_id: Uuid,
-) -> anyhow::Result<ErpConfig> {
-    use zavora_erp_core::settings::*;
-
-    // Check if settings exist
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM entity_settings WHERE entity_id = $1)",
-    )
-    .bind(entity_id)
-    .fetch_one(pool)
-    .await?;
-
-    if !exists {
-        // Create default settings
-        sqlx::query("INSERT INTO entity_settings (entity_id) VALUES ($1)")
-            .bind(entity_id)
-            .execute(pool)
-            .await?;
-    }
-
-    // Load settings
-    let row = sqlx::query_as::<_, SettingsRow>(
-        "SELECT * FROM entity_settings WHERE entity_id = $1",
-    )
-    .bind(entity_id)
-    .fetch_one(pool)
-    .await?;
-
-    let branding: BrandingConfig = serde_json::from_value(row.branding).unwrap_or_else(|_| BrandingConfig {
-        company_name: "My Company".to_string(),
-        logo_url: None,
-        primary_color: "#1a56db".to_string(),
-        secondary_color: None,
-        font: "Inter".to_string(),
-        footer_text: None,
-        website: None,
-        phone: None,
-        email: None,
-        address: None,
-        kra_pin: None,
-        vat_number: None,
-    });
-
-    let sequences: DocumentSequences =
-        serde_json::from_value(row.sequences).unwrap_or_default();
-    let tax_config: TaxConfig = serde_json::from_value(row.tax_config).unwrap_or_else(|_| TaxConfig {
-        vat_registered: false,
-        vat_number: None,
-        vat_period: VatPeriod::Monthly,
-        standard_vat_rate: rust_decimal::Decimal::new(16, 2),
-        default_vat_treatment: zavora_erp_core::types::VatTreatment::Standard16,
-        wht_enabled: true,
-        paye_enabled: true,
-    });
-    let payment_config: PaymentConfig = serde_json::from_value(row.payment_config).unwrap_or_else(|_| PaymentConfig {
-        mpesa_enabled: false,
-        mpesa_paybill: None,
-        mpesa_till_number: None,
-        flutterwave_enabled: false,
-        flutterwave_public_key: None,
-        bank_transfer_enabled: true,
-        default_bank_account_id: None,
-    });
-
-    let fiscal_year_end: MonthDay = serde_json::from_str(&row.fiscal_year_end)
-        .unwrap_or(MonthDay { month: 12, day: 31 });
-
-    // Posting setup: empty object falls back to code defaults.
-    let posting: zavora_erp_core::PostingSetup =
-        serde_json::from_value(row.posting_setup).unwrap_or_default();
-
-    Ok(ErpConfig {
-        entity_id,
-        base_currency: row.base_currency,
-        fiscal_year_end,
-        coa_template: zavora_erp_core::ledger::CoaTemplate::KenyaStandard,
-        branding,
-        sequences,
-        tax_config,
-        payment_config,
-        posting,
-    })
-}

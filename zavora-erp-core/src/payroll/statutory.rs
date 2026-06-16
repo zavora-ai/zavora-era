@@ -195,3 +195,88 @@ pub fn compute_payslip_deductions(
         net_salary,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paye_first_band_is_ten_percent() {
+        // Entirely within the first band (<= 24,000): flat 10%.
+        assert_eq!(PayeBands::compute_paye(dec!(20_000)), dec!(2_000));
+        assert_eq!(PayeBands::compute_paye(dec!(24_000)), dec!(2_400));
+    }
+
+    #[test]
+    fn paye_crosses_second_band() {
+        // 24,000 @10% = 2,400; next 8,333 @25% = 2,083.25 => 4,483.25 at 32,333.
+        assert_eq!(PayeBands::compute_paye(dec!(32_333)), dec!(4_483.25));
+    }
+
+    #[test]
+    fn paye_third_band_known_value() {
+        // taxable 47,090: 2,400 + 2,083.25 + (47,090-32,333)*0.30 = 8,910.35
+        assert_eq!(PayeBands::compute_paye(dec!(47_090)), dec!(8_910.35));
+    }
+
+    #[test]
+    fn nssf_caps_at_tier_two_limit() {
+        // 6% of gross up to the 36,000 cap.
+        assert_eq!(NssfComputation::compute_employee(dec!(30_000)), dec!(1_800));
+        assert_eq!(NssfComputation::compute_employee(dec!(36_000)), dec!(2_160));
+        // Above the cap stays at the cap contribution.
+        assert_eq!(NssfComputation::compute_employee(dec!(100_000)), dec!(2_160));
+        assert_eq!(
+            NssfComputation::compute_employer(dec!(100_000)),
+            NssfComputation::compute_employee(dec!(100_000))
+        );
+    }
+
+    #[test]
+    fn sha_is_two_point_seventy_five_percent() {
+        assert_eq!(ShaComputation::compute(dec!(50_000)), dec!(1_375));
+        assert_eq!(ShaComputation::compute(dec!(100_000)), dec!(2_750));
+    }
+
+    #[test]
+    fn housing_levy_is_one_point_five_percent_both_sides() {
+        assert_eq!(HousingLevyComputation::compute_employee(dec!(50_000)), dec!(750));
+        assert_eq!(HousingLevyComputation::compute_employer(dec!(50_000)), dec!(750));
+    }
+
+    #[test]
+    fn full_payslip_known_values() {
+        // gross 50,000, no allowances/helb, standard 2,400 relief, no disability.
+        let p = compute_payslip_deductions(
+            dec!(50_000),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            PayeBands::personal_relief(),
+            false,
+        );
+        assert_eq!(p.nssf_employee, dec!(2_160));
+        assert_eq!(p.housing_levy_employee, dec!(750));
+        assert_eq!(p.sha, dec!(1_375));
+        // taxable = 50,000 - 2,160 - 750 = 47,090
+        assert_eq!(p.taxable_income, dec!(47_090));
+        assert_eq!(p.paye, dec!(8_910.35));
+        // net PAYE after 2,400 relief
+        assert_eq!(p.net_paye, dec!(6_510.35));
+        // total deductions = net_paye + nssf + sha + housing
+        assert_eq!(p.total_deductions, dec!(6_510.35) + dec!(2_160) + dec!(1_375) + dec!(750));
+        assert_eq!(p.net_salary, dec!(50_000) - p.total_deductions);
+    }
+
+    #[test]
+    fn low_income_has_no_net_paye_after_relief() {
+        // gross 20,000: PAYE below personal relief => net PAYE zero.
+        let p = compute_payslip_deductions(
+            dec!(20_000),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            PayeBands::personal_relief(),
+            false,
+        );
+        assert_eq!(p.net_paye, Decimal::ZERO);
+    }
+}

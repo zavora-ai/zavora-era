@@ -21,5 +21,11 @@ tracing = { workspace = true }
 validator = { workspace = true }
 async-trait = "0.1"
 
+# Authentication: JWT signing/verification and Argon2id password hashing
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+proptest = "1"

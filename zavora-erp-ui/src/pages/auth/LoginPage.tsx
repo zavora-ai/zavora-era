@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, createUser } from '../../api/client';
+import { login, register, storeSession } from '../../api/client';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [mode, setMode] = useState<'signin' | 'bootstrap'>('signin');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const storeAndGo = (identity: any) => {
-    localStorage.setItem('era_identity', JSON.stringify(identity));
+  const storeAndGo = (session: any) => {
+    storeSession(session);
     navigate('/', { replace: true });
   };
 
@@ -20,11 +21,11 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      const { data } = await login(email.trim());
+      const { data } = await login(email.trim(), password);
       storeAndGo(data);
     } catch (err: any) {
-      if (err?.response?.status === 404) {
-        setError('No active user found with that email.');
+      if (err?.response?.status === 401) {
+        setError('Invalid email or password.');
       } else {
         setError(err?.response?.data?.error ?? 'Sign in failed. Please try again.');
       }
@@ -38,9 +39,13 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      // Creating the first user is allowed without auth; it becomes the Owner.
-      await createUser({ email: email.trim(), display_name: displayName.trim(), role: 'Owner' });
-      const { data } = await login(email.trim());
+      // Registering the first user is allowed without auth; it becomes the Owner
+      // and returns a token pair directly.
+      const { data } = await register({
+        email: email.trim(),
+        display_name: displayName.trim(),
+        password,
+      });
       storeAndGo(data);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Could not create the owner account.');
@@ -79,6 +84,17 @@ export default function LoginPage() {
                 placeholder="you@company.co.ke"
               />
             </div>
+            <div>
+              <label className="label">Password</label>
+              <input
+                className="input"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
@@ -111,6 +127,18 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.co.ke"
+              />
+            </div>
+            <div>
+              <label className="label">Password</label>
+              <input
+                className="input"
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
               />
             </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>

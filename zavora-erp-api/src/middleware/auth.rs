@@ -1,7 +1,15 @@
-//! RBAC middleware for Zavora ERP API.
+//! JWT authentication middleware for Zavora ERP API (Requirement 1 & 3).
 //!
-//! Extracts user identity from request headers (JWT/session) and provides
-//! permission checking via `require_role()`.
+//! Every authenticated request must carry a valid `Authorization: Bearer <jwt>`
+//! access token. Identity (`user_id`, `entity_id`, `role`) is taken from the
+//! verified token claims — the legacy `X-User-*` headers are ignored entirely,
+//! so a browser cannot spoof identity.
+//!
+//! Tenant isolation: this process serves a single entity (loaded at startup).
+//! A token whose `entity_id` differs from the served entity is rejected, so a
+//! valid token for one tenant cannot read another tenant's data.
+
+use std::sync::OnceLock;
 
 use axum::{
     extract::FromRequestParts,
@@ -11,13 +19,40 @@ use axum::{
 };
 use uuid::Uuid;
 
+use zavora_erp_core::auth::{self, JwtConfig};
 use zavora_erp_core::rbac::UserRole;
 use zavora_erp_core::ErpError;
 
-/// Authentication context extracted from the request.
-///
-/// Contains the authenticated user's identity and role, used by route handlers
-/// to enforce RBAC policies.
+/// Process-global JWT signing configuration, set once at startup.
+static JWT_CONFIG: OnceLock<JwtConfig> = OnceLock::new();
+/// The single entity this process serves (from startup config).
+static SERVED_ENTITY: OnceLock<Uuid> = OnceLock::new();
+
+/// Initialise the auth layer. Must be called once before serving requests.
+pub fn init_auth(config: JwtConfig, served_entity: Uuid) {
+    let _ = JWT_CONFIG.set(config);
+    let _ = SERVED_ENTITY.set(served_entity);
+}
+
+/// The active JWT configuration. Panics if `init_auth` was not called.
+pub fn jwt_config() -> &'static JwtConfig {
+    JWT_CONFIG.get().expect("auth layer not initialised")
+}
+
+/// The entity this process serves.
+pub fn served_entity() -> Uuid {
+    *SERVED_ENTITY.get().expect("auth layer not initialised")
+}
+
+fn unauthorized(message: &str) -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": message })),
+    )
+        .into_response()
+}
+
+/// Authentication context extracted from the verified JWT.
 #[derive(Debug, Clone)]
 pub struct AuthContext {
     pub user_id: Uuid,
@@ -25,16 +60,7 @@ pub struct AuthContext {
     pub role: UserRole,
 }
 
-/// Extract `AuthContext` from request headers.
-///
-/// Looks for the following headers (typically set by an upstream auth gateway or JWT middleware):
-/// - `X-User-Id`: UUID of the authenticated user
-/// - `X-Entity-Id`: UUID of the entity/tenant
-/// - `X-User-Role`: one of Owner, Admin, Accountant, Editor, Approver, Viewer
-///
-/// In production, these would be extracted from a verified JWT token. This extractor
-/// supports both direct header injection (for gateway-authenticated requests) and
-/// can be extended to verify JWTs directly.
+/// Extract `AuthContext` from a verified `Authorization: Bearer` access token.
 impl<S> FromRequestParts<S> for AuthContext
 where
     S: Send + Sync,
@@ -42,63 +68,29 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let user_id = parts
+        let token = parts
             .headers
-            .get("x-user-id")
+            .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| {
-                (
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({
-                        "error": "Missing or invalid X-User-Id header"
-                    })),
-                )
-                    .into_response()
-            })?;
+            .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| unauthorized("Missing or malformed Authorization bearer token"))?;
 
-        let entity_id = parts
-            .headers
-            .get("x-entity-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| {
-                (
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({
-                        "error": "Missing or invalid X-Entity-Id header"
-                    })),
-                )
-                    .into_response()
-            })?;
+        let claims = auth::decode_access_token(jwt_config(), token)
+            .map_err(|e| unauthorized(&e.to_string()))?;
 
-        let role_str = parts
-            .headers
-            .get("x-user-role")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
-                (
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({
-                        "error": "Missing X-User-Role header"
-                    })),
-                )
-                    .into_response()
-            })?;
+        let role = parse_role(&claims.role)
+            .ok_or_else(|| unauthorized("Token carries an unrecognised role"))?;
 
-        let role = parse_role(role_str).ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "error": format!("Invalid role: '{}'. Expected one of: Owner, Admin, Accountant, Editor, Approver, Viewer", role_str)
-                })),
-            )
-                .into_response()
-        })?;
+        // Tenant isolation (Req 3.3): reject tokens minted for a different tenant.
+        if claims.entity_id != served_entity() {
+            return Err(unauthorized("Token entity is not served by this instance"));
+        }
 
         Ok(AuthContext {
-            user_id,
-            entity_id,
+            user_id: claims.sub,
+            entity_id: claims.entity_id,
             role,
         })
     }

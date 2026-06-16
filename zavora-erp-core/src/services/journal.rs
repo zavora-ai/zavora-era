@@ -5,8 +5,12 @@ use uuid::Uuid;
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::ledger::journal::*;
+use crate::money::{round_money, rounding_outcome, RoundingOutcome};
 use crate::period::{FiscalPeriod, PeriodStatus};
 use crate::types::AgentOrUserId;
+
+/// Convenience alias for a Postgres transaction handle.
+pub type PgTx<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
 /// Validate a journal entry request without posting.
 pub async fn validate_entry(
@@ -184,25 +188,48 @@ pub async fn enforce_period_status(
     Ok(())
 }
 
-/// Create and immediately post a journal entry.
+/// Create and immediately post a journal entry in its own transaction.
+///
+/// Thin wrapper around [`create_and_post_in_tx`] for callers that have no
+/// surrounding transaction to thread through.
 pub async fn create_and_post(
     engine: &ErpEngine,
     req: CreateJournalEntryRequest,
     period_id: Uuid,
     posted_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
-    // Enforce period status before inserting any journal entry
-    enforce_period_status(engine, period_id, &req.source).await?;
+    let mut tx = engine.pool().begin().await?;
+    let entry = create_and_post_in_tx(&mut tx, engine, req, period_id, posted_by).await?;
+    tx.commit().await?;
+    emit_journal_audit(engine, &entry).await;
+    Ok(entry)
+}
+
+/// Create and immediately post a journal entry **within a caller-provided
+/// transaction** (Requirement 2).
+///
+/// The caller owns the transaction lifecycle, so balance updates, document
+/// status changes, and the journal entry all commit or roll back together.
+///
+/// Monetary amounts are rounded to 2 decimal places (banker's rounding). If the
+/// entry is left imbalanced by <= 0.01 due to VAT line-level rounding, a
+/// rounding-adjustment line is inserted to the configured account (Req 5.3);
+/// a larger imbalance is rejected as genuinely unbalanced (Req 2.6).
+pub async fn create_and_post_in_tx(
+    tx: &mut PgTx<'_>,
+    engine: &ErpEngine,
+    req: CreateJournalEntryRequest,
+    period_id: Uuid,
+    posted_by: AgentOrUserId,
+) -> ErpResult<JournalEntry> {
+    enforce_period_status_in_tx(tx, engine.entity_id(), period_id, &req.source).await?;
 
     let now = Utc::now();
     let entry_id = Uuid::new_v4();
+    let number = generate_journal_number_in_tx(tx, engine).await?;
 
-    // Generate entry number
-    let number = generate_journal_number(engine).await?;
-
-    // Build journal lines with functional amounts
-    let base_ccy = &engine.config().base_currency;
-    let lines: Vec<JournalLine> = req
+    // Build journal lines with rounded transaction and functional amounts.
+    let mut lines: Vec<JournalLine> = req
         .lines
         .iter()
         .map(|l| {
@@ -210,34 +237,56 @@ pub async fn create_and_post(
             JournalLine {
                 id: Uuid::new_v4(),
                 account_code: l.account_code.clone(),
-                debit: l.debit,
-                credit: l.credit,
+                debit: l.debit.map(round_money),
+                credit: l.credit.map(round_money),
                 currency: l.currency.clone(),
                 fx_rate,
-                functional_debit: l.debit.map(|d| d * fx_rate),
-                functional_credit: l.credit.map(|c| c * fx_rate),
+                functional_debit: l.debit.map(|d| round_money(d * fx_rate)),
+                functional_credit: l.credit.map(|c| round_money(c * fx_rate)),
                 description: l.description.clone(),
                 dimensions: l.dimensions.clone().unwrap_or_default(),
             }
         })
         .collect();
 
-    // Final balance check
+    // Balance check with sub-cent rounding tolerance.
     let total_debits: Decimal = lines.iter().filter_map(|l| l.functional_debit).sum();
     let total_credits: Decimal = lines.iter().filter_map(|l| l.functional_credit).sum();
-    if total_debits != total_credits {
-        return Err(ErpError::Unbalanced {
-            debits: total_debits,
-            credits: total_credits,
-        });
-    }
 
-    // Insert into database within a transaction
-    let mut tx = engine.pool().begin().await?;
+    match rounding_outcome(total_debits, total_credits) {
+        RoundingOutcome::Balanced => {}
+        RoundingOutcome::Adjust { debit, amount } => {
+            // Absorb the sub-cent residue into the rounding-adjustment account so
+            // VAT accumulation cannot block posting.
+            let (debit_amt, credit_amt) = if debit {
+                (Some(amount), None)
+            } else {
+                (None, Some(amount))
+            };
+            lines.push(JournalLine {
+                id: Uuid::new_v4(),
+                account_code: engine.posting().rounding_adjustment.clone(),
+                debit: debit_amt,
+                credit: credit_amt,
+                currency: engine.config().base_currency.clone(),
+                fx_rate: Decimal::ONE,
+                functional_debit: debit_amt,
+                functional_credit: credit_amt,
+                description: Some("Rounding adjustment".to_string()),
+                dimensions: Default::default(),
+            });
+        }
+        RoundingOutcome::Unbalanced => {
+            return Err(ErpError::Unbalanced {
+                debits: total_debits,
+                credits: total_credits,
+            });
+        }
+    }
 
     // Insert journal entry header
     sqlx::query(
-        r#"INSERT INTO journal_entries 
+        r#"INSERT INTO journal_entries
            (id, entity_id, number, date, period_id, source, reference, description, status, created_by, created_at, posted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
     )
@@ -252,14 +301,14 @@ pub async fn create_and_post(
     .bind("posted")
     .bind(serde_json::to_value(&posted_by).unwrap_or_default())
     .bind(now)
-    .bind(now) // posted_at = now since post_immediately
-    .execute(&mut *tx)
+    .bind(now)
+    .execute(&mut **tx)
     .await?;
 
     // Insert journal lines
     for line in &lines {
         sqlx::query(
-            r#"INSERT INTO journal_lines 
+            r#"INSERT INTO journal_lines
                (id, entry_id, account_code, debit, credit, currency, fx_rate, functional_debit, functional_credit, description, dimensions)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
         )
@@ -274,31 +323,9 @@ pub async fn create_and_post(
         .bind(line.functional_credit)
         .bind(&line.description)
         .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
-
-    // Emit audit event to Redis stream
-    let audit_event = serde_json::json!({
-        "event_type": "posted",
-        "object_type": "journal_entry",
-        "object_id": entry_id,
-        "actor": posted_by,
-        "timestamp": now,
-    });
-
-    // Redis audit emission (best-effort within transaction)
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
-    let mut redis_conn = engine.redis_conn().await;
-    let _: Result<(), _> = redis::cmd("XADD")
-        .arg(&stream_key)
-        .arg("*")
-        .arg("data")
-        .arg(audit_event.to_string())
-        .query_async(&mut redis_conn)
-        .await;
-
-    tx.commit().await?;
 
     Ok(JournalEntry {
         id: entry_id,
@@ -317,21 +344,45 @@ pub async fn create_and_post(
     })
 }
 
-/// Generate the next journal entry number.
-async fn generate_journal_number(engine: &ErpEngine) -> ErpResult<String> {
-    // Atomic increment using Postgres advisory lock + sequence
+/// Emit a best-effort audit event for a posted journal entry to the Redis stream.
+/// Runs after the database transaction commits, so a Redis hiccup never rolls
+/// back accounting data.
+async fn emit_journal_audit(engine: &ErpEngine, entry: &JournalEntry) {
+    let audit_event = serde_json::json!({
+        "event_type": "posted",
+        "object_type": "journal_entry",
+        "object_id": entry.id,
+        "actor": entry.created_by,
+        "timestamp": entry.created_at,
+    });
+    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
+}
+
+/// Generate the next journal entry number within a transaction.
+async fn generate_journal_number_in_tx(
+    tx: &mut PgTx<'_>,
+    engine: &ErpEngine,
+) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(
-               sequences, 
-               '{journal_next}', 
+               sequences,
+               '{journal_next}',
                to_jsonb((sequences->>'journal_next')::bigint + 1)
            )
            WHERE entity_id = $1
            RETURNING (sequences->>'journal_next')::bigint - 1"#,
     )
     .bind(engine.entity_id())
-    .fetch_one(engine.pool())
+    .fetch_one(&mut **tx)
     .await?;
 
     let prefix = &engine.config().sequences.journal_prefix;
@@ -341,5 +392,41 @@ async fn generate_journal_number(engine: &ErpEngine) -> ErpResult<String> {
         Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
     } else {
         Ok(format!("{}-{:06}", prefix, row))
+    }
+}
+
+/// Period-status enforcement against a transaction (see [`enforce_period_status`]).
+pub async fn enforce_period_status_in_tx(
+    tx: &mut PgTx<'_>,
+    entity_id: Uuid,
+    period_id: Uuid,
+    source: &JournalSource,
+) -> ErpResult<()> {
+    let period = sqlx::query_as::<_, FiscalPeriod>(
+        "SELECT * FROM fiscal_periods WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(period_id)
+    .bind(entity_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "fiscal_period".to_string(),
+        id: period_id,
+    })?;
+
+    match period.parsed_status() {
+        PeriodStatus::HardClosed => Err(ErpError::PeriodClosedDetailed {
+            period_name: period.name.clone(),
+            status: "HardClosed".to_string(),
+            period_id: period.id,
+        }),
+        PeriodStatus::SoftClosed if *source != JournalSource::Manual => {
+            Err(ErpError::PeriodClosedDetailed {
+                period_name: period.name.clone(),
+                status: "SoftClosed".to_string(),
+                period_id: period.id,
+            })
+        }
+        _ => Ok(()),
     }
 }

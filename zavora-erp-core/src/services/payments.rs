@@ -103,6 +103,10 @@ pub async fn record_payment(
     // Determine the bank account code for the JE
     let bank_account_code = resolve_bank_account_code(engine, req.bank_account_id).await?;
 
+    // Everything that touches the ledger (payment record, document balances, and
+    // the journal entry) commits or rolls back together (Requirement 2.1).
+    let mut tx = engine.pool().begin().await?;
+
     // Insert payment record
     sqlx::query(
         r#"INSERT INTO payments 
@@ -126,7 +130,7 @@ pub async fn record_payment(
     .bind(unapplied)
     .bind("completed")
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
 
     // Update invoice/bill balances for each application (using effective amounts)
@@ -141,7 +145,7 @@ pub async fn record_payment(
                 )
                 .bind(app.amount_applied)
                 .bind(app.document_id)
-                .execute(engine.pool())
+                .execute(&mut *tx)
                 .await?;
 
                 // Update status if fully paid
@@ -149,16 +153,8 @@ pub async fn record_payment(
                     "UPDATE invoices SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END, paid_at = CASE WHEN balance_due <= 0 THEN NOW() ELSE paid_at END WHERE id = $1",
                 )
                 .bind(app.document_id)
-                .execute(engine.pool())
+                .execute(&mut *tx)
                 .await?;
-
-                // Cancel pending reminders if the invoice was overdue (Requirement 5.4)
-                let new_balance = fetch_document_balance(engine, app.document_id, &req.payment_type).await.unwrap_or(Decimal::ZERO);
-                let _ = crate::services::scheduler::cancel_reminders_on_payment(
-                    engine,
-                    app.document_id,
-                    new_balance,
-                ).await;
             }
             PaymentType::VendorPayment => {
                 sqlx::query(
@@ -166,14 +162,14 @@ pub async fn record_payment(
                 )
                 .bind(app.amount_applied)
                 .bind(app.document_id)
-                .execute(engine.pool())
+                .execute(&mut *tx)
                 .await?;
 
                 sqlx::query(
                     "UPDATE bills SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END WHERE id = $1",
                 )
                 .bind(app.document_id)
-                .execute(engine.pool())
+                .execute(&mut *tx)
                 .await?;
             }
         }
@@ -201,6 +197,7 @@ pub async fn record_payment(
     // For customer payments: DR Bank / CR AR (applied) / CR Unapplied Payments (excess)
     // For vendor payments: DR AP (applied) / CR Bank (applied) + DR WHT Payable / CR Bank (wht)
     let journal_entry_id = post_payment_journal_entry(
+        &mut tx,
         engine,
         &number,
         payment_date,
@@ -220,8 +217,31 @@ pub async fn record_payment(
     sqlx::query("UPDATE payments SET journal_entry_id = $1 WHERE id = $2")
         .bind(journal_entry_id)
         .bind(id)
-        .execute(engine.pool())
+        .execute(&mut *tx)
         .await?;
+
+    // Commit the atomic ledger writes. Side-effects below (reminder cancellation,
+    // FX gain/loss) run post-commit and are best-effort (Requirement 2.1 allows
+    // these to run after the core transaction).
+    tx.commit().await?;
+
+    // Cancel pending reminders for customer invoices that were paid down.
+    if req.payment_type == PaymentType::CustomerPayment {
+        for app in &applications {
+            if app.amount_applied == Decimal::ZERO {
+                continue;
+            }
+            let new_balance = fetch_document_balance(engine, app.document_id, &req.payment_type)
+                .await
+                .unwrap_or(Decimal::ZERO);
+            let _ = crate::services::scheduler::cancel_reminders_on_payment(
+                engine,
+                app.document_id,
+                new_balance,
+            )
+            .await;
+        }
+    }
 
     // --- FX Gain/Loss handling (Requirements 22.2, 22.3, 22.5) ---
     // When payment currency differs from invoice/bill currency (cross-currency),
@@ -410,7 +430,9 @@ async fn resolve_bank_account_code(
 /// When payment has no applications (unapplied == full amount):
 /// - DR Bank / CR Unapplied Payments (entire amount) for customer payments
 /// - DR Unapplied Payments / CR Bank (entire amount) for vendor payments
+#[allow(clippy::too_many_arguments)]
 async fn post_payment_journal_entry(
+    tx: &mut crate::services::journal::PgTx<'_>,
     engine: &ErpEngine,
     payment_number: &str,
     payment_date: chrono::NaiveDate,
@@ -571,7 +593,8 @@ async fn post_payment_journal_entry(
     // Resolve the fiscal period for the payment date
     let period = crate::services::periods::period_for_date(engine, payment_date).await?;
 
-    let entry = crate::services::journal::create_and_post(
+    let entry = crate::services::journal::create_and_post_in_tx(
+        tx,
         engine,
         je_req,
         period.id,
@@ -811,13 +834,17 @@ pub async fn apply_unapplied_payment(
         serde_json::from_value(row.applications.clone()).unwrap_or_default();
     applications.push(new_application);
 
+    // Allocation record, balance transfer, and journal entry commit together
+    // or roll back together (Requirement 2.4).
+    let mut tx = engine.pool().begin().await?;
+
     sqlx::query(
         "UPDATE payments SET unapplied = $1, applications = $2 WHERE id = $3",
     )
     .bind(new_unapplied)
     .bind(serde_json::to_value(&applications).unwrap_or_default())
     .bind(req.payment_id)
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
 
     // 5. Reduce target document's balance_due (Requirement 24.2)
@@ -828,7 +855,7 @@ pub async fn apply_unapplied_payment(
             )
             .bind(effective_apply)
             .bind(req.document_id)
-            .execute(engine.pool())
+            .execute(&mut *tx)
             .await?;
 
             // Update invoice status
@@ -836,16 +863,8 @@ pub async fn apply_unapplied_payment(
                 "UPDATE invoices SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END, paid_at = CASE WHEN balance_due <= 0 THEN NOW() ELSE paid_at END WHERE id = $1",
             )
             .bind(req.document_id)
-            .execute(engine.pool())
+            .execute(&mut *tx)
             .await?;
-
-            // Cancel pending reminders if the invoice was overdue (Requirement 5.4)
-            let updated_balance = fetch_document_balance(engine, req.document_id, &payment_type).await.unwrap_or(Decimal::ZERO);
-            let _ = crate::services::scheduler::cancel_reminders_on_payment(
-                engine,
-                req.document_id,
-                updated_balance,
-            ).await;
         }
         PaymentType::VendorPayment => {
             sqlx::query(
@@ -853,14 +872,14 @@ pub async fn apply_unapplied_payment(
             )
             .bind(effective_apply)
             .bind(req.document_id)
-            .execute(engine.pool())
+            .execute(&mut *tx)
             .await?;
 
             sqlx::query(
                 "UPDATE bills SET status = CASE WHEN balance_due <= 0 THEN 'paid' ELSE 'partially_paid' END WHERE id = $1",
             )
             .bind(req.document_id)
-            .execute(engine.pool())
+            .execute(&mut *tx)
             .await?;
         }
     }
@@ -916,13 +935,29 @@ pub async fn apply_unapplied_payment(
     };
 
     let period = crate::services::periods::period_for_date(engine, payment_date).await?;
-    let _entry = crate::services::journal::create_and_post(
+    let _entry = crate::services::journal::create_and_post_in_tx(
+        &mut tx,
         engine,
         je_req,
         period.id,
         actor.clone(),
     )
     .await?;
+
+    tx.commit().await?;
+
+    // Cancel pending reminders for a paid-down customer invoice (post-commit).
+    if payment_type == PaymentType::CustomerPayment {
+        let updated_balance = fetch_document_balance(engine, req.document_id, &payment_type)
+            .await
+            .unwrap_or(Decimal::ZERO);
+        let _ = crate::services::scheduler::cancel_reminders_on_payment(
+            engine,
+            req.document_id,
+            updated_balance,
+        )
+        .await;
+    }
 
     // 7. Record audit event with before/after amounts (Requirement 24.5)
     let audit_event = serde_json::json!({
