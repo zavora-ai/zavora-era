@@ -114,12 +114,14 @@ export default function InvoicesPage() {
 }
 
 // ============================================================
-// Full-featured Invoice Creation — Wave Apps parity
+// Full-featured Invoice Creation / Edit — Wave Apps parity
 // ============================================================
-function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
+function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+
+  const isEdit = !!editId;
 
   const today = new Date().toISOString().split('T')[0];
   const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
@@ -137,6 +139,40 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
     discount_value: 0,
     send_on_save: false,
   });
+
+  // Load existing invoice data when editing
+  const { data: existingInvoice } = useQuery({
+    queryKey: ['invoice', editId],
+    queryFn: () => getInvoice(editId!).then(r => r.data),
+    enabled: isEdit,
+  });
+
+  useEffect(() => {
+    if (existingInvoice && isEdit) {
+      const inv = existingInvoice.invoice ?? existingInvoice;
+      const lines = (existingInvoice.lines ?? []).map((l: any) => ({
+        product_id: l.product_id || '',
+        description: l.description || '',
+        quantity: l.quantity || 1,
+        unit_price: l.unit_price || 0,
+        tax_rate: l.vat_treatment === 'Standard16' ? 16 : l.vat_treatment === 'ZeroRated' ? 0 : 0,
+        account_code: l.account_code || '5000',
+      }));
+      setForm({
+        customer_id: inv.customer_id || '',
+        invoice_date: inv.issue_date || today,
+        due_date: inv.due_date || defaultDue,
+        po_number: '',
+        lines: lines.length > 0 ? lines : [emptyLine()],
+        notes: inv.notes || '',
+        footer: 'Thank you for your business!',
+        currency: inv.currency || 'KES',
+        discount_type: 'none',
+        discount_value: 0,
+        send_on_save: false,
+      });
+    }
+  }, [existingInvoice, isEdit]);
 
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
@@ -159,9 +195,10 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
   };
 
   const mutation = useMutation({
-    mutationFn: (data: any) => createInvoice(data),
+    mutationFn: (data: any) => isEdit ? updateInvoice(editId!, data) : createInvoice(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      if (isEdit) queryClient.invalidateQueries({ queryKey: ['invoice', editId] });
       onClose();
     },
   });
@@ -227,7 +264,7 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Create Invoice" size="xl">
+    <Modal open={true} onClose={onClose} title={isEdit ? "Edit Invoice" : "Create Invoice"} size="xl">
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Header — Customer + Dates */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -428,7 +465,7 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button type="submit" className="btn-primary" disabled={mutation.isPending || !form.customer_id}>
-              {mutation.isPending ? 'Saving...' : form.send_on_save ? 'Save & Send' : 'Save as Draft'}
+              {mutation.isPending ? 'Saving...' : isEdit ? 'Update Invoice' : form.send_on_save ? 'Save & Send' : 'Save as Draft'}
             </button>
           </div>
         </div>
