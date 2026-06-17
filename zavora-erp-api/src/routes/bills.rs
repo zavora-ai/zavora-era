@@ -35,8 +35,18 @@ pub async fn get_one(
     )
     .bind(id).bind(ctx.entity_id)
     .fetch_optional(state.engine.pool()).await;
+
+    let lines = sqlx::query_as::<_, zavora_erp_core::invoicing::InvoiceLineRow>(
+        "SELECT id, bill_id AS invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount FROM bill_lines WHERE bill_id = $1",
+    )
+    .bind(id)
+    .fetch_all(state.engine.pool()).await.unwrap_or_default();
+
     match row {
-        Ok(Some(r)) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(Some(bill)) => Ok(Json(serde_json::json!({
+            "bill": serde_json::to_value(bill).unwrap_or_default(),
+            "lines": serde_json::to_value(lines).unwrap_or_default(),
+        }))),
         Ok(None) => Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Bill".into(), id })),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
@@ -164,5 +174,32 @@ pub async fn post_bill(
         }
         Ok(None) => Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Bill".into(), id })),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    }
+}
+
+/// PUT /bills/{id} — edit a draft bill (replaces lines, recomputes totals).
+pub async fn update(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreateBillRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "edit bill").map_err(err_response)?;
+    match svc::update_bill_draft(&state.engine, ctx.entity_id, id, req).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "updated": true }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// DELETE /bills/{id} — delete a draft bill and its lines.
+pub async fn delete(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "delete bill").map_err(err_response)?;
+    match svc::delete_bill_draft(&state.engine, ctx.entity_id, id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "deleted": true }))),
+        Err(e) => Err(err_response(e)),
     }
 }

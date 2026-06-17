@@ -156,6 +156,8 @@ export const createRecurringInvoice = (data: any) => api.post('/recurring-invoic
 export const getBills = () => api.get('/bills');
 export const getBill = (id: string) => api.get(`/bills/${id}`);
 export const createBill = (data: any) => api.post('/bills', data);
+export const updateBill = (id: string, data: any) => api.put(`/bills/${id}`, data);
+export const deleteBill = (id: string) => api.delete(`/bills/${id}`);
 export const approveBill = (id: string) => api.post(`/bills/${id}/approve`);
 export const postBill = (id: string) => api.post(`/bills/${id}/post`);
 

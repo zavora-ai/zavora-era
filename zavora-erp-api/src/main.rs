@@ -159,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
         // Bills
         .route("/api/v1/bills", get(routes::bills::list).post(routes::bills::create))
-        .route("/api/v1/bills/{id}", get(routes::bills::get_one))
+        .route("/api/v1/bills/{id}", get(routes::bills::get_one).put(routes::bills::update).delete(routes::bills::delete))
         .route("/api/v1/bills/{id}/approve", post(routes::bills::approve))
         .route("/api/v1/bills/{id}/post", post(routes::bills::post_bill))
         // Payments
