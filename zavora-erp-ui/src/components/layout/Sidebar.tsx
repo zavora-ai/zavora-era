@@ -6,7 +6,6 @@ import {
   RefreshCw, History, Camera, UserCog
 } from 'lucide-react';
 import clsx from 'clsx';
-import { getIdentity } from '../../api/client';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -40,16 +39,6 @@ const navigation = [
 ];
 
 export default function Sidebar() {
-  const identity = getIdentity() as { display_name?: string; role?: string } | null;
-  const displayName = identity?.display_name ?? 'Signed in';
-  const role = identity?.role ?? '';
-  const initials = displayName
-    .split(' ')
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || 'U';
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-[260px] bg-[#0f0f1a] flex flex-col">
       {/* Logo */}
@@ -97,19 +86,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      {/* User */}
-      <div className="p-4 border-t border-white/5">
-        <div className="flex items-center gap-3 px-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center ring-2 ring-white/10">
-            <span className="text-xs font-bold text-white">{initials}</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-medium text-gray-200 truncate">{displayName}</p>
-            <p className="text-[11px] text-gray-500 truncate">{role}</p>
-          </div>
-        </div>
-      </div>
     </aside>
   );
 }
