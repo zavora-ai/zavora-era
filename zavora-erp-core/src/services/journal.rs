@@ -462,6 +462,7 @@ pub async fn reverse_journal_entry(
     entity_id: Uuid,
     entry_id: Uuid,
     reason: Option<String>,
+    reversal_date: Option<chrono::NaiveDate>,
     reversed_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
     // Fetch the original header (tenant-scoped).
@@ -525,7 +526,9 @@ pub async fn reverse_journal_entry(
         })
         .collect();
 
-    let date = Utc::now().date_naive();
+    // Default to today (keeps reversals out of closed periods); callers may
+    // specify a date to reverse within the original entry's period instead.
+    let date = reversal_date.unwrap_or_else(|| Utc::now().date_naive());
     let entry_req = CreateJournalEntryRequest {
         date,
         source: JournalSource::Manual,

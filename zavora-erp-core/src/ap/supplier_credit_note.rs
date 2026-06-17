@@ -56,4 +56,10 @@ pub struct CreateSupplierCreditNoteRequest {
     pub applies_to_bill: Option<Uuid>,
     pub lines: Vec<CreateInvoiceLineRequest>,
     pub reason: String,
+    /// Document currency. Defaults to the vendor's currency when omitted.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// FX rate to base currency. Defaults to 1.0 when omitted.
+    #[serde(default)]
+    pub fx_rate: Option<Decimal>,
 }

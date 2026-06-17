@@ -1377,6 +1377,17 @@ pub async fn mark_invoice_etims_transmitted(
         });
     }
 
+    // A transmitted invoice must carry the KRA-issued control number returned by
+    // the OSCU/VSCU — recording "transmitted" without it is not a compliant state.
+    let etims_invoice_number = match etims_invoice_number {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => {
+            return Err(ErpError::ValidationFailed {
+                message: "A KRA eTIMS invoice/control number is required to mark an invoice transmitted".to_string(),
+            });
+        }
+    };
+
     sqlx::query(
         "UPDATE invoices SET etims_status = 'transmitted', etims_invoice_number = $1, \
          etims_transmitted_at = NOW() WHERE id = $2 AND entity_id = $3",
