@@ -18,8 +18,25 @@ use zavora_erp_core::ledger::journal::{
     CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource,
 };
 use zavora_erp_core::services::journal::create_and_post;
+use zavora_erp_core::reporting::{ReportContent, ReportParameters, ReportRequest, ReportType};
 use zavora_erp_core::types::AgentOrUserId;
 use zavora_erp_core::ErpEngine;
+
+fn empty_params() -> ReportParameters {
+    ReportParameters {
+        as_at: None,
+        period_from: None,
+        period_to: None,
+        compare_to: None,
+        comparative: None,
+        customer_id: None,
+        vendor_id: None,
+        account_code: None,
+        bank_account_id: None,
+        statement_id: None,
+        period_id: None,
+    }
+}
 
 fn database_url() -> String {
     std::env::var("DATABASE_URL")
@@ -204,4 +221,70 @@ async fn period_id(engine: &ErpEngine, entity_id: Uuid, date: NaiveDate) -> Uuid
     .fetch_one(engine.pool())
     .await
     .unwrap()
+}
+
+/// Seed a minimal account so report classification (by account_type) has rows.
+async fn seed_account(engine: &ErpEngine, entity_id: Uuid, code: &str, name: &str, account_type: &str) {
+    sqlx::query(
+        "INSERT INTO accounts (id, entity_id, code, name, account_type) VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (entity_id, code) DO NOTHING",
+    )
+    .bind(Uuid::new_v4())
+    .bind(entity_id)
+    .bind(code)
+    .bind(name)
+    .bind(account_type)
+    .execute(engine.pool())
+    .await
+    .unwrap();
+}
+
+/// Posting DR Asset / CR Revenue must leave both the trial balance and the
+/// balance sheet in balance, with current-year earnings carrying the profit.
+#[tokio::test]
+async fn reports_balance_after_posting() {
+    let Some((engine, entity_id, today)) = setup("open").await else { return };
+
+    seed_account(&engine, entity_id, "1000", "Cash", "Asset").await;
+    seed_account(&engine, entity_id, "4000", "Sales", "Revenue").await;
+
+    let req = CreateJournalEntryRequest {
+        date: today,
+        source: JournalSource::Manual,
+        reference: format!("RPT-{}", Uuid::new_v4()),
+        description: "sale".to_string(),
+        lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(100.00)))],
+        post_immediately: true,
+    };
+    create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
+        .await
+        .expect("post");
+
+    // Trial balance must balance.
+    let tb = engine
+        .run_report(ReportRequest { entity_id, report_type: ReportType::TrialBalance, parameters: empty_params() })
+        .await
+        .unwrap();
+    match tb.content {
+        ReportContent::TrialBalance(r) => {
+            assert!(r.is_balanced, "trial balance must balance: diff {}", r.difference);
+            assert_eq!(r.total_debits, dec!(100.00));
+        }
+        other => panic!("expected trial balance, got {other:?}"),
+    }
+
+    // Balance sheet must balance with profit in current-year earnings.
+    let bs = engine
+        .run_report(ReportRequest { entity_id, report_type: ReportType::BalanceSheet, parameters: empty_params() })
+        .await
+        .unwrap();
+    match bs.content {
+        ReportContent::BalanceSheet(r) => {
+            assert!(r.is_balanced, "balance sheet must balance: diff {}", r.difference);
+            assert_eq!(r.total_assets, dec!(100.00));
+            assert_eq!(r.current_year_earnings, dec!(100.00));
+            assert_eq!(r.total_assets, r.total_liabilities + r.total_equity);
+        }
+        other => panic!("expected balance sheet, got {other:?}"),
+    }
 }

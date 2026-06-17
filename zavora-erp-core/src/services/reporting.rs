@@ -40,6 +40,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = gl_detail(engine, entity_id, req.parameters).await?;
             ReportContent::GlDetail(report)
         }
+        ReportType::VatReturn => {
+            let report = vat_return(engine, entity_id, req.parameters).await?;
+            ReportContent::VatReturn(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -171,18 +175,26 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
 async fn trial_balance(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<TrialBalanceReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
+    // Pre-aggregate posted movements up to the as-at date in a subquery, then
+    // join to accounts. Gating the line sums INSIDE the subquery (rather than a
+    // LEFT JOIN on the entry) is essential: otherwise lines whose entry falls
+    // outside the date window still leak into the totals.
     let lines = sqlx::query_as::<_, TrialBalanceQueryRow>(
-        r#"SELECT 
-               a.code as account_code,
-               a.name as account_name,
-               COALESCE(SUM(CASE WHEN je.date <= $2 THEN jl.functional_debit ELSE 0 END), 0) as total_debit,
-               COALESCE(SUM(CASE WHEN je.date <= $2 THEN jl.functional_credit ELSE 0 END), 0) as total_credit
+        r#"SELECT a.code as account_code, a.name as account_name,
+                  COALESCE(m.total_debit, 0)  as total_debit,
+                  COALESCE(m.total_credit, 0) as total_credit
            FROM accounts a
-           LEFT JOIN journal_lines jl ON jl.account_code = a.code
-           LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.entity_id = a.entity_id AND je.status = 'posted'
+           LEFT JOIN (
+               SELECT jl.account_code,
+                      SUM(jl.functional_debit)  as total_debit,
+                      SUM(jl.functional_credit) as total_credit
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.entry_id
+               WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+               GROUP BY jl.account_code
+           ) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
-           GROUP BY a.code, a.name
-           HAVING COALESCE(SUM(jl.functional_debit), 0) != 0 OR COALESCE(SUM(jl.functional_credit), 0) != 0
+             AND (COALESCE(m.total_debit, 0) <> 0 OR COALESCE(m.total_credit, 0) <> 0)
            ORDER BY a.code"#,
     )
     .bind(entity_id)
@@ -207,14 +219,17 @@ async fn trial_balance(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
         })
         .collect();
 
-    let total_debits = report_lines.iter().map(|l| l.closing_debit).sum();
-    let total_credits = report_lines.iter().map(|l| l.closing_credit).sum();
+    let total_debits: Decimal = report_lines.iter().map(|l| l.closing_debit).sum();
+    let total_credits: Decimal = report_lines.iter().map(|l| l.closing_credit).sum();
+    let difference = total_debits - total_credits;
 
     Ok(TrialBalanceReport {
         as_at,
         lines: report_lines,
         total_debits,
         total_credits,
+        is_balanced: difference.abs() <= crate::money::ROUNDING_TOLERANCE,
+        difference,
     })
 }
 
@@ -230,18 +245,22 @@ struct TrialBalanceQueryRow {
 async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<BalanceSheetReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
 
-    // Query balances grouped by account type
+    // Posted balances as at the date, date-gated inside the subquery (see the
+    // trial-balance note on why the gate must be on the line aggregation).
     let rows = sqlx::query_as::<_, BalanceSheetQueryRow>(
-        r#"SELECT 
-               a.code, a.name, a.account_type,
-               COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) as balance
+        r#"SELECT a.code, a.name, a.account_type, COALESCE(m.balance, 0) as balance
            FROM accounts a
-           LEFT JOIN journal_lines jl ON jl.account_code = a.code
-           LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.entity_id = a.entity_id AND je.status = 'posted' AND je.date <= $2
+           JOIN (
+               SELECT jl.account_code,
+                      SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)) as balance
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.entry_id
+               WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+               GROUP BY jl.account_code
+           ) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
-           AND a.account_type IN ('asset', 'contra_asset', 'liability', 'contra_liability', 'equity')
-           GROUP BY a.code, a.name, a.account_type
-           HAVING COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) != 0
+             AND a.account_type IN ('Asset', 'ContraAsset', 'Liability', 'ContraLiability', 'Equity')
+             AND COALESCE(m.balance, 0) <> 0
            ORDER BY a.code"#,
     )
     .bind(entity_id)
@@ -254,23 +273,55 @@ async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
     let mut equity = Vec::new();
 
     for row in &rows {
-        let line = BalanceSheetLine {
+        // Present each line in its section's natural sign: assets carry their
+        // debit balance directly (a contra-asset like accumulated depreciation
+        // shows negative, reducing the section); liabilities and equity carry
+        // the credit balance as a positive (= -(debit - credit)). Contras net
+        // automatically — no blanket abs() that would wrongly add them.
+        let (bucket, amount) = match row.account_type.as_str() {
+            "Asset" | "ContraAsset" => (&mut assets, row.balance),
+            "Liability" | "ContraLiability" => (&mut liabilities, -row.balance),
+            "Equity" => (&mut equity, -row.balance),
+            _ => continue,
+        };
+        bucket.push(BalanceSheetLine {
             account_code: row.code.clone(),
             account_name: row.name.clone(),
-            amount: row.balance,
+            amount,
             comparative: None,
-        };
-        match row.account_type.as_str() {
-            "asset" | "contra_asset" => assets.push(line),
-            "liability" | "contra_liability" => liabilities.push(line),
-            "equity" => equity.push(line),
-            _ => {}
-        }
+        });
+    }
+
+    // Current-year (unclosed) earnings = net of all P&L-type movements up to the
+    // as-at date, folded into equity so Assets = Liabilities + Equity holds even
+    // before a year-end close has moved profit into retained earnings.
+    let pnl_net: Decimal = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.entity_id = je.entity_id AND a.code = jl.account_code
+           WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+             AND a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')"#,
+    )
+    .bind(entity_id)
+    .bind(as_at)
+    .fetch_one(engine.pool())
+    .await?;
+    let current_year_earnings = -pnl_net; // credit-positive net income
+
+    if current_year_earnings != Decimal::ZERO {
+        equity.push(BalanceSheetLine {
+            account_code: "—".to_string(),
+            account_name: "Current Year Earnings".to_string(),
+            amount: current_year_earnings,
+            comparative: None,
+        });
     }
 
     let total_assets: Decimal = assets.iter().map(|l| l.amount).sum();
-    let total_liabilities: Decimal = liabilities.iter().map(|l| l.amount.abs()).sum();
-    let total_equity: Decimal = equity.iter().map(|l| l.amount.abs()).sum();
+    let total_liabilities: Decimal = liabilities.iter().map(|l| l.amount).sum();
+    let total_equity: Decimal = equity.iter().map(|l| l.amount).sum();
+    let difference = total_assets - (total_liabilities + total_equity);
 
     Ok(BalanceSheetReport {
         as_at,
@@ -280,6 +331,9 @@ async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
         total_assets,
         total_liabilities,
         total_equity,
+        current_year_earnings,
+        is_balanced: difference.abs() <= crate::money::ROUNDING_TOLERANCE,
+        difference,
     })
 }
 
@@ -298,17 +352,20 @@ async fn profit_and_loss(engine: &ErpEngine, entity_id: Uuid, params: ReportPara
     let period_to = params.period_to.unwrap_or(today);
 
     let rows = sqlx::query_as::<_, PnlQueryRow>(
-        r#"SELECT 
-               a.code, a.name, a.account_type,
-               COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) as balance
+        r#"SELECT a.code, a.name, a.account_type, COALESCE(m.balance, 0) as balance
            FROM accounts a
-           LEFT JOIN journal_lines jl ON jl.account_code = a.code
-           LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.entity_id = a.entity_id AND je.status = 'posted'
-               AND je.date >= $2 AND je.date <= $3
-           WHERE a.entity_id = $1 AND a.is_active = true
-           AND a.account_type IN ('revenue', 'contra_revenue', 'expense', 'contra_expense')
-           GROUP BY a.code, a.name, a.account_type
-           HAVING COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0) != 0
+           JOIN (
+               SELECT jl.account_code,
+                      SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)) as balance
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.entry_id
+               WHERE je.entity_id = $1 AND je.status = 'posted'
+                 AND je.date >= $2 AND je.date <= $3
+               GROUP BY jl.account_code
+           ) m ON m.account_code = a.code
+           WHERE a.entity_id = $1
+             AND a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')
+             AND COALESCE(m.balance, 0) <> 0
            ORDER BY a.code"#,
     )
     .bind(entity_id)
@@ -323,16 +380,25 @@ async fn profit_and_loss(engine: &ErpEngine, entity_id: Uuid, params: ReportPara
     let mut other_lines = Vec::new();
 
     for row in &rows {
-        let line = PnlLine {
-            account_code: row.code.clone(),
-            account_name: row.name.clone(),
-            amount: row.balance.abs(),
-            comparative: None,
-        };
         let code_num: u32 = row.code.parse().unwrap_or(0);
+        // Sign-correct, contra-aware presentation: revenue is credit-natured so
+        // we negate (revenue positive; a contra-revenue debit balance becomes
+        // negative and reduces the section). Expenses are debit-natured and kept
+        // as-is (a contra-expense credit becomes negative, reducing the section).
         match row.account_type.as_str() {
-            "revenue" | "contra_revenue" => revenue_lines.push(line),
-            "expense" | "contra_expense" => {
+            "Revenue" | "ContraRevenue" => revenue_lines.push(PnlLine {
+                account_code: row.code.clone(),
+                account_name: row.name.clone(),
+                amount: -row.balance,
+                comparative: None,
+            }),
+            "Expense" | "ContraExpense" => {
+                let line = PnlLine {
+                    account_code: row.code.clone(),
+                    account_name: row.name.clone(),
+                    amount: row.balance,
+                    comparative: None,
+                };
                 if code_num >= 6000 && code_num < 7000 {
                     cogs_lines.push(line);
                 } else if code_num >= 7000 && code_num < 8000 {
@@ -723,6 +789,13 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 output.extend_from_slice(row.as_bytes());
             }
         }
+        ReportContent::VatReturn(v) => {
+            output.extend_from_slice(b"Line,Amount\n");
+            output.extend_from_slice(format!("Output VAT (on sales),{}\n", v.output_vat).as_bytes());
+            output.extend_from_slice(format!("Input VAT (on purchases),{}\n", v.input_vat).as_bytes());
+            let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
+            output.extend_from_slice(format!("{},{}\n", label, v.net_vat.abs()).as_bytes());
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -884,8 +957,24 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
     .await?
     .unwrap_or_else(|| account_code.clone());
 
+    // Opening balance = all posted movement on this account strictly BEFORE the
+    // period start. Without this the running balance (and closing balance) would
+    // not tie back to the trial balance for any account with prior history.
+    let opening_balance = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND jl.account_code = $2 AND je.date < $3"#,
+    )
+    .bind(entity_id)
+    .bind(&account_code)
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await?;
+
     let rows = sqlx::query_as::<_, GlDetailQueryRow>(
-        r#"SELECT 
+        r#"SELECT
                je.date, je.number as journal_number, je.description, je.reference,
                COALESCE(jl.functional_debit, 0) as debit,
                COALESCE(jl.functional_credit, 0) as credit
@@ -903,7 +992,7 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
     .fetch_all(engine.pool())
     .await?;
 
-    let mut balance = Decimal::ZERO;
+    let mut balance = opening_balance;
     let lines: Vec<GlDetailLine> = rows
         .iter()
         .map(|r| {
@@ -925,7 +1014,7 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
         account_name,
         period_from,
         period_to,
-        opening_balance: Decimal::ZERO, // TODO: compute from prior periods
+        opening_balance,
         lines,
         closing_balance: balance,
     })
@@ -939,5 +1028,72 @@ struct GlDetailQueryRow {
     reference: String,
     debit: Decimal,
     credit: Decimal,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct AccountMovementRow {
+    debit: Decimal,
+    credit: Decimal,
+}
+
+/// Net posted movement (debit, credit) on one account over a period.
+async fn account_movement(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    account_code: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> ErpResult<(Decimal, Decimal)> {
+    let m = sqlx::query_as::<_, AccountMovementRow>(
+        r#"SELECT COALESCE(SUM(jl.functional_debit), 0) as debit,
+                  COALESCE(SUM(jl.functional_credit), 0) as credit
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND jl.account_code = $2 AND je.date >= $3 AND je.date <= $4"#,
+    )
+    .bind(entity_id)
+    .bind(account_code)
+    .bind(from)
+    .bind(to)
+    .fetch_one(engine.pool())
+    .await?;
+    Ok((m.debit, m.credit))
+}
+
+/// VAT return (KRA) for a period: output VAT (net credit on the VAT-output
+/// account) less input VAT (net debit on the VAT-input account), netting to the
+/// amount payable to — or creditable from — KRA. The control accounts come from
+/// the entity's posting setup, so the figures tie directly to the ledger.
+async fn vat_return(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<VatReturnReport> {
+    let today = Utc::now().date_naive();
+    let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
+    let period_to = params.period_to.unwrap_or(today);
+
+    let posting = engine.posting_for(entity_id).await?;
+    let vat_output_account = posting.vat_output.clone();
+    let vat_input_account = posting.vat_input.clone();
+
+    let (out_debit, out_credit) =
+        account_movement(engine, entity_id, &vat_output_account, period_from, period_to).await?;
+    let (in_debit, in_credit) =
+        account_movement(engine, entity_id, &vat_input_account, period_from, period_to).await?;
+
+    // Output VAT is credit-natured; input VAT is debit-natured. Net the contra
+    // direction so refunds/adjustments are reflected correctly.
+    let output_vat = out_credit - out_debit;
+    let input_vat = in_debit - in_credit;
+    let net_vat = output_vat - input_vat;
+
+    Ok(VatReturnReport {
+        period_from,
+        period_to,
+        output_vat,
+        input_vat,
+        net_vat,
+        is_payable: net_vat > Decimal::ZERO,
+        vat_output_account,
+        vat_input_account,
+    })
 }
 

@@ -70,6 +70,7 @@ pub enum ReportContent {
     ArAgeing(AgeingReport),
     ApAgeing(AgeingReport),
     GlDetail(GlDetailReport),
+    VatReturn(VatReturnReport),
     Generic(serde_json::Value),
 }
 
@@ -80,6 +81,11 @@ pub struct TrialBalanceReport {
     pub lines: Vec<TrialBalanceLine>,
     pub total_debits: Decimal,
     pub total_credits: Decimal,
+    /// True when total debits equal total credits (within 0.01). A trial balance
+    /// that does not balance signals a posting integrity problem.
+    pub is_balanced: bool,
+    /// total_debits - total_credits (0.00 when balanced).
+    pub difference: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +110,13 @@ pub struct BalanceSheetReport {
     pub total_assets: Decimal,
     pub total_liabilities: Decimal,
     pub total_equity: Decimal,
+    /// Net income for the year-to-date (as-at), folded into equity as
+    /// "Current Year Earnings" so the sheet balances before year-end close.
+    pub current_year_earnings: Decimal,
+    /// True when Assets == Liabilities + Equity (within 0.01).
+    pub is_balanced: bool,
+    /// total_assets - (total_liabilities + total_equity); 0.00 when balanced.
+    pub difference: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +242,23 @@ pub struct GlDetailLine {
     pub debit: Decimal,
     pub credit: Decimal,
     pub balance: Decimal,
+}
+
+/// VAT return (KRA VAT3 essentials) for a period.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VatReturnReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    /// VAT charged on sales (net credit movement of the VAT-output account).
+    pub output_vat: Decimal,
+    /// VAT incurred on purchases (net debit movement of the VAT-input account).
+    pub input_vat: Decimal,
+    /// output_vat - input_vat. Positive => payable to KRA; negative => credit carried forward.
+    pub net_vat: Decimal,
+    /// True when net_vat > 0 (a payment is due to KRA).
+    pub is_payable: bool,
+    pub vat_output_account: String,
+    pub vat_input_account: String,
 }
 
 /// Export output from report generation.
