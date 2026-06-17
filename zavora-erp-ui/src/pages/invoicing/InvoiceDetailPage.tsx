@@ -1,21 +1,29 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoice, postInvoice, sendInvoice, createCreditNote, getAuditForObject, getPayments, mpesaStkPush } from '../../api/client';
+import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceEtims, getAuditForObject, getPayments, mpesaStkPush } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import {
   ArrowLeft, Send, CheckCircle, CreditCard,
-  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2
+  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck
 } from 'lucide-react';
+
+const ETIMS_BADGE: Record<string, { label: string; cls: string }> = {
+  not_transmitted: { label: 'eTIMS: Not transmitted', cls: 'bg-gray-100 text-gray-600' },
+  transmitted: { label: 'eTIMS: Transmitted to KRA', cls: 'bg-green-100 text-green-700' },
+  transmission_failed: { label: 'eTIMS: Transmission failed', cls: 'bg-red-100 text-red-700' },
+};
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreditNote, setShowCreditNote] = useState(false);
+  const [showTransmit, setShowTransmit] = useState(false);
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -71,24 +79,33 @@ export default function InvoiceDetailPage() {
             <button onClick={() => navigate('/invoices')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
-            {invoice.status === 'draft' && (
+            {invoice.status === 'draft' && hasRole(ROLES_POST) && (
               <button onClick={() => postMutation.mutate()} className="btn-primary" disabled={postMutation.isPending}>
                 <CheckCircle className="w-4 h-4" /> {postMutation.isPending ? 'Posting...' : 'Post Invoice'}
               </button>
             )}
             {(invoice.status === 'sent' || invoice.status === 'viewed') && (
               <>
-                <button onClick={() => sendMutation.mutate()} className="btn-secondary" disabled={sendMutation.isPending}>
-                  <Send className="w-4 h-4" /> Resend
-                </button>
+                {hasRole(ROLES_SEND) && (
+                  <button onClick={() => sendMutation.mutate()} className="btn-secondary" disabled={sendMutation.isPending}>
+                    <Send className="w-4 h-4" /> Resend
+                  </button>
+                )}
                 <button className="btn-primary">
                   <CreditCard className="w-4 h-4" /> Record Payment
                 </button>
               </>
             )}
-            {invoice.status !== 'draft' && invoice.status !== 'voided' && (
+            {invoice.status !== 'draft' && invoice.status !== 'voided' && hasRole(ROLES_CREATE) && (
               <button onClick={() => setShowCreditNote(true)} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
                 <ReceiptText className="w-4 h-4" /> Credit Note
+              </button>
+            )}
+            {invoice.invoice_type !== 'CreditNote'
+              && invoice.status !== 'draft' && invoice.status !== 'voided'
+              && invoice.etims_status !== 'transmitted' && hasRole(ROLES_SEND) && (
+              <button onClick={() => setShowTransmit(true)} className="btn-secondary text-indigo-600 border-indigo-200 hover:bg-indigo-50">
+                <ShieldCheck className="w-4 h-4" /> Transmit to eTIMS
               </button>
             )}
           </div>
@@ -107,6 +124,16 @@ export default function InvoiceDetailPage() {
               <p className="text-sm text-gray-500">
                 {invoice.invoice_type === 'CreditNote' ? 'Credit Note' : 'Tax Invoice'}
               </p>
+              {invoice.invoice_type !== 'CreditNote' && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${(ETIMS_BADGE[invoice.etims_status ?? 'not_transmitted'] ?? ETIMS_BADGE.not_transmitted).cls}`}>
+                    {(ETIMS_BADGE[invoice.etims_status ?? 'not_transmitted'] ?? ETIMS_BADGE.not_transmitted).label}
+                  </span>
+                  {invoice.etims_status === 'transmitted' && invoice.etims_invoice_number && (
+                    <span className="text-xs text-gray-500">No. {invoice.etims_invoice_number}{invoice.etims_transmitted_at ? ` · ${formatDate(invoice.etims_transmitted_at)}` : ''}</span>
+                  )}
+                </div>
+              )}
             </div>
             <button className="btn-secondary text-sm py-1.5 px-3">
               <Download className="w-3.5 h-3.5" /> PDF
@@ -336,7 +363,53 @@ export default function InvoiceDetailPage() {
       {showCreditNote && (
         <CreditNoteModal invoiceId={id!} onClose={() => setShowCreditNote(false)} />
       )}
+
+      {/* eTIMS Transmit Modal */}
+      {showTransmit && (
+        <TransmitEtimsModal invoiceId={id!} onClose={() => setShowTransmit(false)} />
+      )}
     </div>
+  );
+}
+
+function TransmitEtimsModal({ invoiceId, onClose }: { invoiceId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [etimsNumber, setEtimsNumber] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => transmitInvoiceEtims(invoiceId, { etims_invoice_number: etimsNumber.trim() || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] });
+      onClose();
+    },
+    onError: (e: any) => setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to transmit to eTIMS.'),
+  });
+
+  return (
+    <Modal open={true} onClose={onClose} title="Transmit to KRA eTIMS" subtitle="Record this tax invoice as transmitted" size="sm">
+      <form onSubmit={(e) => { e.preventDefault(); setError(null); mutation.mutate(); }} className="space-y-4">
+        {error && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+            <ShieldCheck className="w-4 h-4 shrink-0" /><span>{error}</span>
+          </div>
+        )}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-sm">
+          <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>Once transmitted, this invoice is on record at KRA and can only be corrected with a credit note — it can no longer be edited or voided.</span>
+        </div>
+        <div>
+          <label className="label">eTIMS Invoice Number <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input className="input" value={etimsNumber} onChange={(e) => setEtimsNumber(e.target.value)} placeholder="KRA control / CU invoice number" />
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" className="btn-primary" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Transmitting...' : 'Mark Transmitted'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

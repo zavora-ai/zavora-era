@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJournalEntries, createJournalEntry, getAccounts, reverseJournalEntry } from '../../api/client';
 import type { JournalEntry, Account } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -30,7 +31,7 @@ export default function JournalEntriesPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
-          {r.status === 'posted' && (
+          {r.status === 'posted' && hasRole(ROLES_POST) && (
             <button
               onClick={() => { setNotice(null); setReverseTarget(r); }}
               className="btn-secondary text-xs py-1 px-2"
@@ -50,9 +51,11 @@ export default function JournalEntriesPage() {
         title="Journal Entries"
         subtitle="Manual journal entries — double-entry bookkeeping"
         actions={
-          <button onClick={() => setShowCreate(true)} className="btn-primary">
-            <Plus className="w-4 h-4" /> New Journal Entry
-          </button>
+          hasRole(ROLES_POST) ? (
+            <button onClick={() => setShowCreate(true)} className="btn-primary">
+              <Plus className="w-4 h-4" /> New Journal Entry
+            </button>
+          ) : undefined
         }
       />
       {notice && (

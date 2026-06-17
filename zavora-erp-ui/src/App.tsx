@@ -10,6 +10,7 @@ import InvoiceDetailPage from './pages/invoicing/InvoiceDetailPage';
 import EstimatesPage from './pages/invoicing/EstimatesPage';
 import RecurringInvoicesPage from './pages/invoicing/RecurringInvoicesPage';
 import BillsPage from './pages/bills/BillsPage';
+import SupplierCreditNotesPage from './pages/bills/SupplierCreditNotesPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
@@ -81,6 +82,7 @@ export default function App() {
             <Route path="estimates" element={<EstimatesPage />} />
             <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
+            <Route path="supplier-credit-notes" element={<SupplierCreditNotesPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />

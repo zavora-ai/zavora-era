@@ -3,11 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, getCustomers, getProducts } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
-import { Plus, Send, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Send, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 
 const POSTED_LIKE = ['posted', 'sent', 'viewed', 'partially_paid'];
 const isPostedLike = (s: string) => POSTED_LIKE.includes(s);
@@ -45,6 +46,7 @@ export default function InvoicesPage() {
       <div className="flex items-center gap-1.5">
         <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span>
         {(r as any).sent_at && <Send className="w-3 h-3 text-gray-400" aria-label="Sent" />}
+        {r.etims_status === 'transmitted' && <ShieldCheck className="w-3 h-3 text-green-600" aria-label="Transmitted to eTIMS" />}
       </div>
     ) },
     { key: 'number', header: 'Invoice #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
@@ -59,9 +61,11 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {r.status === 'draft' && (
             <>
-              <button onClick={() => postMutation.mutate(r.id)} disabled={postMutation.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
-                Post
-              </button>
+              {hasRole(ROLES_POST) && (
+                <button onClick={() => postMutation.mutate(r.id)} disabled={postMutation.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
+                  Post
+                </button>
+              )}
               <button onClick={() => setEditId(r.id)} className="btn-secondary text-xs py-1 px-2" title="Edit draft">
                 <Pencil className="w-3 h-3" />
               </button>
@@ -70,7 +74,7 @@ export default function InvoicesPage() {
               </button>
             </>
           )}
-          {isPostedLike(r.status) && !(r as any).sent_at && (
+          {isPostedLike(r.status) && !(r as any).sent_at && hasRole(ROLES_SEND) && (
             <button onClick={() => sendMutation.mutate(r.id)} disabled={sendMutation.isPending} className="btn-secondary text-xs py-1 px-2" title="Mark as sent to customer">
               <Send className="w-3 h-3" /> Mark sent
             </button>

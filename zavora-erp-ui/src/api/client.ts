@@ -153,6 +153,9 @@ export const getEstimates = () => api.get('/estimates');
 export const createEstimate = (data: any) => api.post('/estimates', data);
 export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
 export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
+export const sendEstimate = (id: string) => api.post(`/estimates/${id}/send`, {});
+export const acceptEstimate = (id: string) => api.post(`/estimates/${id}/accept`, {});
+export const declineEstimate = (id: string) => api.post(`/estimates/${id}/decline`, {});
 
 // === Recurring Invoices ===
 export const getRecurringInvoices = () => api.get('/recurring-invoices');
@@ -166,6 +169,11 @@ export const updateBill = (id: string, data: any) => api.put(`/bills/${id}`, dat
 export const deleteBill = (id: string) => api.delete(`/bills/${id}`);
 export const approveBill = (id: string) => api.post(`/bills/${id}/approve`);
 export const postBill = (id: string) => api.post(`/bills/${id}/post`);
+
+// === Supplier Credit Notes (AP) ===
+export const getSupplierCreditNotes = () => api.get('/supplier-credit-notes');
+export const getSupplierCreditNote = (id: string) => api.get(`/supplier-credit-notes/${id}`);
+export const createSupplierCreditNote = (data: any) => api.post('/supplier-credit-notes', data);
 
 // === Payments ===
 export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
@@ -236,6 +244,8 @@ export const seedAccounts = () => api.post('/accounts/seed');
 // === Invoices (additional) ===
 export const getInvoice = (id: string) => api.get(`/invoices/${id}`);
 export const createCreditNote = (id: string, data: any) => api.post(`/invoices/${id}/credit-note`, data);
+export const transmitInvoiceEtims = (id: string, data: { etims_invoice_number?: string }) =>
+  api.post(`/invoices/${id}/etims-transmit`, data);
 
 // === Employees (additional) ===
 export const getEmployees = () => api.get('/employees');

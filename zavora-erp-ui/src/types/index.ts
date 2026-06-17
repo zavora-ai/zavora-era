@@ -170,6 +170,9 @@ export interface Invoice {
   source_estimate?: string;
   credit_note_for?: string;
   journal_entry_id?: string;
+  etims_status?: 'not_transmitted' | 'transmitted' | 'transmission_failed';
+  etims_invoice_number?: string;
+  etims_transmitted_at?: string;
   sent_at?: string;
   viewed_at?: string;
   paid_at?: string;
@@ -397,6 +400,19 @@ export interface Estimate {
 }
 
 export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
+
+// === Supplier Credit Note (AP) ===
+export interface SupplierCreditNote {
+  id: string;
+  vendor_id: string;
+  credit_note_number: string;
+  credit_note_date: string;
+  applies_to_bill?: string;
+  gross_total: number;
+  status: string;
+  journal_entry_id?: string;
+  created_at: string;
+}
 
 // === Inventory ===
 export interface InventoryItem {
