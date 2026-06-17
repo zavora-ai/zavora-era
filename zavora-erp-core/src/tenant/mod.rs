@@ -23,6 +23,11 @@ use uuid::Uuid;
 pub struct SignupInput {
     /// Human-readable organisation name (validated non-empty after trimming).
     pub organization_name: String,
+    /// Legal type of organisation (validated non-empty after trimming), e.g.
+    /// "sole_proprietor", "limited_company", "partnership", "ngo".
+    pub organization_type: String,
+    /// KRA PIN (optional; trimmed + upper-cased when present).
+    pub kra_pin: Option<String>,
     /// Owner email (validated for syntactic validity).
     pub owner_email: String,
     /// Owner display name (validated non-empty after trimming).
@@ -36,6 +41,10 @@ pub struct SignupInput {
 pub struct ProvisionTenantRequest {
     /// Trimmed, non-empty organisation name.
     pub organization_name: String,
+    /// Trimmed, non-empty organisation type.
+    pub organization_type: String,
+    /// Normalised KRA PIN (trimmed + upper-cased), if supplied.
+    pub kra_pin: Option<String>,
     /// Syntactically valid, normalised (trimmed + lower-cased) owner email.
     pub owner_email: String,
     /// Trimmed, non-empty owner display name.
@@ -125,6 +134,20 @@ pub fn validate_signup(input: SignupInput) -> ErpResult<ProvisionTenantRequest> 
         });
     }
 
+    // Organisation type: reject if empty or whitespace-only.
+    let organization_type = input.organization_type.trim();
+    if organization_type.is_empty() {
+        return Err(ErpError::ValidationFailed {
+            message: "organization_type must not be empty".to_string(),
+        });
+    }
+
+    // KRA PIN: optional; trim + upper-case, and drop if blank after trimming.
+    let kra_pin = input
+        .kra_pin
+        .map(|p| p.trim().to_uppercase())
+        .filter(|p| !p.is_empty());
+
     // Owner email: trim + lower-case, then check syntactic validity (Req 1.6, 7.1).
     let owner_email = input.owner_email.trim().to_lowercase();
     if owner_email.is_empty() {
@@ -156,6 +179,8 @@ pub fn validate_signup(input: SignupInput) -> ErpResult<ProvisionTenantRequest> 
 
     Ok(ProvisionTenantRequest {
         organization_name: organization_name.to_string(),
+        organization_type: organization_type.to_string(),
+        kra_pin,
         owner_email,
         owner_display_name: owner_display_name.to_string(),
         owner_password: input.owner_password,
@@ -349,11 +374,14 @@ pub async fn provision_tenant(
     //    COA template; remaining columns fall back to their schema defaults
     //    (Req 2.2, 3.1, 12.1).
     sqlx::query(
-        r#"INSERT INTO entity_settings (entity_id, organization_name, base_currency, coa_template)
-           VALUES ($1, $2, 'KES', 'KenyaStandard')"#,
+        r#"INSERT INTO entity_settings
+               (entity_id, organization_name, organization_type, kra_pin, base_currency, coa_template)
+           VALUES ($1, $2, $3, $4, 'KES', 'KenyaStandard')"#,
     )
     .bind(entity_id)
     .bind(&req.organization_name)
+    .bind(&req.organization_type)
+    .bind(&req.kra_pin)
     .execute(&mut *tx)
     .await?;
 
@@ -450,6 +478,8 @@ mod tests {
     fn valid_input() -> SignupInput {
         SignupInput {
             organization_name: "Acme Ltd".to_string(),
+            organization_type: "limited_company".to_string(),
+            kra_pin: Some("A123456789X".to_string()),
             owner_email: "ada@example.com".to_string(),
             owner_display_name: "Ada Lovelace".to_string(),
             owner_password: "hunter2hunter".to_string(),
@@ -460,16 +490,41 @@ mod tests {
     fn accepts_and_normalises_valid_input() {
         let input = SignupInput {
             organization_name: "  Acme Ltd  ".to_string(),
+            organization_type: "  limited_company  ".to_string(),
+            kra_pin: Some("  a123456789x  ".to_string()),
             owner_email: "  Ada@Example.COM ".to_string(),
             owner_display_name: "  Ada Lovelace  ".to_string(),
             owner_password: "hunter2hunter".to_string(),
         };
         let req = validate_signup(input).expect("valid input should be accepted");
         assert_eq!(req.organization_name, "Acme Ltd");
+        assert_eq!(req.organization_type, "limited_company");
+        assert_eq!(req.kra_pin.as_deref(), Some("A123456789X")); // trimmed + upper-cased
         assert_eq!(req.owner_email, "ada@example.com");
         assert_eq!(req.owner_display_name, "Ada Lovelace");
         assert_eq!(req.owner_password, "hunter2hunter");
         assert!(req.seed_chart_of_accounts);
+    }
+
+    #[test]
+    fn rejects_empty_organization_type() {
+        let mut input = valid_input();
+        input.organization_type = "   ".to_string();
+        let err = validate_signup(input).unwrap_err();
+        match err {
+            ErpError::ValidationFailed { message } => {
+                assert!(message.contains("organization_type"), "got: {message}");
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn blank_kra_pin_normalises_to_none() {
+        let mut input = valid_input();
+        input.kra_pin = Some("   ".to_string());
+        let req = validate_signup(input).unwrap();
+        assert_eq!(req.kra_pin, None);
     }
 
     #[test]
@@ -538,6 +593,8 @@ mod tests {
         // All fields invalid; organization name is checked first.
         let input = SignupInput {
             organization_name: "  ".to_string(),
+            organization_type: "  ".to_string(),
+            kra_pin: None,
             owner_email: "bad".to_string(),
             owner_display_name: "  ".to_string(),
             owner_password: "x".to_string(),

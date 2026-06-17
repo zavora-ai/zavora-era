@@ -84,6 +84,14 @@ export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password });
 export const register = (data: { email: string; display_name: string; password: string }) =>
   api.post('/auth/register', data);
+export const signup = (data: {
+  organization_name: string;
+  organization_type: string;
+  kra_pin?: string;
+  email: string;
+  display_name: string;
+  password: string;
+}) => api.post('/auth/signup', data);
 export const logout = () => api.post('/auth/logout', {});
 export const getUsers = () => api.get('/users');
 export const createUser = (data: {
