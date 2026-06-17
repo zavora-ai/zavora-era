@@ -84,6 +84,14 @@ export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password });
 export const register = (data: { email: string; display_name: string; password: string }) =>
   api.post('/auth/register', data);
+export const signup = (data: {
+  organization_name: string;
+  organization_type: string;
+  kra_pin?: string;
+  email: string;
+  display_name: string;
+  password: string;
+}) => api.post('/auth/signup', data);
 export const logout = () => api.post('/auth/logout', {});
 export const getUsers = () => api.get('/users');
 export const createUser = (data: {
@@ -129,8 +137,10 @@ export const createProduct = (data: any) => api.post('/products', data);
 // === Invoices ===
 export const getInvoices = () => api.get('/invoices');
 export const createInvoice = (data: any) => api.post('/invoices', data);
+export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}`, data);
+export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
 export const postInvoice = (id: string) => api.post(`/invoices/${id}/post`);
-export const sendInvoice = (id: string, data: any) => api.post(`/invoices/${id}/send`, data);
+export const sendInvoice = (id: string, data?: any) => api.post(`/invoices/${id}/send`, data || {});
 
 // === Estimates ===
 export const getEstimates = () => api.get('/estimates');
@@ -146,6 +156,8 @@ export const createRecurringInvoice = (data: any) => api.post('/recurring-invoic
 export const getBills = () => api.get('/bills');
 export const getBill = (id: string) => api.get(`/bills/${id}`);
 export const createBill = (data: any) => api.post('/bills', data);
+export const updateBill = (id: string, data: any) => api.put(`/bills/${id}`, data);
+export const deleteBill = (id: string) => api.delete(`/bills/${id}`);
 export const approveBill = (id: string) => api.post(`/bills/${id}/approve`);
 export const postBill = (id: string) => api.post(`/bills/${id}/post`);
 

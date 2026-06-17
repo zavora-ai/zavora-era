@@ -829,6 +829,185 @@ async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid) -> ErpRes
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 
+/// Edit a **draft** invoice — replaces its lines and recomputes totals.
+///
+/// Only permitted while the invoice is a draft (not yet posted to the ledger);
+/// posted invoices are immutable and must be corrected with a void/credit note.
+pub async fn update_invoice_draft(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+    req: CreateInvoiceRequest,
+) -> ErpResult<()> {
+    let invoice = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if invoice.status != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Only draft invoices can be edited; invoice {} is '{}'. Post then void/credit to correct it.",
+                invoice.number, invoice.status
+            ),
+        });
+    }
+
+    let today = Utc::now().date_naive();
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Customer".to_string(), id: req.customer_id })?;
+
+    let currency = req.currency.clone().unwrap_or_else(|| customer.currency.clone());
+    let issue_date = req.issue_date.unwrap_or(today);
+    let payment_terms: crate::types::PaymentTerms =
+        serde_json::from_str(&format!("\"{}\"", customer.payment_terms))
+            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
+
+    let mut lines = Vec::new();
+    for line_req in &req.lines {
+        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        line.compute_totals();
+        lines.push(line);
+    }
+    let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
+    let discount_total: Decimal = lines
+        .iter()
+        .map(|l| (l.quantity * l.unit_price) * l.discount_percent / Decimal::new(100, 0))
+        .sum();
+    let gross_total = subtotal + tax_total;
+
+    let mut tx = engine.pool().begin().await?;
+    sqlx::query(
+        r#"UPDATE invoices
+           SET customer_id = $1, issue_date = $2, due_date = $3, currency = $4, fx_rate = $5,
+               subtotal = $6, discount_total = $7, tax_total = $8, gross_total = $9,
+               balance_due = $9, notes = $10
+           WHERE id = $11"#,
+    )
+    .bind(req.customer_id)
+    .bind(issue_date)
+    .bind(due_date)
+    .bind(&currency)
+    .bind(req.fx_rate.unwrap_or(Decimal::ONE))
+    .bind(subtotal)
+    .bind(discount_total)
+    .bind(tax_total)
+    .bind(gross_total)
+    .bind(&req.notes)
+    .bind(invoice_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = $1")
+        .bind(invoice_id)
+        .execute(&mut *tx)
+        .await?;
+    for line in &lines {
+        sqlx::query(
+            r#"INSERT INTO invoice_lines
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        )
+        .bind(line.id)
+        .bind(invoice_id)
+        .bind(line.product_id)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.discount_percent)
+        .bind(&line.account_code)
+        .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
+        .bind(line.line_total)
+        .bind(line.vat_amount)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Delete a **draft** invoice and its line items. Only drafts can be deleted;
+/// posted invoices must be voided/credited so the ledger stays intact.
+pub async fn delete_invoice_draft(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<()> {
+    let row = sqlx::query_as::<_, (String, String)>(
+        "SELECT number, status FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if row.1 != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Only draft invoices can be deleted; invoice {} is '{}'. Void it instead.",
+                row.0, row.1
+            ),
+        });
+    }
+
+    let mut tx = engine.pool().begin().await?;
+    sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = $1")
+        .bind(invoice_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM invoices WHERE id = $1 AND entity_id = $2")
+        .bind(invoice_id)
+        .bind(entity_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Mark a posted invoice as sent (records `sent_at`). Delivery is decoupled from
+/// posting, so this just stamps when the invoice was sent — including off-system
+/// (printed, emailed manually, etc.). Drafts must be posted first.
+pub async fn mark_invoice_sent(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<()> {
+    let status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if status == "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: "Post the invoice before marking it as sent".to_string(),
+        });
+    }
+
+    sqlx::query("UPDATE invoices SET sent_at = NOW() WHERE id = $1 AND entity_id = $2")
+        .bind(invoice_id)
+        .bind(entity_id)
+        .execute(engine.pool())
+        .await?;
+    Ok(())
+}
+
 /// Post an invoice — creates the GL journal entry (DR AR / CR Revenue / CR VAT Output).
 /// For line items with tracked inventory products, also issues stock and posts COGS
 /// (DR COGS / CR Inventory at weighted average cost). Rejects with InsufficientStock
@@ -851,9 +1030,12 @@ pub async fn post_invoice(
         id: invoice_id,
     })?;
 
-    if invoice.status != "draft" && invoice.status != "sent" {
+    if invoice.status != "draft" {
         return Err(ErpError::ValidationFailed {
-            message: format!("Invoice {} is already posted (status: {})", invoice.number, invoice.status),
+            message: format!(
+                "Only draft invoices can be posted; invoice {} is '{}'",
+                invoice.number, invoice.status
+            ),
         });
     }
 
@@ -1067,9 +1249,11 @@ pub async fn post_invoice(
     )
     .await?;
 
-    // Update invoice status and link journal entry
+    // Update invoice status and link journal entry. "Posted" reflects the
+    // accounting state only — delivery ("sent") is tracked separately via
+    // sent_at so an invoice can be posted and sent independently (incl. off-system).
     sqlx::query(
-        "UPDATE invoices SET status = 'sent', journal_entry_id = $1 WHERE id = $2",
+        "UPDATE invoices SET status = 'posted', journal_entry_id = $1 WHERE id = $2",
     )
     .bind(entry.id)
     .bind(invoice_id)

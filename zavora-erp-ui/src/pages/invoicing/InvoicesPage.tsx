@@ -1,15 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, createInvoice, postInvoice, sendInvoice, getCustomers, getProducts } from '../../api/client';
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, getCustomers, getProducts } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, Send, CheckCircle, Eye, MoreHorizontal, Download, Mail } from 'lucide-react';
+import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
+import { Plus, Send, Pencil, Trash2 } from 'lucide-react';
+
+const POSTED_LIKE = ['posted', 'sent', 'viewed', 'partially_paid'];
+const isPostedLike = (s: string) => POSTED_LIKE.includes(s);
 
 export default function InvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
@@ -18,23 +23,30 @@ export default function InvoicesPage() {
     queryFn: () => getInvoices().then(r => r.data),
   });
 
-  const postMutation = useMutation({
-    mutationFn: (id: string) => postInvoice(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'] }),
-  });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
+  const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate });
+  const sendMutation = useMutation({ mutationFn: (id: string) => sendInvoice(id), onSuccess: invalidate });
+  const deleteMutation = useMutation({ mutationFn: (id: string) => deleteInvoice(id), onSuccess: invalidate });
 
-  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter);
+  const filtered = filter === 'all' ? invoices
+    : filter === 'posted' ? invoices.filter(i => isPostedLike(i.status))
+    : invoices.filter(i => i.status === filter);
 
-  const statusCounts = {
+  const statusCounts: Record<string, number> = {
     all: invoices.length,
     draft: invoices.filter(i => i.status === 'draft').length,
-    sent: invoices.filter(i => i.status === 'sent' || i.status === 'viewed').length,
+    posted: invoices.filter(i => isPostedLike(i.status)).length,
     overdue: invoices.filter(i => i.status === 'overdue').length,
     paid: invoices.filter(i => i.status === 'paid').length,
   };
 
   const columns: Column<Invoice>[] = [
-    { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span> },
+    { key: 'status', header: 'Status', render: (r) => (
+      <div className="flex items-center gap-1.5">
+        <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span>
+        {(r as any).sent_at && <Send className="w-3 h-3 text-gray-400" aria-label="Sent" />}
+      </div>
+    ) },
     { key: 'number', header: 'Invoice #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
     { key: 'customer_id', header: 'Customer', render: (r) => <span className="text-gray-900">{r.customer_id?.slice(0, 8)}...</span> },
     { key: 'issue_date', header: 'Issued', render: (r) => formatDate(r.issue_date) },
@@ -44,15 +56,23 @@ export default function InvoicesPage() {
     {
       key: 'actions', header: '',
       render: (r) => (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {r.status === 'draft' && (
-            <button onClick={(e) => { e.stopPropagation(); postMutation.mutate(r.id); }} className="btn-primary text-xs py-1 px-2" title="Approve & Send">
-              <Send className="w-3 h-3" /> Send
-            </button>
+            <>
+              <button onClick={() => postMutation.mutate(r.id)} disabled={postMutation.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
+                Post
+              </button>
+              <button onClick={() => setEditId(r.id)} className="btn-secondary text-xs py-1 px-2" title="Edit draft">
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button onClick={() => { if (confirm(`Delete draft ${r.number}? This cannot be undone.`)) deleteMutation.mutate(r.id); }} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Delete draft">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </>
           )}
-          {(r.status === 'sent' || r.status === 'viewed') && (
-            <button className="btn-secondary text-xs py-1 px-2" title="Record Payment">
-              <CheckCircle className="w-3 h-3" /> Payment
+          {isPostedLike(r.status) && !(r as any).sent_at && (
+            <button onClick={() => sendMutation.mutate(r.id)} disabled={sendMutation.isPending} className="btn-secondary text-xs py-1 px-2" title="Mark as sent to customer">
+              <Send className="w-3 h-3" /> Mark sent
             </button>
           )}
         </div>
@@ -64,7 +84,7 @@ export default function InvoicesPage() {
     <div>
       <PageHeader
         title="Invoices"
-        subtitle="Create and manage invoices for your customers"
+        subtitle="Draft → Post (to ledger) → Mark sent. Drafts can be edited or deleted."
         actions={
           <button onClick={() => setShowCreate(true)} className="btn-primary">
             <Plus className="w-4 h-4" /> Create Invoice
@@ -74,7 +94,7 @@ export default function InvoicesPage() {
 
       {/* Status filter tabs */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
-        {(['all', 'draft', 'sent', 'overdue', 'paid'] as const).map((s) => (
+        {(['all', 'draft', 'posted', 'overdue', 'paid'] as const).map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
@@ -88,17 +108,20 @@ export default function InvoicesPage() {
       <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No invoices yet. Create your first invoice to get paid." />
 
       {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
+      {editId && <CreateInvoiceModal editId={editId} onClose={() => setEditId(null)} />}
     </div>
   );
 }
 
 // ============================================================
-// Full-featured Invoice Creation — Wave Apps parity
+// Full-featured Invoice Creation / Edit — Wave Apps parity
 // ============================================================
-function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
+function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+
+  const isEdit = !!editId;
 
   const today = new Date().toISOString().split('T')[0];
   const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
@@ -117,14 +140,65 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
     send_on_save: false,
   });
 
+  // Load existing invoice data when editing
+  const { data: existingInvoice } = useQuery({
+    queryKey: ['invoice', editId],
+    queryFn: () => getInvoice(editId!).then(r => r.data),
+    enabled: isEdit,
+  });
+
+  useEffect(() => {
+    if (existingInvoice && isEdit) {
+      const inv = existingInvoice.invoice ?? existingInvoice;
+      const lines = (existingInvoice.lines ?? []).map((l: any) => ({
+        product_id: l.product_id || '',
+        description: l.description || '',
+        quantity: l.quantity || 1,
+        unit_price: l.unit_price || 0,
+        tax_rate: l.vat_treatment === 'Standard16' ? 16 : l.vat_treatment === 'ZeroRated' ? 0 : 0,
+        account_code: l.account_code || '5000',
+      }));
+      setForm({
+        customer_id: inv.customer_id || '',
+        invoice_date: inv.issue_date || today,
+        due_date: inv.due_date || defaultDue,
+        po_number: '',
+        lines: lines.length > 0 ? lines : [emptyLine()],
+        notes: inv.notes || '',
+        footer: 'Thank you for your business!',
+        currency: inv.currency || 'KES',
+        discount_type: 'none',
+        discount_value: 0,
+        send_on_save: false,
+      });
+    }
+  }, [existingInvoice, isEdit]);
+
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
+
   function emptyLine() {
     return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '5000' };
   }
 
+  const applyProductToLine = (i: number, p: QuickProduct) => {
+    const lines = [...form.lines];
+    lines[i] = {
+      ...lines[i],
+      product_id: p.id,
+      description: lines[i].description || p.name,
+      unit_price: p.unit_price,
+      account_code: p.sales_account,
+      tax_rate: p.vat_treatment === 'Standard16' ? 16 : p.vat_treatment === 'ZeroRated' ? 0 : 0,
+    };
+    setForm({ ...form, lines });
+  };
+
   const mutation = useMutation({
-    mutationFn: (data: any) => createInvoice(data),
+    mutationFn: (data: any) => isEdit ? updateInvoice(editId!, data) : createInvoice(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      if (isEdit) queryClient.invalidateQueries({ queryKey: ['invoice', editId] });
       onClose();
     },
   });
@@ -190,14 +264,19 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Create Invoice" size="xl">
+    <Modal open={true} onClose={onClose} title={isEdit ? "Edit Invoice" : "Create Invoice"} size="xl">
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Header — Customer + Dates */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left — Customer */}
           <div className="space-y-4">
             <div>
-              <label className="label">Bill To *</label>
+              <div className="flex items-center justify-between">
+                <label className="label">Bill To *</label>
+                <button type="button" onClick={() => setAddingCustomer((v) => !v)} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                  {addingCustomer ? 'Cancel' : '+ New customer'}
+                </button>
+              </div>
               <select
                 className="input"
                 value={form.customer_id}
@@ -209,8 +288,12 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              {!customers.length && (
-                <p className="text-xs text-gray-500 mt-1">No customers yet. Add one from the Customers page first.</p>
+              {addingCustomer && (
+                <QuickAddParty
+                  kind="customer"
+                  onCreated={(c) => { setForm((f) => ({ ...f, customer_id: c.id })); setAddingCustomer(false); }}
+                  onCancel={() => setAddingCustomer(false)}
+                />
               )}
             </div>
             {selectedCustomer && (
@@ -276,6 +359,9 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
                     <option value="">Select item...</option>
                     {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
+                  <button type="button" onClick={() => setAddingItemForLine(addingItemForLine === i ? null : i)} className="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                    {addingItemForLine === i ? 'Cancel' : '+ New item'}
+                  </button>
                 </div>
                 <div className="col-span-3">
                   <input className="input text-sm py-1.5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} />
@@ -302,6 +388,12 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
               </div>
             ))}
           </div>
+          {addingItemForLine !== null && (
+            <QuickAddProduct
+              onCreated={(p) => { applyProductToLine(addingItemForLine, p); setAddingItemForLine(null); }}
+              onCancel={() => setAddingItemForLine(null)}
+            />
+          )}
           <button type="button" onClick={addLine} className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800">
             + Add a Line
           </button>
@@ -373,7 +465,7 @@ function CreateInvoiceModal({ onClose }: { onClose: () => void }) {
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button type="submit" className="btn-primary" disabled={mutation.isPending || !form.customer_id}>
-              {mutation.isPending ? 'Saving...' : form.send_on_save ? 'Save & Send' : 'Save as Draft'}
+              {mutation.isPending ? 'Saving...' : isEdit ? 'Update Invoice' : form.send_on_save ? 'Save & Send' : 'Save as Draft'}
             </button>
           </div>
         </div>

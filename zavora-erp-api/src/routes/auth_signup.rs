@@ -22,9 +22,13 @@ use zavora_erp_core::{ErpError, ErpResult};
 use crate::middleware::auth::jwt_config;
 use crate::AppState;
 
-/// Default maximum number of signup attempts permitted per client within a
-/// single fixed window when `SIGNUP_RATE_MAX` is unset or unparseable.
-const DEFAULT_SIGNUP_RATE_MAX: u64 = 5;
+/// Default maximum number of **successful** tenant signups permitted per client
+/// within a single fixed window when `SIGNUP_RATE_MAX` is unset or unparseable.
+///
+/// Only successful signups count against this budget — malformed submissions and
+/// duplicate-email retries never consume it, so a user fixing a form is never
+/// locked out. The cap exists purely to throttle automated mass tenant creation.
+const DEFAULT_SIGNUP_RATE_MAX: u64 = 20;
 
 /// Default fixed-window length in seconds when `SIGNUP_RATE_WINDOW_SECS` is
 /// unset or unparseable.
@@ -50,50 +54,57 @@ fn signup_rate_window_secs() -> u64 {
         .unwrap_or(DEFAULT_SIGNUP_RATE_WINDOW_SECS)
 }
 
-/// Fixed-window rate limiter for the public signup endpoint.
-///
-/// Returns `Ok(())` when the client is under the configured threshold for the
-/// current window and `Err(ErpError::ValidationFailed)` ("rate limited") once
-/// the threshold is exceeded.
-///
-/// Implementation: a fixed-window counter keyed by
-/// `signup:rl:{client_key}:{window}`, where `{window}` is the current window
-/// bucket. The first request in a window `INCR`s the key to 1 and sets an
-/// `EXPIRE` equal to the window length; subsequent requests increment the same
-/// counter until the window rolls over and the key expires.
-///
-/// Availability: if Redis is unreachable the limiter fails open (returns
-/// `Ok(())`) and logs a warning — abuse protection is best-effort and must
-/// never block correct tenant creation.
-pub async fn check_signup_rate(
-    redis: &mut MultiplexedConnection,
-    client_key: &str,
-) -> ErpResult<()> {
-    let max = signup_rate_max();
-    let window = signup_rate_window_secs();
-
-    // Bucket the current time into a fixed window so old counters expire and
-    // every window starts counting from zero.
+/// Redis key for the current fixed window's successful-signup counter.
+fn signup_rate_key(client_key: &str, window: u64) -> String {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
     let window_bucket = now / window;
-    let key = format!("signup:rl:{client_key}:{window_bucket}");
+    format!("signup:rl:{client_key}:{window_bucket}")
+}
 
-    // INCR returns the post-increment counter value.
-    let count: i64 = match redis::cmd("INCR").arg(&key).query_async(redis).await {
+/// Seconds remaining in the current fixed window (for the `Retry-After` header).
+fn signup_rate_retry_after(window: u64) -> u64 {
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    window - (now % window)
+}
+
+/// Whether the client has already used its full signup budget for the current
+/// window. This only **reads** the counter (no increment), so it never consumes
+/// budget itself — malformed or duplicate attempts are free.
+///
+/// Availability: if Redis is unreachable this fails open (returns `false`) and
+/// logs a warning — abuse protection is best-effort and must never block correct
+/// tenant creation.
+pub async fn signup_rate_exceeded(redis: &mut MultiplexedConnection, client_key: &str) -> bool {
+    let max = signup_rate_max();
+    let key = signup_rate_key(client_key, signup_rate_window_secs());
+
+    let count: Option<i64> = match redis::cmd("GET").arg(&key).query_async(redis).await {
         Ok(c) => c,
         Err(e) => {
-            // Fail open: signup correctness is not affected by limiter outages.
-            tracing::warn!(
-                error = %e,
-                "signup rate limiter unavailable (redis); failing open"
-            );
-            return Ok(());
+            tracing::warn!(error = %e, "signup rate limiter unavailable (redis); failing open");
+            return false;
         }
     };
 
-    // On the first hit of a fresh window, attach the window expiry. Best-effort:
-    // a failure here only risks a stale counter, which the next window bucket
-    // sidesteps anyway.
+    count.unwrap_or(0) as u64 >= max
+}
+
+/// Record one **successful** signup against the client's window budget. Called
+/// only after a tenant is actually provisioned, so failed validations and
+/// duplicate-email retries never count. Best-effort: limiter outages are ignored.
+pub async fn record_signup(redis: &mut MultiplexedConnection, client_key: &str) {
+    let window = signup_rate_window_secs();
+    let key = signup_rate_key(client_key, window);
+
+    let count: i64 = match redis::cmd("INCR").arg(&key).query_async(redis).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to record signup for rate limiting; continuing");
+            return;
+        }
+    };
+
+    // Attach the window expiry on the first success of a fresh window.
     if count == 1 {
         if let Err(e) = redis::cmd("EXPIRE")
             .arg(&key)
@@ -101,20 +112,9 @@ pub async fn check_signup_rate(
             .query_async::<()>(redis)
             .await
         {
-            tracing::warn!(
-                error = %e,
-                "failed to set signup rate-limit window expiry; continuing"
-            );
+            tracing::warn!(error = %e, "failed to set signup rate-limit window expiry; continuing");
         }
     }
-
-    if count as u64 > max {
-        return Err(ErpError::ValidationFailed {
-            message: "rate limited".to_string(),
-        });
-    }
-
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +126,9 @@ pub async fn check_signup_rate(
 #[derive(serde::Deserialize)]
 pub struct SignupRequest {
     pub organization_name: String,
+    pub organization_type: String,
+    #[serde(default)]
+    pub kra_pin: Option<String>,
     pub email: String,
     pub display_name: String,
     pub password: String,
@@ -157,10 +160,14 @@ fn er(e: ErpError) -> Response {
 /// A rate-limited rejection. Returns `429` regardless of the underlying
 /// `ErpError` variant so abuse protection is surfaced distinctly from
 /// validation failures (design "Error Handling": rate limit → 429).
-fn rate_limited() -> Response {
+fn rate_limited(retry_after_secs: u64) -> Response {
     (
         StatusCode::TOO_MANY_REQUESTS,
-        Json(serde_json::json!({ "error": "rate limited" })),
+        [(axum::http::header::RETRY_AFTER, retry_after_secs.to_string())],
+        Json(serde_json::json!({
+            "error": "Too many signups from this network; please try again later.",
+            "retry_after_seconds": retry_after_secs,
+        })),
     )
         .into_response()
 }
@@ -261,18 +268,23 @@ pub async fn signup(
     headers: HeaderMap,
     Json(req): Json<SignupRequest>,
 ) -> Result<Response, Response> {
-    // 1. Rate limit (best-effort; fails open if Redis is down). Over the limit
-    //    is surfaced as a distinct 429 rather than a validation error.
+    // 1. Rate limit (best-effort; fails open if Redis is down). This only READS
+    //    the counter — it does not consume budget — so malformed submissions and
+    //    duplicate-email retries below never count against the client. Only a
+    //    fully successful signup is recorded (step 4), so a user fixing a form is
+    //    never locked out; the cap solely throttles automated mass tenant creation.
     let client_key = derive_client_key(&headers, peer);
     let mut redis: MultiplexedConnection = state.engine.redis_conn().await;
-    if check_signup_rate(&mut redis, &client_key).await.is_err() {
-        return Err(rate_limited());
+    if signup_rate_exceeded(&mut redis, &client_key).await {
+        return Err(rate_limited(signup_rate_retry_after(signup_rate_window_secs())));
     }
 
     // 2. Validate + normalise before any persistence (Req 7.4). A failure names
     //    exactly one offending field and reveals no identifiers.
     let provision_req = tenant::validate_signup(SignupInput {
         organization_name: req.organization_name,
+        organization_type: req.organization_type,
+        kra_pin: req.kra_pin,
         owner_email: req.email,
         owner_display_name: req.display_name,
         owner_password: req.password,
@@ -284,6 +296,9 @@ pub async fn signup(
     let provisioned = tenant::provision_tenant(state.engine.pool(), provision_req)
         .await
         .map_err(er)?;
+
+    // 4. Record the successful signup against the client's window budget.
+    record_signup(&mut redis, &client_key).await;
 
     // 4. Issue the session token pair for the new tenant and persist the
     //    refresh token so it can later be revoked.

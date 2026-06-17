@@ -66,6 +66,8 @@ pub async fn create_bill(
     let gross_total = subtotal + tax_total - wht_amount;
     let number = generate_bill_number(engine, entity_id).await?;
 
+    let mut tx = engine.pool().begin().await?;
+
     sqlx::query(
         r#"INSERT INTO bills 
            (id, entity_id, number, vendor_id, vendor_invoice_number, issue_date, due_date, currency, fx_rate,
@@ -90,8 +92,32 @@ pub async fn create_bill(
     .bind("draft")
     .bind(&req.notes)
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
+
+    // Insert bill lines
+    for line in &lines {
+        sqlx::query(
+            r#"INSERT INTO bill_lines
+               (id, bill_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        )
+        .bind(line.id)
+        .bind(id)
+        .bind(line.product_id)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.discount_percent)
+        .bind(&line.account_code)
+        .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
+        .bind(line.line_total)
+        .bind(line.vat_amount)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(Bill {
         id,
@@ -171,6 +197,170 @@ pub async fn approve_bill(engine: &ErpEngine, entity_id: Uuid, req: ApproveBillR
     .execute(engine.pool())
     .await?;
 
+    Ok(())
+}
+
+/// Edit a **draft** bill — replaces its lines and recomputes totals.
+///
+/// Only permitted while the bill is a draft (not yet approved/posted to the ledger);
+/// approved/posted bills are immutable.
+pub async fn update_bill_draft(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    bill_id: Uuid,
+    req: CreateBillRequest,
+) -> ErpResult<()> {
+    let bill = sqlx::query_as::<_, BillRow>("SELECT * FROM bills WHERE id = $1 AND entity_id = $2")
+        .bind(bill_id)
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?
+        .ok_or_else(|| ErpError::NotFound { entity_type: "Bill".to_string(), id: bill_id })?;
+
+    if bill.status != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Only draft bills can be edited; bill {} is '{}'. Void it instead.",
+                bill.number, bill.status
+            ),
+        });
+    }
+
+    let today = Utc::now().date_naive();
+    let vendor = sqlx::query_as::<_, crate::parties::VendorRow>(
+        "SELECT * FROM vendors WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.vendor_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Vendor".to_string(), id: req.vendor_id })?;
+
+    let currency = req.currency.clone().unwrap_or_else(|| vendor.currency.clone());
+    let issue_date = req.issue_date.unwrap_or(today);
+    let payment_terms: crate::types::PaymentTerms =
+        serde_json::from_str(&format!("\"{}\"", vendor.payment_terms))
+            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
+
+    // Resolve lines
+    let mut lines = Vec::new();
+    for line_req in &req.lines {
+        let mut line = crate::services::invoicing::resolve_bill_line(engine, entity_id, line_req, &vendor).await?;
+        line.compute_totals();
+        lines.push(line);
+    }
+
+    let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
+
+    // Auto-compute WHT based on vendor category
+    let wht_amount = if let Some(ref wht_cat_str) = vendor.wht_category {
+        let wht_category: Option<crate::types::WhtCategory> =
+            serde_json::from_str(&format!("\"{}\"", wht_cat_str)).ok();
+        if let Some(cat) = wht_category {
+            let rate = cat.rate_for(vendor.resident);
+            (subtotal * rate).round_dp(2)
+        } else {
+            Decimal::ZERO
+        }
+    } else {
+        Decimal::ZERO
+    };
+
+    let gross_total = subtotal + tax_total - wht_amount;
+
+    let mut tx = engine.pool().begin().await?;
+
+    sqlx::query(
+        r#"UPDATE bills
+           SET vendor_id = $1, vendor_invoice_number = $2, issue_date = $3, due_date = $4,
+               currency = $5, fx_rate = $6, subtotal = $7, tax_total = $8, wht_amount = $9,
+               gross_total = $10, balance_due = $10, notes = $11
+           WHERE id = $12"#,
+    )
+    .bind(req.vendor_id)
+    .bind(&req.vendor_invoice_number)
+    .bind(issue_date)
+    .bind(due_date)
+    .bind(&currency)
+    .bind(req.fx_rate.unwrap_or(Decimal::ONE))
+    .bind(subtotal)
+    .bind(tax_total)
+    .bind(wht_amount)
+    .bind(gross_total)
+    .bind(&req.notes)
+    .bind(bill_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // Replace bill lines
+    sqlx::query("DELETE FROM bill_lines WHERE bill_id = $1")
+        .bind(bill_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for line in &lines {
+        sqlx::query(
+            r#"INSERT INTO bill_lines
+               (id, bill_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        )
+        .bind(line.id)
+        .bind(bill_id)
+        .bind(line.product_id)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.discount_percent)
+        .bind(&line.account_code)
+        .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
+        .bind(line.line_total)
+        .bind(line.vat_amount)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Delete a **draft** bill and its line items. Only drafts can be deleted;
+/// approved/posted bills must be voided so the ledger stays intact.
+pub async fn delete_bill_draft(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    bill_id: Uuid,
+) -> ErpResult<()> {
+    let row = sqlx::query_as::<_, (String, String)>(
+        "SELECT number, status FROM bills WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(bill_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Bill".to_string(), id: bill_id })?;
+
+    if row.1 != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Only draft bills can be deleted; bill {} is '{}'. Void it instead.",
+                row.0, row.1
+            ),
+        });
+    }
+
+    let mut tx = engine.pool().begin().await?;
+    sqlx::query("DELETE FROM bill_lines WHERE bill_id = $1")
+        .bind(bill_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM bills WHERE id = $1 AND entity_id = $2")
+        .bind(bill_id)
+        .bind(entity_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(())
 }
 

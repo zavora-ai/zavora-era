@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, register, storeSession } from '../../api/client';
+import { login, signup, storeSession } from '../../api/client';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [mode, setMode] = useState<'signin' | 'bootstrap'>('signin');
+  const [orgName, setOrgName] = useState('');
+  const [orgType, setOrgType] = useState('limited_company');
+  const [kraPin, setKraPin] = useState('');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,21 +37,24 @@ export default function LoginPage() {
     }
   };
 
-  const handleBootstrap = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      // Registering the first user is allowed without auth; it becomes the Owner
-      // and returns a token pair directly.
-      const { data } = await register({
+      // Create a brand-new organization (tenant) with its own Owner; returns a
+      // token pair directly and isolates this org's data from all others.
+      const { data } = await signup({
+        organization_name: orgName.trim(),
+        organization_type: orgType,
+        kra_pin: kraPin.trim() || undefined,
         email: email.trim(),
         display_name: displayName.trim(),
         password,
       });
       storeAndGo(data);
     } catch (err: any) {
-      setError(err?.response?.data?.error ?? 'Could not create the owner account.');
+      setError(err?.response?.data?.error ?? 'Could not create the organization.');
     } finally {
       setBusy(false);
     }
@@ -60,7 +66,7 @@ export default function LoginPage() {
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-semibold text-gray-900">Zavora ERP</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {mode === 'signin' ? 'Sign in to your workspace' : 'Create the owner account'}
+            {mode === 'signin' ? 'Sign in to your workspace' : 'Create your organization'}
           </p>
         </div>
 
@@ -100,18 +106,52 @@ export default function LoginPage() {
             </button>
             <p className="text-center text-sm text-gray-500">
               First time here?{' '}
-              <button type="button" className="text-indigo-600 font-medium" onClick={() => { setMode('bootstrap'); setError(null); }}>
-                Create owner account
+              <button type="button" className="text-indigo-600 font-medium" onClick={() => { setMode('signup'); setError(null); }}>
+                Create an organization
               </button>
             </p>
           </form>
         ) : (
-          <form onSubmit={handleBootstrap} className="space-y-4">
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div>
+              <label className="label">Organization name</label>
+              <input
+                className="input"
+                autoFocus
+                required
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="Acme Ltd"
+              />
+            </div>
+            <div>
+              <label className="label">Type of organization</label>
+              <select
+                className="input"
+                required
+                value={orgType}
+                onChange={(e) => setOrgType(e.target.value)}
+              >
+                <option value="sole_proprietor">Sole proprietor</option>
+                <option value="limited_company">Limited company</option>
+                <option value="partnership">Partnership</option>
+                <option value="ngo">NGO / Non-profit</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">KRA PIN <span className="text-gray-400">(optional)</span></label>
+              <input
+                className="input"
+                value={kraPin}
+                onChange={(e) => setKraPin(e.target.value)}
+                placeholder="A123456789X"
+              />
+            </div>
             <div>
               <label className="label">Full name</label>
               <input
                 className="input"
-                autoFocus
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -142,7 +182,7 @@ export default function LoginPage() {
               />
             </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
-              {busy ? 'Creating…' : 'Create owner & sign in'}
+              {busy ? 'Creating…' : 'Create organization & sign in'}
             </button>
             <p className="text-center text-sm text-gray-500">
               Already have an account?{' '}
