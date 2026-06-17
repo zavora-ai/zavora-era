@@ -61,6 +61,7 @@ pub mod tenant;
 pub mod posting;
 pub mod auth;
 pub mod money;
+pub mod etims;
 
 // Service layer — business logic implementations
 pub mod services;
@@ -72,3 +73,4 @@ pub use settings::ErpConfig;
 pub use posting::PostingSetup;
 pub use types::AgentOrUserId;
 pub use money::{round_money, round_paye};
+pub use etims::EtimsStatus;

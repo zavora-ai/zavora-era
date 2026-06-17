@@ -243,6 +243,7 @@ export interface FiscalPeriod {
   status: 'future' | 'open' | 'soft_closed' | 'hard_closed';
   fiscal_year: number;
   period_number: number;
+  closed_at?: string;
 }
 
 // === Payroll ===

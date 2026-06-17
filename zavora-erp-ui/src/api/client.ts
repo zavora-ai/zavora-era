@@ -111,13 +111,19 @@ export const updateAccount = (code: string, data: any) => api.put(`/accounts/${c
 
 // === Periods ===
 export const getPeriods = () => api.get('/periods');
-export const generatePeriods = (data: any) => api.post('/periods', data);
-export const closePeriod = (id: string, data: any) => api.post(`/periods/${id}/close`, data);
+export const generatePeriods = (data: { fiscal_year: number; year_start_month: number }) =>
+  api.post('/periods', data);
+export const closePeriod = (id: string, data: { close_type: 'Soft' | 'Hard' }) =>
+  api.post(`/periods/${id}/close`, data);
+export const reopenPeriod = (id: string, data: { reason: string }) =>
+  api.post(`/periods/${id}/reopen`, data);
 
 // === Journal Entries ===
 export const getJournalEntries = () => api.get('/journal-entries');
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
+export const reverseJournalEntry = (id: string, data: { reason?: string }) =>
+  api.post(`/journal-entries/${id}/reverse`, data);
 
 // === Customers ===
 export const getCustomers = () => api.get('/customers');

@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         // Journal entries
         .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
+        .route("/api/v1/journal-entries/{id}/reverse", post(routes::journal::reverse))
         // Customers
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
         .route("/api/v1/customers/{id}", get(routes::parties::get_customer).put(routes::parties::update_customer))
@@ -151,10 +152,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/invoices/{id}/post", post(routes::invoices::post_invoice))
         .route("/api/v1/invoices/{id}/send", post(routes::invoices::send))
         .route("/api/v1/invoices/{id}/credit-note", post(routes::invoices::create_credit_note))
+        .route("/api/v1/invoices/{id}/etims-transmit", post(routes::invoices::etims_transmit))
         // Estimates
         .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
         .route("/api/v1/estimates/{id}", get(routes::estimates::get_one))
         .route("/api/v1/estimates/{id}/convert", post(routes::estimates::convert))
+        .route("/api/v1/estimates/{id}/send", post(routes::estimates::send))
+        .route("/api/v1/estimates/{id}/accept", post(routes::estimates::accept))
+        .route("/api/v1/estimates/{id}/decline", post(routes::estimates::decline))
         // Recurring Invoices
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
         // Bills
@@ -162,6 +167,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bills/{id}", get(routes::bills::get_one).put(routes::bills::update).delete(routes::bills::delete))
         .route("/api/v1/bills/{id}/approve", post(routes::bills::approve))
         .route("/api/v1/bills/{id}/post", post(routes::bills::post_bill))
+
+        // Supplier credit notes (AP)
+        .route("/api/v1/supplier-credit-notes", get(routes::supplier_credit_notes::list).post(routes::supplier_credit_notes::create))
+        .route("/api/v1/supplier-credit-notes/{id}", get(routes::supplier_credit_notes::get_one))
         // Payments
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))

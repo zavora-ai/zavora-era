@@ -6,7 +6,7 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import {
-  ArrowLeft, Download, Mail, Phone, MapPin, CreditCard,
+  ArrowLeft, Download, Mail, Phone, CreditCard,
   FileText, User, Building2
 } from 'lucide-react';
 

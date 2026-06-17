@@ -8,7 +8,7 @@ import { TrendingUp, TrendingDown, Wallet, AlertCircle, FileText, Receipt } from
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function DashboardPage() {
-  const { data, isLoading } = useQuery<DashboardSummary>({
+  const { data } = useQuery<DashboardSummary>({
     queryKey: ['dashboard'],
     queryFn: () => getDashboard().then(r => r.data),
   });
@@ -102,7 +102,7 @@ export default function DashboardPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" fontSize={12} />
               <YAxis fontSize={12} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`} />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} />
+              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
               <Legend />
               <Bar dataKey="Revenue" fill="#1a56db" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Expenses" fill="#f59e0b" radius={[4, 4, 0, 0]} />

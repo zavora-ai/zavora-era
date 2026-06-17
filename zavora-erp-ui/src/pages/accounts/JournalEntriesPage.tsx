@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getJournalEntries, createJournalEntry, getAccounts } from '../../api/client';
+import { getJournalEntries, createJournalEntry, getAccounts, reverseJournalEntry } from '../../api/client';
 import type { JournalEntry, Account } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, BookOpen, AlertCircle } from 'lucide-react';
+import { Plus, BookOpen, AlertCircle, RotateCcw } from 'lucide-react';
 
 export default function JournalEntriesPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const queryClient = useQueryClient();
+  const [reverseTarget, setReverseTarget] = useState<JournalEntry | null>(null);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: entries = [], isLoading } = useQuery<JournalEntry[]>({
     queryKey: ['journal-entries'],
@@ -25,6 +26,22 @@ export default function JournalEntriesPage() {
     { key: 'description', header: 'Description', render: (r) => <span className="text-gray-900">{r.description}</span> },
     { key: 'source', header: 'Source', render: (r) => <span className="badge-info text-xs">{r.source}</span> },
     { key: 'posted_at', header: 'Posted', render: (r) => r.posted_at ? formatDate(r.posted_at) : '—' },
+    {
+      key: 'actions', header: '',
+      render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          {r.status === 'posted' && (
+            <button
+              onClick={() => { setNotice(null); setReverseTarget(r); }}
+              className="btn-secondary text-xs py-1 px-2"
+              title="Reverse this entry"
+            >
+              <RotateCcw className="w-3 h-3" /> Reverse
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -38,9 +55,89 @@ export default function JournalEntriesPage() {
           </button>
         }
       />
+      {notice && (
+        <div className={`mb-4 flex items-center gap-2 p-3 rounded-lg text-sm ${notice.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{notice.message}</span>
+        </div>
+      )}
       <DataTable columns={columns} data={entries} loading={isLoading} emptyMessage="No journal entries yet. Create a manual entry to record adjustments." />
       {showCreate && <CreateJournalEntryModal onClose={() => setShowCreate(false)} />}
+      {reverseTarget && (
+        <ReverseJournalEntryModal
+          entry={reverseTarget}
+          onClose={() => setReverseTarget(null)}
+          onResult={setNotice}
+        />
+      )}
     </div>
+  );
+}
+
+function ReverseJournalEntryModal({
+  entry,
+  onClose,
+  onResult,
+}: {
+  entry: JournalEntry;
+  onClose: () => void;
+  onResult: (notice: { type: 'success' | 'error'; message: string }) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () => reverseJournalEntry(entry.id, { reason: reason.trim() || undefined }),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      const number = resp?.data?.reversing_number;
+      onResult({
+        type: 'success',
+        message: number
+          ? `Entry ${entry.number} reversed — created reversing entry ${number}.`
+          : `Entry ${entry.number} reversed.`,
+      });
+      onClose();
+    },
+    onError: (e: any) => {
+      onResult({
+        type: 'error',
+        message: e?.response?.data?.error || e?.response?.data?.message || 'Failed to reverse entry.',
+      });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate();
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Reverse ${entry.number}`} subtitle="Creates an offsetting reversing entry" size="sm">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-sm">
+          <RotateCcw className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>This will post a new entry that reverses the debits and credits of {entry.number}. The original entry stays on record.</span>
+        </div>
+        <div>
+          <label className="label">Reason <span className="text-gray-400 font-normal">(optional)</span></label>
+          <textarea
+            className="input"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why is this entry being reversed?"
+          />
+        </div>
+        <div className="flex items-center justify-end pt-4 border-t gap-3">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" className="btn-primary" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Reversing...' : 'Reverse Entry'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

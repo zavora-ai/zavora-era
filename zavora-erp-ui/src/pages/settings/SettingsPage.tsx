@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSettings, updateSettings } from '../../api/client';
+import { useQuery } from '@tanstack/react-query';
+import { getSettings } from '../../api/client';
 import type { ErpConfig } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
 import PostingAccountsTab from './PostingAccountsTab';
@@ -8,8 +8,6 @@ import { Save } from 'lucide-react';
 
 export default function SettingsPage() {
   const { data: config } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
-  const queryClient = useQueryClient();
-  const mutation = useMutation({ mutationFn: (data: any) => updateSettings(data), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }) });
 
   const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting'>('company');
 

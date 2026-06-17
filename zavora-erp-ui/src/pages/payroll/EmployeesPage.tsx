@@ -6,11 +6,10 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, Users, Shield } from 'lucide-react';
+import { Plus, Shield } from 'lucide-react';
 
 export default function EmployeesPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const queryClient = useQueryClient();
 
   const { data: employees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ['employees'],

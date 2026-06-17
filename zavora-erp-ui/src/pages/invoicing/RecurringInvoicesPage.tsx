@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRecurringInvoices, createRecurringInvoice, getCustomers, getProducts } from '../../api/client';
 import type { Customer, Product } from '../../types';
-import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';

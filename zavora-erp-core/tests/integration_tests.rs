@@ -15,3 +15,6 @@ mod common;
 
 #[path = "integration_tests/harness_smoke.rs"]
 mod harness_smoke;
+
+#[path = "integration_tests/payment_flows.rs"]
+mod payment_flows;

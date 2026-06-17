@@ -34,11 +34,19 @@ pub async fn close(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(req): Json<ClosePeriodRequest>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CLOSE_PERIOD, &ctx, "close fiscal period").map_err(err_response)?;
-    let mut close_req = req;
-    close_req.period_id = id;
+    // Actor is taken from the verified JWT, never the request body (audit integrity).
+    let close_type = match body.get("close_type").and_then(|v| v.as_str()) {
+        Some(s) if s.eq_ignore_ascii_case("hard") => PeriodCloseType::Hard,
+        _ => PeriodCloseType::Soft,
+    };
+    let close_req = ClosePeriodRequest {
+        period_id: id,
+        close_type,
+        closed_by: zavora_erp_core::AgentOrUserId::User(ctx.user_id),
+    };
     match svc::close_period(&state.engine, ctx.entity_id, close_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -49,11 +57,19 @@ pub async fn reopen(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(req): Json<ReopenPeriodRequest>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CLOSE_PERIOD, &ctx, "reopen fiscal period").map_err(err_response)?;
-    let mut reopen_req = req;
-    reopen_req.period_id = id;
+    let reason = body
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let reopen_req = ReopenPeriodRequest {
+        period_id: id,
+        reopened_by: zavora_erp_core::AgentOrUserId::User(ctx.user_id),
+        reason,
+    };
     match svc::reopen_period(&state.engine, ctx.entity_id, reopen_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
