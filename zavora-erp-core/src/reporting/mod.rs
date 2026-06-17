@@ -113,6 +113,15 @@ pub struct BalanceSheetReport {
     /// Net income for the year-to-date (as-at), folded into equity as
     /// "Current Year Earnings" so the sheet balances before year-end close.
     pub current_year_earnings: Decimal,
+    /// Comparative as-at date (set when a comparative was requested).
+    #[serde(default)]
+    pub comparative_as_at: Option<NaiveDate>,
+    #[serde(default)]
+    pub total_assets_comparative: Option<Decimal>,
+    #[serde(default)]
+    pub total_liabilities_comparative: Option<Decimal>,
+    #[serde(default)]
+    pub total_equity_comparative: Option<Decimal>,
     /// True when Assets == Liabilities + Equity (within 0.01).
     pub is_balanced: bool,
     /// total_assets - (total_liabilities + total_equity); 0.00 when balanced.
@@ -149,6 +158,19 @@ pub struct ProfitAndLossReport {
     pub total_operating_expenses: Decimal,
     pub operating_profit: Decimal,
     pub net_profit: Decimal,
+    /// Comparative period (set when a comparative was requested).
+    #[serde(default)]
+    pub comparative_from: Option<NaiveDate>,
+    #[serde(default)]
+    pub comparative_to: Option<NaiveDate>,
+    #[serde(default)]
+    pub total_revenue_comparative: Option<Decimal>,
+    #[serde(default)]
+    pub gross_profit_comparative: Option<Decimal>,
+    #[serde(default)]
+    pub operating_profit_comparative: Option<Decimal>,
+    #[serde(default)]
+    pub net_profit_comparative: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

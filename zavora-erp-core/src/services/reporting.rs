@@ -241,10 +241,43 @@ struct TrialBalanceQueryRow {
     total_credit: Decimal,
 }
 
-/// Balance sheet report.
+/// One year before `d` (default comparative reference for as-at reports).
+fn prior_year(d: NaiveDate) -> NaiveDate {
+    NaiveDate::from_ymd_opt(d.year() - 1, d.month(), d.day())
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(d.year() - 1, d.month(), 28).unwrap())
+}
+
+/// Balance sheet, with an optional comparative period column.
 async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<BalanceSheetReport> {
     let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+    let mut report = balance_sheet_at(engine, entity_id, as_at).await?;
 
+    if params.comparative == Some(true) {
+        let cmp_at = params.compare_to.unwrap_or_else(|| prior_year(as_at));
+        let cmp = balance_sheet_at(engine, entity_id, cmp_at).await?;
+        report.comparative_as_at = Some(cmp_at);
+        report.total_assets_comparative = Some(cmp.total_assets);
+        report.total_liabilities_comparative = Some(cmp.total_liabilities);
+        report.total_equity_comparative = Some(cmp.total_equity);
+        // Attach prior amounts to each line by account code.
+        let prior: std::collections::HashMap<(usize, String), Decimal> = [&cmp.assets, &cmp.liabilities, &cmp.equity]
+            .iter()
+            .enumerate()
+            .flat_map(|(i, secs)| secs.iter().flat_map(move |s| s.lines.iter().map(move |l| ((i, l.account_code.clone()), l.amount))))
+            .collect();
+        for (i, secs) in [&mut report.assets, &mut report.liabilities, &mut report.equity].into_iter().enumerate() {
+            for s in secs.iter_mut() {
+                for l in s.lines.iter_mut() {
+                    l.comparative = prior.get(&(i, l.account_code.clone())).copied();
+                }
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Balance sheet as at a single date (no comparative).
+async fn balance_sheet_at(engine: &ErpEngine, entity_id: Uuid, as_at: NaiveDate) -> ErpResult<BalanceSheetReport> {
     // Posted balances as at the date, date-gated inside the subquery (see the
     // trial-balance note on why the gate must be on the line aggregation).
     let rows = sqlx::query_as::<_, BalanceSheetQueryRow>(
@@ -332,6 +365,10 @@ async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
         total_liabilities,
         total_equity,
         current_year_earnings,
+        comparative_as_at: None,
+        total_assets_comparative: None,
+        total_liabilities_comparative: None,
+        total_equity_comparative: None,
         is_balanced: difference.abs() <= crate::money::ROUNDING_TOLERANCE,
         difference,
     })
@@ -345,11 +382,46 @@ struct BalanceSheetQueryRow {
     balance: Decimal,
 }
 
-/// Profit & Loss report.
+/// Profit & Loss report, with an optional comparative period column.
 async fn profit_and_loss(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters) -> ErpResult<ProfitAndLossReport> {
     let today = Utc::now().date_naive();
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
     let period_to = params.period_to.unwrap_or(today);
+
+    let mut report = profit_and_loss_period(engine, entity_id, period_from, period_to).await?;
+    if params.comparative == Some(true) {
+        let cfrom = prior_year(period_from);
+        let cto = prior_year(period_to);
+        let cmp = profit_and_loss_period(engine, entity_id, cfrom, cto).await?;
+        report.comparative_from = Some(cfrom);
+        report.comparative_to = Some(cto);
+        report.total_revenue_comparative = Some(cmp.total_revenue);
+        report.gross_profit_comparative = Some(cmp.gross_profit);
+        report.operating_profit_comparative = Some(cmp.operating_profit);
+        report.net_profit_comparative = Some(cmp.net_profit);
+        // Prior amounts per account code (an account belongs to exactly one section).
+        let prior: std::collections::HashMap<String, Decimal> = [&cmp.revenue, &cmp.cost_of_sales, &cmp.operating_expenses, &cmp.other_income_expense]
+            .iter()
+            .flat_map(|secs| secs.iter().flat_map(|s| s.lines.iter().map(|l| (l.account_code.clone(), l.amount))))
+            .collect();
+        for secs in [&mut report.revenue, &mut report.cost_of_sales, &mut report.operating_expenses, &mut report.other_income_expense] {
+            for s in secs.iter_mut() {
+                for l in s.lines.iter_mut() {
+                    l.comparative = prior.get(&l.account_code).copied();
+                }
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Profit & Loss for a single period (no comparative).
+async fn profit_and_loss_period(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    period_from: NaiveDate,
+    period_to: NaiveDate,
+) -> ErpResult<ProfitAndLossReport> {
 
     let rows = sqlx::query_as::<_, PnlQueryRow>(
         r#"SELECT a.code, a.name, a.account_type, COALESCE(m.balance, 0) as balance
@@ -432,6 +504,12 @@ async fn profit_and_loss(engine: &ErpEngine, entity_id: Uuid, params: ReportPara
         total_operating_expenses: total_opex,
         operating_profit,
         net_profit,
+        comparative_from: None,
+        comparative_to: None,
+        total_revenue_comparative: None,
+        gross_profit_comparative: None,
+        operating_profit_comparative: None,
+        net_profit_comparative: None,
     })
 }
 
