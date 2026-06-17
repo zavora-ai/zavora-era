@@ -189,8 +189,7 @@ async fn trial_balance(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
                       SUM(jl.functional_debit)  as total_debit,
                       SUM(jl.functional_credit) as total_credit
                FROM journal_lines jl
-               JOIN journal_entries je ON je.id = jl.entry_id
-               WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+               WHERE jl.entity_id = $1 AND jl.entry_date <= $2
                GROUP BY jl.account_code
            ) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
@@ -287,8 +286,7 @@ async fn balance_sheet_at(engine: &ErpEngine, entity_id: Uuid, as_at: NaiveDate)
                SELECT jl.account_code,
                       SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)) as balance
                FROM journal_lines jl
-               JOIN journal_entries je ON je.id = jl.entry_id
-               WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+               WHERE jl.entity_id = $1 AND jl.entry_date <= $2
                GROUP BY jl.account_code
            ) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
@@ -331,9 +329,8 @@ async fn balance_sheet_at(engine: &ErpEngine, entity_id: Uuid, as_at: NaiveDate)
     let pnl_net: Decimal = sqlx::query_scalar::<_, Decimal>(
         r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
            FROM journal_lines jl
-           JOIN journal_entries je ON je.id = jl.entry_id
-           JOIN accounts a ON a.entity_id = je.entity_id AND a.code = jl.account_code
-           WHERE je.entity_id = $1 AND je.status = 'posted' AND je.date <= $2
+           JOIN accounts a ON a.entity_id = jl.entity_id AND a.code = jl.account_code
+           WHERE jl.entity_id = $1 AND jl.entry_date <= $2
              AND a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')"#,
     )
     .bind(entity_id)
@@ -430,9 +427,8 @@ async fn profit_and_loss_period(
                SELECT jl.account_code,
                       SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)) as balance
                FROM journal_lines jl
-               JOIN journal_entries je ON je.id = jl.entry_id
-               WHERE je.entity_id = $1 AND je.status = 'posted'
-                 AND je.date >= $2 AND je.date <= $3
+               WHERE jl.entity_id = $1
+                 AND jl.entry_date >= $2 AND jl.entry_date <= $3
                GROUP BY jl.account_code
            ) m ON m.account_code = a.code
            WHERE a.entity_id = $1
@@ -1041,9 +1037,8 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
     let opening_balance = sqlx::query_scalar::<_, Decimal>(
         r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
            FROM journal_lines jl
-           JOIN journal_entries je ON je.id = jl.entry_id
-           WHERE je.entity_id = $1 AND je.status = 'posted'
-             AND jl.account_code = $2 AND je.date < $3"#,
+           WHERE jl.entity_id = $1
+             AND jl.account_code = $2 AND jl.entry_date < $3"#,
     )
     .bind(entity_id)
     .bind(&account_code)
@@ -1126,9 +1121,8 @@ async fn account_movement(
         r#"SELECT COALESCE(SUM(jl.functional_debit), 0) as debit,
                   COALESCE(SUM(jl.functional_credit), 0) as credit
            FROM journal_lines jl
-           JOIN journal_entries je ON je.id = jl.entry_id
-           WHERE je.entity_id = $1 AND je.status = 'posted'
-             AND jl.account_code = $2 AND je.date >= $3 AND je.date <= $4"#,
+           WHERE jl.entity_id = $1
+             AND jl.account_code = $2 AND jl.entry_date >= $3 AND jl.entry_date <= $4"#,
     )
     .bind(entity_id)
     .bind(account_code)

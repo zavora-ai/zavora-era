@@ -315,8 +315,8 @@ pub async fn create_and_post_in_tx(
     for line in &lines {
         sqlx::query(
             r#"INSERT INTO journal_lines
-               (id, entry_id, account_code, debit, credit, currency, fx_rate, functional_debit, functional_credit, description, dimensions)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, entry_id, account_code, debit, credit, currency, fx_rate, functional_debit, functional_credit, description, dimensions, entity_id, entry_date)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
         )
         .bind(line.id)
         .bind(entry_id)
@@ -329,6 +329,8 @@ pub async fn create_and_post_in_tx(
         .bind(line.functional_credit)
         .bind(&line.description)
         .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
+        .bind(entity_id)
+        .bind(req.date)
         .execute(&mut **tx)
         .await?;
     }
