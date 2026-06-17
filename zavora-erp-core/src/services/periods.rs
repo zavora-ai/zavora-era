@@ -10,6 +10,7 @@ use crate::types::Channel;
 /// Generate fiscal periods for a year.
 pub async fn generate_periods(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: GeneratePeriodsRequest,
 ) -> ErpResult<Vec<FiscalPeriod>> {
     let mut periods = Vec::new();
@@ -54,7 +55,7 @@ pub async fn generate_periods(
                ON CONFLICT (entity_id, start_date) DO NOTHING"#,
         )
         .bind(id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(&period_name)
         .bind(start_date)
         .bind(end_date)
@@ -67,7 +68,7 @@ pub async fn generate_periods(
 
         periods.push(FiscalPeriod {
             id,
-            entity_id: engine.entity_id(),
+            entity_id,
             name: period_name,
             start_date,
             end_date,
@@ -87,8 +88,8 @@ pub async fn generate_periods(
 ///
 /// Soft close: Open → SoftClosed. While SoftClosed, only manual journal entries allowed.
 /// Hard close: SoftClosed → HardClosed. If period is still Open, reject (must soft-close first).
-pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpResult<FiscalPeriod> {
-    let period = get_period(engine, req.period_id).await?;
+pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodRequest) -> ErpResult<FiscalPeriod> {
+    let period = get_period(engine, entity_id, req.period_id).await?;
 
     // Validate current state allows the requested close type
     match (&period.parsed_status(), &req.close_type) {
@@ -162,7 +163,7 @@ pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpRes
             schedule_at: None,
         };
         // Best-effort notification — don't fail the close operation on notification errors
-        let _ = super::notifications::send_notification(engine, notification).await;
+        let _ = super::notifications::send_notification(engine, entity_id, notification).await;
     }
 
     // Record PeriodClosed audit event
@@ -177,7 +178,7 @@ pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpRes
         "after_status": new_status,
         "timestamp": now,
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -194,8 +195,8 @@ pub async fn close_period(engine: &ErpEngine, req: ClosePeriodRequest) -> ErpRes
 ///
 /// Only SoftClosed periods can be reopened (HardClosed periods are immutable).
 /// A reason must be provided for audit trail purposes.
-pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpResult<FiscalPeriod> {
-    let period = get_period(engine, req.period_id).await?;
+pub async fn reopen_period(engine: &ErpEngine, entity_id: Uuid, req: ReopenPeriodRequest) -> ErpResult<FiscalPeriod> {
+    let period = get_period(engine, entity_id, req.period_id).await?;
 
     if period.parsed_status() != PeriodStatus::SoftClosed {
         return Err(ErpError::ValidationFailed {
@@ -235,7 +236,7 @@ pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpR
         "after_status": "open",
         "timestamp": now,
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -248,10 +249,11 @@ pub async fn reopen_period(engine: &ErpEngine, req: ReopenPeriodRequest) -> ErpR
     Ok(updated)
 }
 
-/// Get a fiscal period by ID.
-pub async fn get_period(engine: &ErpEngine, period_id: Uuid) -> ErpResult<FiscalPeriod> {
-    sqlx::query_as::<_, FiscalPeriod>("SELECT * FROM fiscal_periods WHERE id = $1")
+/// Get a fiscal period by ID, scoped to the tenant.
+pub async fn get_period(engine: &ErpEngine, entity_id: Uuid, period_id: Uuid) -> ErpResult<FiscalPeriod> {
+    sqlx::query_as::<_, FiscalPeriod>("SELECT * FROM fiscal_periods WHERE id = $1 AND entity_id = $2")
         .bind(period_id)
+        .bind(entity_id)
         .fetch_optional(engine.pool())
         .await?
         .ok_or_else(|| ErpError::NotFound {
@@ -261,11 +263,11 @@ pub async fn get_period(engine: &ErpEngine, period_id: Uuid) -> ErpResult<Fiscal
 }
 
 /// Get the period for a specific date.
-pub async fn period_for_date(engine: &ErpEngine, date: NaiveDate) -> ErpResult<FiscalPeriod> {
+pub async fn period_for_date(engine: &ErpEngine, entity_id: Uuid, date: NaiveDate) -> ErpResult<FiscalPeriod> {
     sqlx::query_as::<_, FiscalPeriod>(
         "SELECT * FROM fiscal_periods WHERE entity_id = $1 AND start_date <= $2 AND end_date >= $2",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(date)
     .fetch_optional(engine.pool())
     .await?
@@ -275,11 +277,11 @@ pub async fn period_for_date(engine: &ErpEngine, date: NaiveDate) -> ErpResult<F
 }
 
 /// List all periods for the entity.
-pub async fn list_periods(engine: &ErpEngine) -> ErpResult<Vec<FiscalPeriod>> {
+pub async fn list_periods(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<Vec<FiscalPeriod>> {
     let periods = sqlx::query_as::<_, FiscalPeriod>(
         "SELECT * FROM fiscal_periods WHERE entity_id = $1 ORDER BY start_date",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 

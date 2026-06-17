@@ -1,27 +1,24 @@
 use chrono::Utc;
+use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::ErpResult;
 use crate::settings::*;
 use crate::types::AgentOrUserId;
 
-/// Get current settings.
-pub async fn get_settings(engine: &ErpEngine) -> ErpResult<ErpConfig> {
-    let mut config = engine.config().clone();
-    // Overlay the live posting setup (may differ from the startup snapshot).
-    config.posting = engine.posting();
-    Ok(config)
+/// Get current settings for a tenant.
+pub async fn get_settings(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<ErpConfig> {
+    Ok((*engine.config_for(entity_id).await?).clone())
 }
 
 /// Update settings — persists the patch to the database and returns the updated config.
 pub async fn update_settings(
     engine: &ErpEngine,
+    entity_id: Uuid,
     patch: SettingsPatch,
     updated_by: &AgentOrUserId,
 ) -> ErpResult<ErpConfig> {
-    let mut config = engine.config().clone();
-    // The live posting setup is the source of truth for resolution; start from it.
-    config.posting = engine.posting();
+    let mut config = (*engine.config_for(entity_id).await?).clone();
     let now = Utc::now();
 
     // Apply patch fields to in-memory config
@@ -75,12 +72,16 @@ pub async fn update_settings(
     .bind(&posting_json)
     .bind(now)
     .bind(updated_by_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
 
-    // Refresh the live posting setup so resolution uses the new accounts immediately.
-    engine.set_posting(config.posting.clone());
+    // Drop the cached config so the next access reloads the saved values, and
+    // keep the legacy single-tenant posting accessor in sync for the startup entity.
+    engine.invalidate_config(entity_id).await;
+    if entity_id == engine.entity_id() {
+        engine.set_posting(config.posting.clone());
+    }
 
     Ok(config)
 }

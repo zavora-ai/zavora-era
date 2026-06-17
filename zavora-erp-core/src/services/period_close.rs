@@ -41,14 +41,15 @@ struct AccountBalance {
 /// 4. Create opening balance JE in period 1 of next fiscal year carrying forward all BS account balances
 pub async fn execute_year_end_close(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: YearEndCloseRequest,
 ) -> ErpResult<YearEndCloseResult> {
     // Step 1: Verify all 12 periods are HardClosed
-    let periods = get_fiscal_year_periods(engine, req.fiscal_year).await?;
+    let periods = get_fiscal_year_periods(engine, entity_id, req.fiscal_year).await?;
     validate_all_periods_hard_closed(&periods)?;
 
     // Step 2: Compute P&L account balances (Revenue and Expense) for the fiscal year
-    let pnl_balances = compute_pnl_balances(engine, &periods).await?;
+    let pnl_balances = compute_pnl_balances(engine, entity_id, &periods).await?;
 
     // Step 3: Generate closing Journal Entry
     let last_period = periods
@@ -57,9 +58,10 @@ pub async fn execute_year_end_close(
             message: "No periods found for fiscal year".to_string(),
         })?;
 
-    let closing_entry = build_closing_entry(engine, &pnl_balances, last_period, &req).await?;
+    let closing_entry = build_closing_entry(engine, entity_id, &pnl_balances, last_period, &req).await?;
     let closing_je = crate::services::journal::create_and_post(
         engine,
+        entity_id,
         closing_entry,
         last_period.id,
         req.executed_by.clone(),
@@ -67,7 +69,7 @@ pub async fn execute_year_end_close(
     .await?;
 
     // Step 4: Generate opening balance JE in period 1 of next fiscal year
-    let next_year_periods = get_fiscal_year_periods(engine, req.fiscal_year + 1).await?;
+    let next_year_periods = get_fiscal_year_periods(engine, entity_id, req.fiscal_year + 1).await?;
     let first_period_next_year = next_year_periods
         .first()
         .ok_or_else(|| ErpError::ValidationFailed {
@@ -77,11 +79,12 @@ pub async fn execute_year_end_close(
             ),
         })?;
 
-    let bs_balances = compute_balance_sheet_balances(engine, &periods).await?;
+    let bs_balances = compute_balance_sheet_balances(engine, entity_id, &periods).await?;
     let opening_entry =
-        build_opening_entry(engine, &bs_balances, first_period_next_year, &req).await?;
+        build_opening_entry(engine, entity_id, &bs_balances, first_period_next_year, &req).await?;
     let opening_je = crate::services::journal::create_and_post(
         engine,
+        entity_id,
         opening_entry,
         first_period_next_year.id,
         req.executed_by.clone(),
@@ -103,7 +106,7 @@ pub async fn execute_year_end_close(
         "timestamp": Utc::now(),
     });
 
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -124,6 +127,7 @@ pub async fn execute_year_end_close(
 /// Fetch all fiscal periods for a given year, ordered by period_number.
 async fn get_fiscal_year_periods(
     engine: &ErpEngine,
+    entity_id: Uuid,
     fiscal_year: i32,
 ) -> ErpResult<Vec<FiscalPeriod>> {
     let periods = sqlx::query_as::<_, FiscalPeriod>(
@@ -131,7 +135,7 @@ async fn get_fiscal_year_periods(
            WHERE entity_id = $1 AND fiscal_year = $2
            ORDER BY period_number ASC"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(fiscal_year)
     .fetch_all(engine.pool())
     .await?;
@@ -183,6 +187,7 @@ fn validate_all_periods_hard_closed(periods: &[FiscalPeriod]) -> ErpResult<()> {
 /// - Expense accounts: balance = sum(debits) - sum(credits) (debit-normal)
 async fn compute_pnl_balances(
     engine: &ErpEngine,
+    entity_id: Uuid,
     periods: &[FiscalPeriod],
 ) -> ErpResult<Vec<AccountBalance>> {
     let period_ids: Vec<Uuid> = periods.iter().map(|p| p.id).collect();
@@ -214,7 +219,7 @@ async fn compute_pnl_balances(
                ELSE 0
            END <> 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&period_ids)
     .fetch_all(engine.pool())
     .await?;
@@ -226,6 +231,7 @@ async fn compute_pnl_balances(
 /// These carry forward to the next year as opening balances.
 async fn compute_balance_sheet_balances(
     engine: &ErpEngine,
+    entity_id: Uuid,
     periods: &[FiscalPeriod],
 ) -> ErpResult<Vec<AccountBalance>> {
     // For BS accounts, we need cumulative balances up to and including the fiscal year.
@@ -262,7 +268,7 @@ async fn compute_balance_sheet_balances(
                    COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
                END <> 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(last_period_end)
     .fetch_all(engine.pool())
     .await?;
@@ -279,12 +285,14 @@ async fn compute_balance_sheet_balances(
 ///   - If net loss (Expense > Revenue): DR Retained Earnings
 async fn build_closing_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     pnl_balances: &[AccountBalance],
     last_period: &FiscalPeriod,
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
-    let base_ccy = engine.config().base_currency.clone();
-    let retained_earnings = engine.posting().retained_earnings.clone();
+    let cfg = engine.config_for(entity_id).await?;
+    let base_ccy = cfg.base_currency.clone();
+    let retained_earnings = cfg.posting.retained_earnings.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in pnl_balances {
@@ -382,11 +390,12 @@ async fn build_closing_entry(
 /// Carries forward all Balance Sheet account balances plus the retained earnings adjustment.
 async fn build_opening_entry(
     engine: &ErpEngine,
+    entity_id: Uuid,
     bs_balances: &[AccountBalance],
     first_period: &FiscalPeriod,
     req: &YearEndCloseRequest,
 ) -> ErpResult<CreateJournalEntryRequest> {
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     for acct in bs_balances {

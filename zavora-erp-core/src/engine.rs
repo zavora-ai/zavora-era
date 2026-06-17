@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -15,10 +18,17 @@ use crate::types::AgentOrUserId;
 pub struct ErpEngine {
     pool: PgPool,
     redis: tokio::sync::Mutex<redis::aio::MultiplexedConnection>,
+    /// Startup/bootstrap entity config. Used by request-less paths (the
+    /// background scheduler, the agentic API). Per-request work resolves the
+    /// caller's tenant config via [`ErpEngine::config_for`].
     config: ErpConfig,
-    /// Live posting setup (GL account determination). Held behind a lock so it
-    /// can be updated at runtime when settings are saved, without restarting.
+    /// Live posting setup for the startup entity (legacy single-tenant accessor).
     posting: std::sync::RwLock<crate::posting::PostingSetup>,
+    /// Per-tenant configuration cache, keyed by `entity_id`. Populated lazily on
+    /// first access and invalidated when a tenant's settings are saved. This is
+    /// what makes the process genuinely multi-tenant: each request resolves its
+    /// own tenant's currency, sequences, and posting setup.
+    configs: tokio::sync::RwLock<HashMap<Uuid, Arc<ErpConfig>>>,
 }
 
 impl ErpEngine {
@@ -28,12 +38,44 @@ impl ErpEngine {
         redis: redis::aio::MultiplexedConnection,
         config: ErpConfig,
     ) -> ErpResult<Self> {
+        // Pre-seed the per-tenant cache with the startup entity so the common
+        // single-tenant deployment never pays a load on first request.
+        let mut configs = HashMap::new();
+        configs.insert(config.entity_id, Arc::new(config.clone()));
+
         Ok(Self {
             pool,
             redis: tokio::sync::Mutex::new(redis),
             posting: std::sync::RwLock::new(config.posting.clone()),
             config,
+            configs: tokio::sync::RwLock::new(configs),
         })
+    }
+
+    /// Resolve a tenant's configuration, loading and caching it on first use.
+    ///
+    /// This is the multi-tenant replacement for [`ErpEngine::config`]: services
+    /// pass the request's `entity_id` (from the verified JWT) and get that
+    /// tenant's currency, sequences, tax, and posting setup — not the startup
+    /// entity's.
+    pub async fn config_for(&self, entity_id: Uuid) -> ErpResult<Arc<ErpConfig>> {
+        if let Some(cfg) = self.configs.read().await.get(&entity_id) {
+            return Ok(cfg.clone());
+        }
+        let cfg = Arc::new(crate::settings::load_or_create_config(&self.pool, entity_id).await?);
+        self.configs.write().await.insert(entity_id, cfg.clone());
+        Ok(cfg)
+    }
+
+    /// Resolve a tenant's posting setup (GL account determination).
+    pub async fn posting_for(&self, entity_id: Uuid) -> ErpResult<crate::posting::PostingSetup> {
+        Ok(self.config_for(entity_id).await?.posting.clone())
+    }
+
+    /// Drop a tenant's cached config so the next access reloads it. Called after
+    /// that tenant's settings are saved.
+    pub async fn invalidate_config(&self, entity_id: Uuid) {
+        self.configs.write().await.remove(&entity_id);
     }
 
     /// Get a reference to the database pool.
@@ -69,6 +111,20 @@ impl ErpEngine {
     /// Get the entity ID for this engine instance.
     pub fn entity_id(&self) -> Uuid {
         self.config.entity_id
+    }
+
+    /// Create a request-scoped handle bound to a specific tenant `entity_id`.
+    ///
+    /// Handlers build `engine.scoped(ctx.entity_id)` from the per-request
+    /// `AuthContext` so data access is scoped to the verified token's tenant
+    /// rather than the process-global `engine.entity_id()`. In legacy
+    /// single-tenant mode `ctx.entity_id == served_entity()`, so behaviour is
+    /// identical.
+    pub fn scoped(&self, entity_id: Uuid) -> TenantScope<'_> {
+        TenantScope {
+            engine: self,
+            entity_id,
+        }
     }
 
     /// Reload configuration from the database.
@@ -145,7 +201,7 @@ impl ErpEngine {
         &self,
         req: &CreateJournalEntryRequest,
     ) -> ErpResult<ValidationReport> {
-        crate::services::journal::validate_entry(self, req).await
+        crate::services::journal::validate_entry(self, self.entity_id(), req).await
     }
 
     // === Internal helpers ===
@@ -173,7 +229,54 @@ impl ErpEngine {
         period_id: Uuid,
         posted_by: AgentOrUserId,
     ) -> ErpResult<JournalEntry> {
-        crate::services::journal::create_and_post(self, req, period_id, posted_by).await
+        crate::services::journal::create_and_post(self, self.entity_id(), req, period_id, posted_by).await
+    }
+}
+
+/// A request-scoped handle that binds an [`ErpEngine`] to a single tenant's
+/// `entity_id` for the duration of a request.
+///
+/// This is the recommended low-risk shape for threading the per-request tenant
+/// through the service layer: handlers construct `engine.scoped(ctx.entity_id)`
+/// and pass the `TenantScope` where a `&ErpEngine` was previously used. It
+/// forwards the engine's shared resources (`pool`, `redis`, `config`,
+/// `posting`) while exposing the request tenant via [`TenantScope::entity_id`].
+#[derive(Clone, Copy)]
+pub struct TenantScope<'a> {
+    engine: &'a ErpEngine,
+    entity_id: Uuid,
+}
+
+impl<'a> TenantScope<'a> {
+    /// The tenant this scope is bound to (the verified token's `entity_id`).
+    pub fn entity_id(&self) -> Uuid {
+        self.entity_id
+    }
+
+    /// The underlying engine, for operations not yet migrated to the scope.
+    pub fn engine(&self) -> &'a ErpEngine {
+        self.engine
+    }
+
+    /// Get a reference to the database pool (forwarded from the engine).
+    pub fn pool(&self) -> &'a PgPool {
+        self.engine.pool()
+    }
+
+    /// Get a clone of the Redis connection for async operations
+    /// (forwarded from the engine).
+    pub async fn redis(&self) -> redis::aio::MultiplexedConnection {
+        self.engine.redis_conn().await
+    }
+
+    /// Get the current configuration (forwarded from the engine).
+    pub fn config(&self) -> &'a ErpConfig {
+        self.engine.config()
+    }
+
+    /// Get the posting setup (GL account determination) (forwarded from the engine).
+    pub fn posting(&self) -> crate::posting::PostingSetup {
+        self.engine.posting()
     }
 }
 

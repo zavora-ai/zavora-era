@@ -35,13 +35,14 @@ pub async fn capture(
     Json(req): Json<CaptureRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "capture receipt").map_err(err_response)?;
+    let entity_id = ctx.entity_id;
 
     let capture_req = CaptureReceiptRequest {
         image_url: req.image_url,
         captured_by: AgentOrUserId::User(ctx.user_id),
     };
 
-    match ocr::capture_receipt(&state.engine, capture_req).await {
+    match ocr::capture_receipt(&state.engine, entity_id, capture_req).await {
         Ok(capture_id) => {
             // Trigger async OCR processing in background
             let state_clone = Arc::clone(&state);
@@ -61,7 +62,7 @@ pub async fn capture(
                     confidence: 0.0,
                     raw_text: None,
                 };
-                if let Err(e) = ocr::process_ocr_result(engine, capture_id, result).await {
+                if let Err(e) = ocr::process_ocr_result(engine, entity_id, capture_id, result).await {
                     tracing::error!("OCR processing failed for capture {}: {}", capture_id, e);
                 }
             });
@@ -94,7 +95,7 @@ pub async fn confirm(
     };
 
     let actor = AgentOrUserId::User(ctx.user_id);
-    match ocr::confirm_and_create_bill(&state.engine, confirm_req, &actor).await {
+    match ocr::confirm_and_create_bill(&state.engine, ctx.entity_id, confirm_req, &actor).await {
         Ok(bill_id) => Ok(Json(serde_json::json!({
             "bill_id": bill_id,
             "capture_status": "posted"

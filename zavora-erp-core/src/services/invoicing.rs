@@ -23,6 +23,7 @@ struct StockMovementRow {
 /// Create a new invoice.
 pub async fn create_invoice(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateInvoiceRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Invoice> {
@@ -34,7 +35,7 @@ pub async fn create_invoice(
         "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.customer_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -54,22 +55,25 @@ pub async fn create_invoice(
     // Resolve invoice lines (auto-fill from products if product_id specified)
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
         line.compute_totals();
         lines.push(line);
     }
 
     // Calculate totals
+    // Each line total/VAT is already rounded to 2dp in `compute_totals`, so the
+    // sums are exact at 2dp. The per-line discount is a fresh multiplication, so
+    // round each line's discount before summing (Req 5.1, 5.2).
     let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
     let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
     let discount_total: Decimal = lines.iter().map(|l| {
         let gross = l.quantity * l.unit_price;
-        gross * l.discount_percent / Decimal::new(100, 0)
+        crate::money::round_money(gross * l.discount_percent / Decimal::new(100, 0))
     }).sum();
-    let gross_total = subtotal + tax_total;
+    let gross_total = crate::money::round_money(subtotal + tax_total);
 
     // Generate invoice number
-    let number = generate_invoice_number(engine).await?;
+    let number = generate_invoice_number(engine, entity_id).await?;
 
     // Insert header + lines atomically so a failure cannot leave an invoice
     // header without its line items.
@@ -83,7 +87,7 @@ pub async fn create_invoice(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&number)
     .bind("invoice")
     .bind(req.customer_id)
@@ -131,7 +135,7 @@ pub async fn create_invoice(
 
     Ok(Invoice {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         number,
         invoice_type: InvoiceType::Invoice,
         customer_id: req.customer_id,
@@ -169,6 +173,7 @@ pub async fn create_invoice(
 /// 4. Reduces balance_due on original invoice
 pub async fn create_credit_note(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateCreditNoteRequest,
     created_by: &AgentOrUserId,
 ) -> ErpResult<CreditNoteResult> {
@@ -180,7 +185,7 @@ pub async fn create_credit_note(
         "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.invoice_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -224,7 +229,7 @@ pub async fn create_credit_note(
         // Partial credit note — resolve specified lines
         let mut lines = Vec::new();
         for line_req in &req.lines {
-            let mut line = resolve_invoice_line(engine, line_req).await?;
+            let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
             line.compute_totals();
             lines.push(line);
         }
@@ -234,7 +239,7 @@ pub async fn create_credit_note(
     // Calculate totals
     let subtotal: Decimal = cn_lines.iter().map(|l| l.line_total).sum();
     let tax_total: Decimal = cn_lines.iter().map(|l| l.vat_amount).sum();
-    let gross_total = subtotal + tax_total;
+    let gross_total = crate::money::round_money(subtotal + tax_total);
 
     // Validate credit note doesn't exceed remaining balance
     if gross_total > original.balance_due {
@@ -247,7 +252,7 @@ pub async fn create_credit_note(
     }
 
     // Generate credit note number
-    let cn_number = generate_credit_note_number(engine).await?;
+    let cn_number = generate_credit_note_number(engine, entity_id).await?;
     let cn_id = Uuid::new_v4();
 
     // The credit note record, its lines, the reversing journal entry, and the
@@ -264,7 +269,7 @@ pub async fn create_credit_note(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)"#,
     )
     .bind(cn_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&cn_number)
     .bind("credit_note")
     .bind(original.customer_id)
@@ -312,7 +317,7 @@ pub async fn create_credit_note(
 
     // CR Accounts Receivable (reduce AR)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting().accounts_receivable.clone(),
+        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
         debit: None,
         credit: Some(gross_total),
         currency: original.currency.clone(),
@@ -335,7 +340,7 @@ pub async fn create_credit_note(
 
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().vat_output.clone(),
+                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
                 debit: Some(line.vat_amount),
                 credit: None,
                 currency: original.currency.clone(),
@@ -355,7 +360,7 @@ pub async fn create_credit_note(
                 "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
             )
             .bind(product_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?;
 
@@ -381,7 +386,7 @@ pub async fn create_credit_note(
                     )
                     .bind(req.invoice_id)
                     .bind(inventory_item_id)
-                    .bind(engine.entity_id())
+                    .bind(entity_id)
                     .fetch_optional(engine.pool())
                     .await?;
 
@@ -402,7 +407,7 @@ pub async fn create_credit_note(
 
                     crate::services::inventory::receive_inventory_in_tx(
                         &mut tx,
-                        engine.entity_id(),
+                        entity_id,
                         receive_req,
                         created_by,
                     )
@@ -416,7 +421,7 @@ pub async fn create_credit_note(
                         "SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2",
                     )
                     .bind(inventory_item_id)
-                    .bind(engine.entity_id())
+                    .bind(entity_id)
                     .fetch_one(engine.pool())
                     .await?;
 
@@ -462,10 +467,11 @@ pub async fn create_credit_note(
         post_immediately: true,
     };
 
-    let period = crate::services::periods::period_for_date(engine, cn_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, cn_date).await?;
     let entry = crate::services::journal::create_and_post_in_tx(
         &mut tx,
         engine,
+        entity_id,
         entry_req,
         period.id,
         created_by.clone(),
@@ -514,6 +520,7 @@ pub async fn create_credit_note(
 /// Create an estimate (quote).
 pub async fn create_estimate(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateEstimateRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -525,7 +532,7 @@ pub async fn create_estimate(
         "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.customer_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -540,17 +547,17 @@ pub async fn create_estimate(
     // Resolve lines
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
         line.compute_totals();
         lines.push(line);
     }
 
     let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
     let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
-    let gross_total = subtotal + tax_total;
+    let gross_total = crate::money::round_money(subtotal + tax_total);
 
     // Generate estimate number
-    let number = generate_estimate_number(engine).await?;
+    let number = generate_estimate_number(engine, entity_id).await?;
 
     // Insert estimate header + lines atomically.
     let mut tx = engine.pool().begin().await?;
@@ -562,7 +569,7 @@ pub async fn create_estimate(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&number)
     .bind(req.customer_id)
     .bind(issue_date)
@@ -612,6 +619,7 @@ pub async fn create_estimate(
 /// the estimate as converted with a link to the new invoice.
 pub async fn convert_estimate_to_invoice(
     engine: &ErpEngine,
+    entity_id: Uuid,
     estimate_id: Uuid,
     created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -620,7 +628,7 @@ pub async fn convert_estimate_to_invoice(
         "SELECT * FROM estimates WHERE id = $1 AND entity_id = $2",
     )
     .bind(estimate_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -686,7 +694,7 @@ pub async fn convert_estimate_to_invoice(
     };
 
     // Create the invoice
-    let invoice = create_invoice(engine, inv_req, created_by).await?;
+    let invoice = create_invoice(engine, entity_id, inv_req, created_by).await?;
 
     // Link invoice back to estimate via source_estimate
     sqlx::query("UPDATE invoices SET source_estimate = $1 WHERE id = $2")
@@ -708,6 +716,7 @@ pub async fn convert_estimate_to_invoice(
 /// Resolve an invoice line from a request — auto-fills from product catalog.
 async fn resolve_invoice_line(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: &CreateInvoiceLineRequest,
 ) -> ErpResult<InvoiceLine> {
     let id = Uuid::new_v4();
@@ -718,7 +727,7 @@ async fn resolve_invoice_line(
             "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
         )
         .bind(product_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_optional(engine.pool())
         .await?
         .ok_or_else(|| ErpError::NotFound {
@@ -752,7 +761,10 @@ async fn resolve_invoice_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(Decimal::ZERO),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or_else(|| engine.posting().default_sales.clone()),
+            account_code: match req.account_code.clone() {
+                Some(c) => c,
+                None => engine.posting_for(entity_id).await?.default_sales.clone(),
+            },
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
@@ -761,54 +773,57 @@ async fn resolve_invoice_line(
 }
 
 /// Generate the next invoice number atomically.
-async fn generate_invoice_number(engine: &ErpEngine) -> ErpResult<String> {
+async fn generate_invoice_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
            SET sequences = jsonb_set(sequences, '{invoice_next}', to_jsonb((sequences->>'invoice_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'invoice_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.invoice_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.invoice_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 
 /// Generate the next credit note number atomically.
-async fn generate_credit_note_number(engine: &ErpEngine) -> ErpResult<String> {
+async fn generate_credit_note_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
            SET sequences = jsonb_set(sequences, '{credit_note_next}', to_jsonb((sequences->>'credit_note_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'credit_note_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.credit_note_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.credit_note_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 
 /// Generate the next estimate number atomically.
-async fn generate_estimate_number(engine: &ErpEngine) -> ErpResult<String> {
+async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
            SET sequences = jsonb_set(sequences, '{estimate_next}', to_jsonb((sequences->>'estimate_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'estimate_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.estimate_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.estimate_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
@@ -820,6 +835,7 @@ async fn generate_estimate_number(engine: &ErpEngine) -> ErpResult<String> {
 /// if any tracked item lacks adequate available quantity.
 pub async fn post_invoice(
     engine: &ErpEngine,
+    entity_id: Uuid,
     invoice_id: Uuid,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -827,7 +843,7 @@ pub async fn post_invoice(
         "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
     )
     .bind(invoice_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -847,7 +863,7 @@ pub async fn post_invoice(
         "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
     )
     .bind(invoice.customer_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -867,7 +883,7 @@ pub async fn post_invoice(
                  AND id != $3"#,
         )
         .bind(invoice.customer_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .bind(invoice_id)
         .fetch_one(engine.pool())
         .await?;
@@ -901,7 +917,7 @@ pub async fn post_invoice(
             };
 
             // Best-effort notification — don't fail the entire operation if notification fails
-            let _ = crate::services::notifications::send_notification(engine, notification_req).await;
+            let _ = crate::services::notifications::send_notification(engine, entity_id, notification_req).await;
 
             return Err(ErpError::CreditLimitExceeded {
                 customer_name: customer.name,
@@ -929,7 +945,7 @@ pub async fn post_invoice(
 
     // DR Accounts Receivable (total including tax)
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting().accounts_receivable.clone(),
+        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
         debit: Some(invoice.gross_total),
         credit: None,
         currency: invoice.currency.clone(),
@@ -953,7 +969,7 @@ pub async fn post_invoice(
         // CR VAT Output (if applicable)
         if line.vat_amount > Decimal::ZERO {
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting().vat_output.clone(),
+                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: invoice.currency.clone(),
@@ -973,7 +989,7 @@ pub async fn post_invoice(
                 "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
             )
             .bind(product_id)
-            .bind(engine.entity_id())
+            .bind(entity_id)
             .fetch_optional(engine.pool())
             .await?;
 
@@ -999,7 +1015,7 @@ pub async fn post_invoice(
                     };
 
                     let issue_result = crate::services::inventory::issue_inventory_in_tx(
-                        &mut tx, engine.entity_id(), issue_req, posted_by,
+                        &mut tx, entity_id, issue_req, posted_by,
                     )
                     .await?;
 
@@ -1045,9 +1061,9 @@ pub async fn post_invoice(
         post_immediately: true,
     };
 
-    let period = crate::services::periods::period_for_date(engine, invoice.issue_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, invoice.issue_date).await?;
     let entry = crate::services::journal::create_and_post_in_tx(
-        &mut tx, engine, entry_req, period.id, posted_by.clone(),
+        &mut tx, engine, entity_id, entry_req, period.id, posted_by.clone(),
     )
     .await?;
 
@@ -1069,6 +1085,7 @@ pub async fn post_invoice(
 /// Resolve a bill line from a request — auto-fills from product catalog (purchase side).
 pub async fn resolve_bill_line(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: &CreateInvoiceLineRequest,
     vendor: &crate::parties::VendorRow,
 ) -> ErpResult<InvoiceLine> {
@@ -1079,7 +1096,7 @@ pub async fn resolve_bill_line(
             "SELECT * FROM products WHERE id = $1 AND entity_id = $2",
         )
         .bind(product_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_optional(engine.pool())
         .await?
         .ok_or_else(|| ErpError::NotFound {
@@ -1105,10 +1122,10 @@ pub async fn resolve_bill_line(
             vat_amount: Decimal::ZERO,
         })
     } else {
-        let default_account = vendor
-            .default_expense_account
-            .clone()
-            .unwrap_or_else(|| engine.posting().default_expense.clone());
+        let default_account = match vendor.default_expense_account.clone() {
+            Some(a) => a,
+            None => engine.posting_for(entity_id).await?.default_expense.clone(),
+        };
 
         Ok(InvoiceLine {
             id,

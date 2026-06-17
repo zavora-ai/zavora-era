@@ -20,6 +20,7 @@ pub mod agent;
 pub mod receipts;
 pub mod settings;
 pub mod users;
+pub mod auth_signup;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use zavora_erp_core::ErpError;
@@ -34,6 +35,7 @@ pub fn err_response(e: ErpError) -> impl IntoResponse {
         ErpError::Duplicate { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::DuplicateReference { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::PermissionDenied { .. } => (StatusCode::FORBIDDEN, e.to_string()),
+        ErpError::Unauthorized { .. } => (StatusCode::UNAUTHORIZED, e.to_string()),
         ErpError::InsufficientStock { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::CreditLimitExceeded { .. } => (StatusCode::CONFLICT, e.to_string()),
         ErpError::Overpayment { .. } => (StatusCode::BAD_REQUEST, e.to_string()),

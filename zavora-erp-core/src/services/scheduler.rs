@@ -42,14 +42,14 @@ pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uui
             });
 
         // Create invoice from template
-        match crate::services::invoicing::create_invoice(engine, template, &actor).await {
+        match crate::services::invoicing::create_invoice(engine, rec.entity_id, template, &actor).await {
             Ok(invoice) => {
                 created_ids.push(invoice.id);
 
                 // If auto_send, post it
                 if rec.auto_send {
                     let _ =
-                        crate::services::invoicing::post_invoice(engine, invoice.id, &actor).await;
+                        crate::services::invoicing::post_invoice(engine, rec.entity_id, invoice.id, &actor).await;
                 }
 
                 // Advance the next_run date
@@ -138,7 +138,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
                     schedule_at: None,
                 };
 
-                let _ = crate::services::notifications::send_notification(engine, req).await;
+                let _ = crate::services::notifications::send_notification(engine, engine.entity_id(), req).await;
                 sent_count += 1;
             }
         }
@@ -362,7 +362,7 @@ pub async fn run_overdue_check(engine: &ErpEngine) -> ErpResult<OverdueCheckResu
             };
 
             let delivery_outcome =
-                crate::services::notifications::send_notification(engine, notification_req).await;
+                crate::services::notifications::send_notification(engine, engine.entity_id(), notification_req).await;
 
             // Record audit event for the reminder delivery attempt
             let outcome_str = match &delivery_outcome {
@@ -441,6 +441,7 @@ pub struct CancelRemindersResult {
 /// reduces an overdue invoice's balance.
 pub async fn cancel_reminders_on_payment(
     engine: &ErpEngine,
+    entity_id: Uuid,
     invoice_id: Uuid,
     new_balance: Decimal,
 ) -> ErpResult<CancelRemindersResult> {
@@ -449,7 +450,7 @@ pub async fn cancel_reminders_on_payment(
         "SELECT status FROM invoices WHERE id = $1 AND entity_id = $2",
     )
     .bind(invoice_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -479,7 +480,7 @@ pub async fn cancel_reminders_on_payment(
         )
         SELECT COUNT(*) FROM updated"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(invoice_id)
     .fetch_one(engine.pool())
     .await
@@ -497,7 +498,7 @@ pub async fn cancel_reminders_on_payment(
     )
     .bind(new_status)
     .bind(invoice_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
 
@@ -514,7 +515,7 @@ pub async fn cancel_reminders_on_payment(
         "reason": "payment_received",
         "timestamp": Utc::now(),
     });
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)

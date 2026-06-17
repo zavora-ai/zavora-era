@@ -9,12 +9,13 @@ use zavora_erp_core::services::payments as svc;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
+    ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     let rows = sqlx::query_as::<_, PaymentRow>(
         "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC",
     )
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_all(state.engine.pool())
     .await;
     match rows {
@@ -30,7 +31,7 @@ pub async fn record(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "record payment").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::record_payment(&state.engine, req, &actor).await {
+    match svc::record_payment(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -47,7 +48,7 @@ pub async fn mpesa_callback(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MpesaCallbackWrapper>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::record_mpesa_payment(&state.engine, req.invoice_id, req.callback).await {
+    match svc::record_mpesa_payment(&state.engine, state.engine.entity_id(), req.invoice_id, req.callback).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -78,7 +79,7 @@ pub async fn mpesa_stk_push(
         "SELECT EXISTS(SELECT 1 FROM invoices WHERE id = $1 AND entity_id = $2)",
     )
     .bind(req.invoice_id)
-    .bind(state.engine.entity_id())
+    .bind(ctx.entity_id)
     .fetch_one(state.engine.pool())
     .await
     .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)))?;
@@ -110,7 +111,7 @@ pub async fn apply_unapplied(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_CREATE, &ctx, "apply unapplied payment").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
-    match svc::apply_unapplied_payment(&state.engine, req, &actor).await {
+    match svc::apply_unapplied_payment(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

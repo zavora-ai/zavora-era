@@ -10,7 +10,7 @@ use crate::types::AgentOrUserId;
 /// Submit a receipt for OCR processing.
 /// In production, this would call Azure AI Content Understanding.
 /// Here we store the capture record and return it for manual review.
-pub async fn capture_receipt(engine: &ErpEngine, req: CaptureReceiptRequest) -> ErpResult<Uuid> {
+pub async fn capture_receipt(engine: &ErpEngine, entity_id: Uuid, req: CaptureReceiptRequest) -> ErpResult<Uuid> {
     let id = Uuid::new_v4();
     let now = Utc::now();
 
@@ -20,7 +20,7 @@ pub async fn capture_receipt(engine: &ErpEngine, req: CaptureReceiptRequest) -> 
            VALUES ($1, $2, $3, 'pending', $4, $5)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&req.image_url)
     .bind(serde_json::to_value(&req.captured_by).unwrap_or_default())
     .bind(now)
@@ -41,12 +41,13 @@ pub async fn capture_receipt(engine: &ErpEngine, req: CaptureReceiptRequest) -> 
 /// 6. Records an audit event linking OCR result to capture
 pub async fn process_ocr_result(
     engine: &ErpEngine,
+    entity_id: Uuid,
     capture_id: Uuid,
     result: OcrResult,
 ) -> ErpResult<()> {
     // Step 1: Attempt vendor matching via fuzzy match on extracted vendor_name
     let suggested_vendor_id = if let Some(ref vendor_name) = result.vendor_name {
-        fuzzy_match_vendor(engine, vendor_name).await?
+        fuzzy_match_vendor(engine, entity_id, vendor_name).await?
     } else {
         None
     };
@@ -69,7 +70,7 @@ pub async fn process_ocr_result(
     .bind(suggested_vendor_id)
     .bind(status)
     .bind(capture_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .execute(engine.pool())
     .await?;
 
@@ -78,7 +79,7 @@ pub async fn process_ocr_result(
         "event_type": "ocr_completed",
         "object_type": "receipt_capture",
         "object_id": capture_id,
-        "entity_id": engine.entity_id(),
+        "entity_id": entity_id,
         "timestamp": Utc::now(),
         "metadata": {
             "confidence": result.confidence,
@@ -92,7 +93,7 @@ pub async fn process_ocr_result(
         }
     });
 
-    let stream_key = format!("erp:audit:{}", engine.entity_id());
+    let stream_key = format!("erp:audit:{}", entity_id);
     let mut redis_conn = engine.redis_conn().await;
     let _: Result<(), _> = redis::cmd("XADD")
         .arg(&stream_key)
@@ -109,12 +110,12 @@ pub async fn process_ocr_result(
 ///
 /// Uses normalized string similarity to find the best matching vendor.
 /// Returns the vendor ID if a match is found with similarity > 0.6.
-async fn fuzzy_match_vendor(engine: &ErpEngine, extracted_name: &str) -> ErpResult<Option<Uuid>> {
+async fn fuzzy_match_vendor(engine: &ErpEngine, entity_id: Uuid, extracted_name: &str) -> ErpResult<Option<Uuid>> {
     // Fetch all active vendors for this entity
     let vendors = sqlx::query_as::<_, VendorRow>(
         "SELECT * FROM vendors WHERE entity_id = $1 AND is_active = true",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -213,6 +214,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 /// Confirm a receipt capture and create a bill from it.
 pub async fn confirm_and_create_bill(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: ConfirmReceiptRequest,
     confirmed_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -221,7 +223,7 @@ pub async fn confirm_and_create_bill(
         "SELECT id, entity_id, image_url, ocr_result, status FROM receipt_captures WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.capture_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -278,7 +280,7 @@ pub async fn confirm_and_create_bill(
         notes: Some("Created from receipt capture".to_string()),
     };
 
-    let bill = crate::services::bills::create_bill(engine, bill_req, confirmed_by).await?;
+    let bill = crate::services::bills::create_bill(engine, entity_id, bill_req, confirmed_by).await?;
 
     // Update capture record
     sqlx::query(

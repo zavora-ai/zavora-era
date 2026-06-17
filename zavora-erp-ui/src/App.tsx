@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { bootstrapAuth, getAccessToken } from './api/client';
 import AppShell from './components/layout/AppShell';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
@@ -21,6 +23,7 @@ import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
@@ -37,14 +40,28 @@ const queryClient = new QueryClient({
 });
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('era_access_token');
-  if (!token) {
+  if (!getAccessToken()) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
 }
 
 export default function App() {
+  // Restore the session from the httpOnly refresh cookie before routing, so a
+  // hard refresh on a deep link doesn't bounce an authenticated user to /login.
+  const [booting, setBooting] = useState(true);
+  useEffect(() => {
+    bootstrapAuth().finally(() => setBooting(false));
+  }, []);
+
+  if (booting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-500">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -77,6 +94,7 @@ export default function App() {
             <Route path="journal-entries" element={<JournalEntriesPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="users" element={<UsersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />

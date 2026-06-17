@@ -1,15 +1,17 @@
 use crate::engine::ErpEngine;
 use crate::error::ErpResult;
 use crate::notifications::*;
+use uuid::Uuid;
 
 /// Queue a notification for delivery via Redis stream.
 pub async fn send_notification(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: SendNotificationRequest,
 ) -> ErpResult<()> {
     let mut redis_conn = engine.redis_conn().await;
     let payload = serde_json::to_string(&req)?;
-    let stream_key = format!("erp:notifications:{}", engine.entity_id());
+    let stream_key = format!("erp:notifications:{}", entity_id);
 
     redis::cmd("XADD")
         .arg(&stream_key)

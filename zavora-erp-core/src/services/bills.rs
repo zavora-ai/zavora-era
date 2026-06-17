@@ -11,6 +11,7 @@ use crate::types::AgentOrUserId;
 /// Create a new bill (AP document).
 pub async fn create_bill(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateBillRequest,
     created_by: &AgentOrUserId,
 ) -> ErpResult<Bill> {
@@ -22,7 +23,7 @@ pub async fn create_bill(
         "SELECT * FROM vendors WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.vendor_id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
     .ok_or_else(|| ErpError::NotFound {
@@ -40,7 +41,7 @@ pub async fn create_bill(
     // Resolve lines
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = crate::services::invoicing::resolve_bill_line(engine, line_req, &vendor).await?;
+        let mut line = crate::services::invoicing::resolve_bill_line(engine, entity_id, line_req, &vendor).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -63,7 +64,7 @@ pub async fn create_bill(
     };
 
     let gross_total = subtotal + tax_total - wht_amount;
-    let number = generate_bill_number(engine).await?;
+    let number = generate_bill_number(engine, entity_id).await?;
 
     sqlx::query(
         r#"INSERT INTO bills 
@@ -72,7 +73,7 @@ pub async fn create_bill(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&number)
     .bind(req.vendor_id)
     .bind(&req.vendor_invoice_number)
@@ -94,7 +95,7 @@ pub async fn create_bill(
 
     Ok(Bill {
         id,
-        entity_id: engine.entity_id(),
+        entity_id,
         number,
         vendor_id: req.vendor_id,
         vendor_invoice_number: req.vendor_invoice_number,
@@ -127,10 +128,10 @@ pub async fn create_bill(
 ///
 /// If the period is SoftClosed or HardClosed, the approval is rejected with
 /// an error identifying the closed period (Requirements 10.3, 10.5, 10.6).
-pub async fn approve_bill(engine: &ErpEngine, req: ApproveBillRequest) -> ErpResult<()> {
+pub async fn approve_bill(engine: &ErpEngine, entity_id: Uuid, req: ApproveBillRequest) -> ErpResult<()> {
     let bill = sqlx::query_as::<_, BillRow>("SELECT * FROM bills WHERE id = $1 AND entity_id = $2")
         .bind(req.bill_id)
-        .bind(engine.entity_id())
+        .bind(entity_id)
         .fetch_optional(engine.pool())
         .await?
         .ok_or_else(|| ErpError::NotFound {
@@ -145,7 +146,7 @@ pub async fn approve_bill(engine: &ErpEngine, req: ApproveBillRequest) -> ErpRes
     }
 
     // Validate target fiscal period is Open (Requirements 10.5, 10.6)
-    let period = crate::services::periods::period_for_date(engine, bill.issue_date).await?;
+    let period = crate::services::periods::period_for_date(engine, entity_id, bill.issue_date).await?;
     let period_status = period.parsed_status();
 
     match period_status {
@@ -173,18 +174,19 @@ pub async fn approve_bill(engine: &ErpEngine, req: ApproveBillRequest) -> ErpRes
     Ok(())
 }
 
-async fn generate_bill_number(engine: &ErpEngine) -> ErpResult<String> {
+async fn generate_bill_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings 
            SET sequences = jsonb_set(sequences, '{bill_next}', to_jsonb((sequences->>'bill_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'bill_next')::bigint - 1"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_one(engine.pool())
     .await?;
 
-    let prefix = &engine.config().sequences.bill_prefix;
+    let cfg = engine.config_for(entity_id).await?;
+    let prefix = &cfg.sequences.bill_prefix;
     let fiscal_year = Utc::now().format("%Y").to_string();
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }

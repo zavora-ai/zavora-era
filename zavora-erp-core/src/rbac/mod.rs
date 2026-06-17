@@ -93,6 +93,11 @@ pub struct CreateUserRequest {
     pub email: String,
     pub display_name: String,
     pub role: UserRole,
+    /// Optional initial password. When provided the account is immediately active
+    /// and can sign in; when omitted the user is created in `invited` status and
+    /// cannot sign in until a password is set.
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 /// Request to update a user.

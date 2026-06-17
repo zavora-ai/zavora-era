@@ -11,6 +11,7 @@ use crate::types::AgentOrUserId;
 /// Create a fixed asset.
 pub async fn create_asset(
     engine: &ErpEngine,
+    entity_id: Uuid,
     req: CreateAssetRequest,
     _created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
@@ -30,7 +31,7 @@ pub async fn create_asset(
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $7, $11, $12, $13, 'active', $14)"#,
     )
     .bind(id)
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(&asset_number)
     .bind(&req.description)
     .bind(serde_json::to_string(&req.category).unwrap_or_default())
@@ -59,11 +60,12 @@ pub async fn create_asset(
 /// Returns the IDs of all assets that were depreciated.
 pub async fn run_depreciation(
     engine: &ErpEngine,
+    entity_id: Uuid,
     period_id: Uuid,
     triggered_by: &AgentOrUserId,
 ) -> ErpResult<Vec<Uuid>> {
     // Get the period for the journal entry date
-    let period = crate::services::periods::get_period(engine, period_id).await?;
+    let period = crate::services::periods::get_period(engine, entity_id, period_id).await?;
 
     // Fetch all active assets that still have depreciable value
     let rows = sqlx::query_as::<_, FixedAssetRow>(
@@ -72,7 +74,7 @@ pub async fn run_depreciation(
              AND status = 'active' 
              AND net_book_value > residual_value"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -80,7 +82,7 @@ pub async fn run_depreciation(
         return Ok(Vec::new());
     }
 
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
     let mut depreciated_ids = Vec::new();
     let mut journal_lines = Vec::new();
 
@@ -165,6 +167,7 @@ pub async fn run_depreciation(
 
     crate::services::journal::create_and_post(
         engine,
+        entity_id,
         entry_req,
         period_id,
         triggered_by.clone(),
