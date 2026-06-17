@@ -37,7 +37,7 @@ pub async fn create_supplier_credit_note(
     let cn_date = req.credit_note_date.unwrap_or(today);
 
     // Validate the vendor belongs to this tenant.
-    let _vendor = sqlx::query_as::<_, crate::parties::VendorRow>(
+    let vendor = sqlx::query_as::<_, crate::parties::VendorRow>(
         "SELECT * FROM vendors WHERE id = $1 AND entity_id = $2",
     )
     .bind(req.vendor_id)
@@ -80,8 +80,8 @@ pub async fn create_supplier_credit_note(
     let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
     let gross_total = crate::money::round_money(subtotal + tax_total);
 
-    let cfg = engine.config_for(entity_id).await?;
-    let currency = cfg.base_currency.clone();
+    let currency = req.currency.clone().unwrap_or_else(|| vendor.currency.clone());
+    let fx_rate = req.fx_rate.unwrap_or(Decimal::ONE);
     let posting = engine.posting_for(entity_id).await?;
 
     let number = match req.credit_note_number {
@@ -109,7 +109,7 @@ pub async fn create_supplier_credit_note(
     .bind(tax_total)
     .bind(gross_total)
     .bind(&currency)
-    .bind(Decimal::ONE)
+    .bind(fx_rate)
     .bind(&req.reason)
     .bind("posted")
     .bind("not_transmitted")
@@ -145,7 +145,7 @@ pub async fn create_supplier_credit_note(
         debit: Some(gross_total),
         credit: None,
         currency: currency.clone(),
-        fx_rate: Some(Decimal::ONE),
+        fx_rate: Some(fx_rate),
         description: Some(format!("Supplier credit note {number} - AP reduction")),
         dimensions: None,
     });
@@ -155,7 +155,7 @@ pub async fn create_supplier_credit_note(
             debit: None,
             credit: Some(line.line_total),
             currency: currency.clone(),
-            fx_rate: Some(Decimal::ONE),
+            fx_rate: Some(fx_rate),
             description: Some(format!("SCN reversal: {}", line.description)),
             dimensions: None,
         });
@@ -165,7 +165,7 @@ pub async fn create_supplier_credit_note(
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: currency.clone(),
-                fx_rate: Some(Decimal::ONE),
+                fx_rate: Some(fx_rate),
                 description: Some(format!("SCN VAT input reversal: {}", line.description)),
                 dimensions: None,
             });
@@ -250,15 +250,19 @@ pub async fn get_supplier_credit_note(
     Ok(row)
 }
 
-/// Allocate the next supplier-credit-note number. Reuses the credit-note
-/// sequence counter with an `SCN` prefix to keep AP credit notes distinct from
-/// customer credit notes in the document register.
+/// Allocate the next supplier-credit-note number from its own `SCN` sequence,
+/// independent of the customer credit-note counter. `COALESCE(..., 1)` seeds the
+/// counter at 1 for tenants whose settings predate this key.
 async fn generate_supplier_cn_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings
-           SET sequences = jsonb_set(sequences, '{credit_note_next}', to_jsonb((sequences->>'credit_note_next')::bigint + 1))
+           SET sequences = jsonb_set(
+               sequences,
+               '{supplier_credit_note_next}',
+               to_jsonb(COALESCE((sequences->>'supplier_credit_note_next')::bigint, 1) + 1)
+           )
            WHERE entity_id = $1
-           RETURNING (sequences->>'credit_note_next')::bigint - 1"#,
+           RETURNING COALESCE((sequences->>'supplier_credit_note_next')::bigint, 1) - 1"#,
     )
     .bind(entity_id)
     .fetch_one(engine.pool())

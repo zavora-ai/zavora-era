@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { runPayroll, approvePayRun, postPayRun } from '../../api/client';
 import { formatCurrency } from '../../utils/format';
+import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Play, CheckCircle, BookOpen, Users } from 'lucide-react';
@@ -63,10 +64,10 @@ export default function PayrollPage() {
               <p className="text-sm text-gray-500">Status: <span className="font-medium capitalize">{payRun.status}</span></p>
             </div>
             <div className="flex gap-2">
-              {payRun.status === 'draft' && (
+              {payRun.status === 'draft' && hasRole(ROLES_APPROVE) && (
                 <button onClick={() => approveMut.mutate(payRun.id)} className="btn-success"><CheckCircle className="w-4 h-4" /> Approve</button>
               )}
-              {payRun.status === 'approved' && (
+              {payRun.status === 'approved' && hasRole(ROLES_POST) && (
                 <button onClick={() => postMut.mutate(payRun.id)} className="btn-primary"><BookOpen className="w-4 h-4" /> Post to GL</button>
               )}
             </div>

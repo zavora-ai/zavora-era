@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -50,9 +51,11 @@ export default function BillsPage() {
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {r.status === 'draft' && (
             <>
-              <button onClick={() => approveMut.mutate(r.id)} disabled={approveMut.isPending} className="btn-success text-xs py-1 px-2" title="Approve bill">
-                <CheckCircle className="w-3 h-3" /> Approve
-              </button>
+              {hasRole(ROLES_APPROVE) && (
+                <button onClick={() => approveMut.mutate(r.id)} disabled={approveMut.isPending} className="btn-success text-xs py-1 px-2" title="Approve bill">
+                  <CheckCircle className="w-3 h-3" /> Approve
+                </button>
+              )}
               <button onClick={() => setEditId(r.id)} className="btn-secondary text-xs py-1 px-2" title="Edit draft">
                 <Pencil className="w-3 h-3" />
               </button>
@@ -61,7 +64,7 @@ export default function BillsPage() {
               </button>
             </>
           )}
-          {r.status === 'approved' && (
+          {r.status === 'approved' && hasRole(ROLES_POST) && (
             <button onClick={() => postMut.mutate(r.id)} disabled={postMut.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
               Post
             </button>

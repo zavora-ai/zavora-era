@@ -60,8 +60,9 @@ pub async fn reverse(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_POST_JOURNAL, &ctx, "reverse journal entry").map_err(err_response)?;
     let reason = req.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let reversal_date = req.get("date").and_then(|v| v.as_str()).and_then(|s| s.parse::<chrono::NaiveDate>().ok());
     let actor = AgentOrUserId::User(ctx.user_id);
-    match zavora_erp_core::services::journal::reverse_journal_entry(&state.engine, ctx.entity_id, id, reason, actor).await {
+    match zavora_erp_core::services::journal::reverse_journal_entry(&state.engine, ctx.entity_id, id, reason, reversal_date, actor).await {
         Ok(entry) => Ok(Json(serde_json::json!({
             "reversing_entry_id": entry.id,
             "reversing_number": entry.number,

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPeriods, generatePeriods, closePeriod, reopenPeriod } from '../../api/client';
 import type { FiscalPeriod } from '../../types';
 import { formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_CLOSE_PERIOD } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { CalendarClock, Lock, Unlock, Plus, AlertCircle } from 'lucide-react';
@@ -60,9 +61,11 @@ export default function PeriodsPage() {
         title="Fiscal Periods"
         subtitle="Close periods to lock the books — soft close warns, hard close prevents all postings"
         actions={
-          <button onClick={() => setShowGenerate(true)} className="btn-primary">
-            <Plus className="w-4 h-4" /> Generate Periods
-          </button>
+          hasRole(ROLES_CLOSE_PERIOD) ? (
+            <button onClick={() => setShowGenerate(true)} className="btn-primary">
+              <Plus className="w-4 h-4" /> Generate Periods
+            </button>
+          ) : undefined
         }
       />
 
@@ -120,7 +123,7 @@ export default function PeriodsPage() {
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <div className="flex items-center justify-end gap-1">
-                            {p.status === 'open' && (
+                            {p.status === 'open' && hasRole(ROLES_CLOSE_PERIOD) && (
                               <button
                                 onClick={() => closeMutation.mutate({ id: p.id, close_type: 'Soft' })}
                                 className="btn-secondary text-xs py-1 px-2"
@@ -130,7 +133,7 @@ export default function PeriodsPage() {
                                 <Lock className="w-3 h-3" /> Soft Close
                               </button>
                             )}
-                            {p.status === 'soft_closed' && (
+                            {p.status === 'soft_closed' && hasRole(ROLES_CLOSE_PERIOD) && (
                               <>
                                 <button
                                   onClick={() => closeMutation.mutate({ id: p.id, close_type: 'Hard' })}

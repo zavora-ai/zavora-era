@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEstimates, createEstimate, convertEstimate, getCustomers, getProducts } from '../../api/client';
+import { getEstimates, createEstimate, convertEstimate, sendEstimate, acceptEstimate, declineEstimate, getCustomers, getProducts } from '../../api/client';
 import type { Estimate, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { hasRole, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, ArrowRight } from 'lucide-react';
+import { Plus, ArrowRight, Send, Check, X } from 'lucide-react';
 
 export default function EstimatesPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -20,6 +21,18 @@ export default function EstimatesPage() {
 
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
+  });
+  const sendMutation = useMutation({
+    mutationFn: (id: string) => sendEstimate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
+  });
+  const acceptMutation = useMutation({
+    mutationFn: (id: string) => acceptEstimate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
+  });
+  const declineMutation = useMutation({
+    mutationFn: (id: string) => declineEstimate(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
   });
 
@@ -45,7 +58,37 @@ export default function EstimatesPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center gap-1">
-          {(r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && (
+          {hasRole(ROLES_SEND) && r.status === 'draft' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); sendMutation.mutate(r.id); }}
+              className="btn-secondary text-xs py-1 px-2"
+              title="Mark as sent to customer"
+              disabled={sendMutation.isPending}
+            >
+              <Send className="w-3 h-3" /> Send
+            </button>
+          )}
+          {hasRole(ROLES_SEND) && (r.status === 'draft' || r.status === 'sent') && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); acceptMutation.mutate(r.id); }}
+                className="btn-secondary text-xs py-1 px-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                title="Record customer acceptance"
+                disabled={acceptMutation.isPending}
+              >
+                <Check className="w-3 h-3" /> Accept
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); declineMutation.mutate(r.id); }}
+                className="btn-secondary text-xs py-1 px-2 text-red-600 border-red-200 hover:bg-red-50"
+                title="Record customer decline"
+                disabled={declineMutation.isPending}
+              >
+                <X className="w-3 h-3" /> Decline
+              </button>
+            </>
+          )}
+          {hasRole(ROLES_SEND) && (r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && (
             <button
               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(r.id); }}
               className="btn-success text-xs py-1 px-2"
