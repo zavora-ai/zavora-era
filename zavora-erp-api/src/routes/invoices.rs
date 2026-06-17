@@ -78,20 +78,47 @@ pub async fn post_invoice(
     }
 }
 
+/// POST /invoices/{id}/send — mark a posted invoice as sent (records sent_at).
+/// Delivery is decoupled from posting; this stamps that the invoice was sent,
+/// including off-system (printed/emailed manually).
 pub async fn send(
     ctx: AuthContext,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(_req): Json<SendInvoiceRequest>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_SEND, &ctx, "send invoice").map_err(|e| {
-        let (status, msg) = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
-            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": msg })))
-    })?;
-    Ok(Json(serde_json::json!({ "status": "queued", "invoice_id": id })))
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_SEND, &ctx, "send invoice").map_err(err_response)?;
+    match svc::mark_invoice_sent(&state.engine, ctx.entity_id, id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "sent", "invoice_id": id }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// PUT /invoices/{id} — edit a draft invoice (replaces lines, recomputes totals).
+pub async fn update(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreateInvoiceRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "edit invoice").map_err(err_response)?;
+    match svc::update_invoice_draft(&state.engine, ctx.entity_id, id, req).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "updated": true }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// DELETE /invoices/{id} — delete a draft invoice and its lines.
+pub async fn delete(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "delete invoice").map_err(err_response)?;
+    match svc::delete_invoice_draft(&state.engine, ctx.entity_id, id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "deleted": true }))),
+        Err(e) => Err(err_response(e)),
+    }
 }
 
 pub async fn create_credit_note(

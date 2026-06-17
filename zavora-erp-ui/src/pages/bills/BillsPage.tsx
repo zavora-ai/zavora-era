@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
+import { QuickAddParty } from '../../components/shared/QuickAdd';
 import { Plus, CheckCircle } from 'lucide-react';
 
 export default function BillsPage() {
@@ -38,6 +39,7 @@ function CreateBillModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
   const [form, setForm] = useState({ vendor_id: '', issue_date: new Date().toISOString().split('T')[0], due_date: '', vendor_invoice_number: '', notes: '', lines: [{ description: '', quantity: 1, unit_price: 0, account_code: '7900' }] });
+  const [addingVendor, setAddingVendor] = useState(false);
   const mutation = useMutation({ mutationFn: (data: any) => createBill(data), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bills'] }); onClose(); } });
 
   const addLine = () => setForm({ ...form, lines: [...form.lines, { description: '', quantity: 1, unit_price: 0, account_code: '7900' }] });
@@ -68,7 +70,22 @@ function CreateBillModal({ onClose }: { onClose: () => void }) {
     <Modal open={true} onClose={onClose} title="New Bill" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <div><label className="label">Vendor *</label><select className="input" value={form.vendor_id} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })} required><option value="">Select...</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="label">Vendor *</label>
+              <button type="button" onClick={() => setAddingVendor((v) => !v)} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                {addingVendor ? 'Cancel' : '+ New vendor'}
+              </button>
+            </div>
+            <select className="input" value={form.vendor_id} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })} required><option value="">Select...</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
+            {addingVendor && (
+              <QuickAddParty
+                kind="vendor"
+                onCreated={(v) => { setForm((f) => ({ ...f, vendor_id: v.id })); setAddingVendor(false); }}
+                onCancel={() => setAddingVendor(false)}
+              />
+            )}
+          </div>
           <div><label className="label">Vendor Invoice #</label><input className="input" value={form.vendor_invoice_number} onChange={(e) => setForm({ ...form, vendor_invoice_number: e.target.value })} /></div>
         </div>
         <div className="grid grid-cols-2 gap-4">

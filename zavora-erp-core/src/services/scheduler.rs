@@ -101,7 +101,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
            FROM invoices i
            JOIN customers c ON c.id = i.customer_id
            WHERE i.entity_id = $1
-             AND i.status IN ('sent', 'viewed', 'overdue', 'partially_paid')
+             AND i.status IN ('posted', 'sent', 'viewed', 'overdue', 'partially_paid')
              AND i.balance_due > 0"#,
     )
     .bind(engine.entity_id())
@@ -146,7 +146,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
 
     // Mark overdue invoices
     sqlx::query(
-        "UPDATE invoices SET status = 'overdue' WHERE entity_id = $1 AND status IN ('sent', 'viewed') AND due_date < $2 AND balance_due > 0",
+        "UPDATE invoices SET status = 'overdue' WHERE entity_id = $1 AND status IN ('posted', 'sent', 'viewed') AND due_date < $2 AND balance_due > 0",
     )
     .bind(engine.entity_id())
     .bind(today)
@@ -224,7 +224,7 @@ pub async fn run_overdue_check(engine: &ErpEngine) -> ErpResult<OverdueCheckResu
            WHERE i.entity_id = $1
              AND i.due_date < $2
              AND i.balance_due > 0
-             AND i.status IN ('sent', 'viewed', 'partially_paid')"#,
+             AND i.status IN ('posted', 'sent', 'viewed', 'partially_paid')"#,
     )
     .bind(engine.entity_id())
     .bind(today)

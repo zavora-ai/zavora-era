@@ -137,8 +137,10 @@ export const createProduct = (data: any) => api.post('/products', data);
 // === Invoices ===
 export const getInvoices = () => api.get('/invoices');
 export const createInvoice = (data: any) => api.post('/invoices', data);
+export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}`, data);
+export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
 export const postInvoice = (id: string) => api.post(`/invoices/${id}/post`);
-export const sendInvoice = (id: string, data: any) => api.post(`/invoices/${id}/send`, data);
+export const sendInvoice = (id: string, data?: any) => api.post(`/invoices/${id}/send`, data || {});
 
 // === Estimates ===
 export const getEstimates = () => api.get('/estimates');

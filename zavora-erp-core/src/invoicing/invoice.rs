@@ -20,7 +20,11 @@ pub enum InvoiceType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum InvoiceStatus {
+    /// Editable, not in the ledger; can be edited or deleted.
     Draft,
+    /// Posted to the general ledger (journal entry created); immutable.
+    /// Delivery ("sent") is tracked separately via `sent_at`.
+    Posted,
     Sent,
     Viewed,
     PartiallyPaid,
