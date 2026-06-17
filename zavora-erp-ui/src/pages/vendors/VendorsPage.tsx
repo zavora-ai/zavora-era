@@ -2,15 +2,13 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getVendors, createVendor } from '../../api/client';
 import type { Vendor } from '../../types';
-import { formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, Building2, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 
 export default function VendorsPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const queryClient = useQueryClient();
   const { data: vendors = [], isLoading } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
 
   const columns: Column<Vendor>[] = [

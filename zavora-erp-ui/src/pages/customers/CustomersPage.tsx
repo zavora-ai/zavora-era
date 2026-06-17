@@ -10,7 +10,6 @@ import { Plus, Mail, Phone, MapPin, FileText } from 'lucide-react';
 
 export default function CustomersPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const queryClient = useQueryClient();
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ['customers'],

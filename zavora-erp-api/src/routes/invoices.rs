@@ -187,6 +187,21 @@ pub async fn create_credit_note(
     }
 }
 
+/// POST /invoices/{id}/etims-transmit — mark a posted invoice as transmitted to KRA eTIMS.
+pub async fn etims_transmit(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_SEND, &ctx, "transmit invoice to eTIMS").map_err(err_response)?;
+    let etims_number = req.get("etims_invoice_number").and_then(|v| v.as_str()).map(|s| s.to_string());
+    match svc::mark_invoice_etims_transmitted(&state.engine, ctx.entity_id, id, etims_number).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "etims_status": "transmitted" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 pub async fn list_recurring(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,

@@ -199,6 +199,20 @@ pub async fn create_credit_note(
         });
     }
 
+    // Principle: a credit note is the ONLY way to cancel/reduce a *posted*
+    // invoice (transmitted to eTIMS or not). A draft has not entered the ledger,
+    // so it is edited or deleted instead — never credit-noted.
+    if original.status == "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: "Cannot credit-note a draft invoice; edit or delete the draft instead".to_string(),
+        });
+    }
+    if original.status == "voided" {
+        return Err(ErpError::ValidationFailed {
+            message: "Invoice is already cancelled".to_string(),
+        });
+    }
+
     // Determine credit note lines — if empty, full reversal of original
     let original_lines = sqlx::query_as::<_, InvoiceLineRow>(
         "SELECT * FROM invoice_lines WHERE invoice_id = $1",
@@ -714,7 +728,7 @@ pub async fn convert_estimate_to_invoice(
 }
 
 /// Resolve an invoice line from a request — auto-fills from product catalog.
-async fn resolve_invoice_line(
+pub(crate) async fn resolve_invoice_line(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: &CreateInvoiceLineRequest,
@@ -1325,3 +1339,57 @@ pub async fn resolve_bill_line(
         })
     }
 }
+
+/// Mark an issued invoice as transmitted to KRA eTIMS.
+///
+/// In Kenya (2026) a tax invoice must be transmitted to KRA. Once transmitted it
+/// becomes immutable — it can no longer be voided/deleted, only corrected with a
+/// credit note. This records that transmission (the actual Daraja/eTIMS API call
+/// is a separate integration; this is the state transition + reference capture).
+pub async fn mark_invoice_etims_transmitted(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+    etims_invoice_number: Option<String>,
+) -> ErpResult<()> {
+    let inv = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if inv.status == "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: "Cannot transmit a draft invoice to eTIMS; post it first".to_string(),
+        });
+    }
+    if inv.status == "voided" {
+        return Err(ErpError::ValidationFailed {
+            message: "Cannot transmit a voided invoice to eTIMS".to_string(),
+        });
+    }
+    if crate::etims::EtimsStatus::from_db(&inv.etims_status).is_transmitted() {
+        return Err(ErpError::ValidationFailed {
+            message: "Invoice has already been transmitted to eTIMS".to_string(),
+        });
+    }
+
+    sqlx::query(
+        "UPDATE invoices SET etims_status = 'transmitted', etims_invoice_number = $1, \
+         etims_transmitted_at = NOW() WHERE id = $2 AND entity_id = $3",
+    )
+    .bind(etims_invoice_number)
+    .bind(invoice_id)
+    .bind(entity_id)
+    .execute(engine.pool())
+    .await?;
+    Ok(())
+}
+
+// Note: by accounting principle there is no `void_invoice`. A posted invoice
+// (transmitted to KRA eTIMS or not) can only be cancelled or reduced via a
+// credit note that references it (see `create_credit_note`). Drafts are
+// removed with `delete_invoice_draft`.

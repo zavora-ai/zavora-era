@@ -6,7 +6,7 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, ArrowRight, FileText, Send } from 'lucide-react';
+import { Plus, ArrowRight } from 'lucide-react';
 
 export default function EstimatesPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -45,7 +45,7 @@ export default function EstimatesPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center gap-1">
-          {(r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && r.status !== 'converted' && (
+          {(r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && (
             <button
               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(r.id); }}
               className="btn-success text-xs py-1 px-2"

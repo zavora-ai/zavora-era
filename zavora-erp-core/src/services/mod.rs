@@ -4,6 +4,7 @@ pub mod periods;
 pub mod period_close;
 pub mod invoicing;
 pub mod bills;
+pub mod supplier_credit_notes;
 pub mod payments;
 pub mod transactions;
 pub mod bank;

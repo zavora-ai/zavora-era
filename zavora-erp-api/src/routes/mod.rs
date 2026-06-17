@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod invoices;
 pub mod estimates;
 pub mod bills;
+pub mod supplier_credit_notes;
 pub mod payments;
 pub mod transactions;
 pub mod bank;

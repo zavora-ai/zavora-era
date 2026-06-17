@@ -21,6 +21,7 @@ import PayrollPage from './pages/payroll/PayrollPage';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
+import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import UsersPage from './pages/settings/UsersPage';
@@ -92,6 +93,7 @@ export default function App() {
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="journal-entries" element={<JournalEntriesPage />} />
+            <Route path="periods" element={<PeriodsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />

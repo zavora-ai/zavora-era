@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { formatCurrency } from '../../utils/format';
 import { getBankAccounts, createBankAccount, deleteBankAccount } from '../../api/client';
 import type { BankAccount } from '../../types';
 

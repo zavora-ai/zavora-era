@@ -1,5 +1,6 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Path, State}, Json};
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::AppState;
 use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
@@ -45,6 +46,26 @@ pub async fn validate(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     match state.engine.validate_entry(&req).await {
         Ok(report) => Ok(Json(serde_json::to_value(report).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /journal-entries/{id}/reverse — book a linked reversing entry.
+/// A posted journal entry is immutable; correcting it means posting a reversal.
+pub async fn reverse(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_POST_JOURNAL, &ctx, "reverse journal entry").map_err(err_response)?;
+    let reason = req.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let actor = AgentOrUserId::User(ctx.user_id);
+    match zavora_erp_core::services::journal::reverse_journal_entry(&state.engine, ctx.entity_id, id, reason, actor).await {
+        Ok(entry) => Ok(Json(serde_json::json!({
+            "reversing_entry_id": entry.id,
+            "reversing_number": entry.number,
+        }))),
         Err(e) => Err(err_response(e)),
     }
 }

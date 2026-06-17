@@ -85,14 +85,14 @@ This plan brings Zavora ERP from functional prototype to production-grade deploy
     - **Property 6: Transaction Atomicity (invoice posting)**
     - **Validates: Requirements 2.2, 2.5**
 
-- [ ] 4. P0 — Per-Request Tenant Scoping
+- [x] 4. P0 — Per-Request Tenant Scoping
   - [x] 4.1 Remove startup `ENTITY_ID` env var as query-scoping mechanism
     - Replace `engine.entity_id()` with per-request `ctx.entity_id` in all service functions
     - Add `entity_id: Uuid` parameter to all core service functions
     - Ensure all queries include `WHERE entity_id = $entity_id` from the AuthContext parameter
     - _Requirements: 3.1, 3.2, 3.4_
 
-  - [~] 4.2 Implement cross-tenant 404 response behavior
+  - [x] 4.2 Implement cross-tenant 404 response behavior
     - When a record belongs to a different entity_id, return HTTP 404 (not 403)
     - Ensure INSERT operations set `entity_id` from AuthContext JWT claims
     - _Requirements: 3.3_
@@ -134,7 +134,7 @@ This plan brings Zavora ERP from functional prototype to production-grade deploy
     - Set up test database provisioning utilities
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [~] 6.2 Write integration tests for payment recording flows
+  - [x] 6.2 Write integration tests for payment recording flows
     - Test single payment, partial payment, overpayment, and multi-currency payment
     - Verify journal balancing on each path
     - _Requirements: 4.2_
@@ -348,7 +348,7 @@ This plan brings Zavora ERP from functional prototype to production-grade deploy
     - _Requirements: 19.1, 19.2, 19.3, 19.4_
 
 - [ ] 22. P2 — Supplier Credit Note Line Items
-  - [~] 22.1 Implement supplier credit note line items in `zavora-erp-core`
+  - [x] 22.1 Implement supplier credit note line items in `zavora-erp-core`
     - Extend supplier credit note creation to accept and store line items (product, quantity, unit_price, vat_treatment, gl_account_code)
     - Modify posting to create journal entries per line (using each line's GL account)
     - Return line items in supplier credit note retrieval

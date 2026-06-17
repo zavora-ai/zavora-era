@@ -438,3 +438,131 @@ pub async fn enforce_period_status_in_tx(
         _ => Ok(()),
     }
 }
+
+/// A journal line as stored, used when building a reversal.
+#[derive(sqlx::FromRow)]
+struct StoredJournalLine {
+    account_code: String,
+    debit: Option<Decimal>,
+    credit: Option<Decimal>,
+    currency: String,
+    fx_rate: Decimal,
+    description: Option<String>,
+}
+
+/// Reverse a posted journal entry by booking a new, linked contra-entry.
+///
+/// Accounting principle: a posted journal entry is immutable — it is never
+/// edited or deleted. To correct it you post a **reversing entry** that swaps
+/// every debit and credit, leaving a complete, auditable trail (the original
+/// entry and its reversal both remain on record). The reversal is posted into
+/// the fiscal period of the reversal date, so it cannot land in a closed period.
+pub async fn reverse_journal_entry(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    entry_id: Uuid,
+    reason: Option<String>,
+    reversed_by: AgentOrUserId,
+) -> ErpResult<JournalEntry> {
+    // Fetch the original header (tenant-scoped).
+    let original = sqlx::query_as::<_, (String, String)>(
+        "SELECT number, status FROM journal_entries WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(entry_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "JournalEntry".to_string(), id: entry_id })?;
+    let (original_number, original_status) = original;
+
+    if original_status != "posted" {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Only posted journal entries can be reversed (status: {original_status})"),
+        });
+    }
+
+    let reversal_reference = format!("REV-{original_number}");
+
+    // Guard against double reversal (idempotency on the reversal reference).
+    let already = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM journal_entries WHERE entity_id = $1 AND reference = $2)",
+    )
+    .bind(entity_id)
+    .bind(&reversal_reference)
+    .fetch_one(engine.pool())
+    .await?;
+    if already {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Journal entry {original_number} has already been reversed"),
+        });
+    }
+
+    // Fetch the original lines and swap debit/credit.
+    let stored = sqlx::query_as::<_, StoredJournalLine>(
+        "SELECT account_code, debit, credit, currency, fx_rate, description \
+         FROM journal_lines WHERE entry_id = $1",
+    )
+    .bind(entry_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    if stored.is_empty() {
+        return Err(ErpError::ValidationFailed {
+            message: "Original entry has no lines to reverse".to_string(),
+        });
+    }
+
+    let reversal_lines: Vec<CreateJournalLineRequest> = stored
+        .iter()
+        .map(|l| CreateJournalLineRequest {
+            account_code: l.account_code.clone(),
+            debit: l.credit, // swap
+            credit: l.debit, // swap
+            currency: l.currency.clone(),
+            fx_rate: Some(l.fx_rate),
+            description: l.description.clone(),
+            dimensions: None,
+        })
+        .collect();
+
+    let date = Utc::now().date_naive();
+    let entry_req = CreateJournalEntryRequest {
+        date,
+        source: JournalSource::Manual,
+        reference: reversal_reference,
+        description: format!(
+            "Reversal of {original_number}{}",
+            reason.as_ref().map(|r| format!(" — {r}")).unwrap_or_default()
+        ),
+        lines: reversal_lines,
+        post_immediately: true,
+    };
+
+    let period = crate::services::periods::period_for_date(engine, entity_id, date).await?;
+
+    let mut tx = engine.pool().begin().await?;
+    let entry = create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, reversed_by.clone()).await?;
+    tx.commit().await?;
+
+    // Best-effort audit event linking the reversal to the original.
+    let audit_event = serde_json::json!({
+        "event_type": "Reversed",
+        "object_type": "journal_entry",
+        "object_id": entry_id,
+        "actor": reversed_by,
+        "reversing_entry_id": entry.id,
+        "reversing_number": entry.number,
+        "timestamp": Utc::now(),
+    });
+    let stream_key = format!("erp:audit:{entity_id}");
+    let mut redis_conn = engine.redis_conn().await;
+    let _: Result<(), _> = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("data")
+        .arg(audit_event.to_string())
+        .query_async(&mut redis_conn)
+        .await;
+
+    Ok(entry)
+}
