@@ -48,7 +48,7 @@ pub async fn mpesa_callback(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MpesaCallbackWrapper>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::record_mpesa_payment(&state.engine, req.invoice_id, state.engine.entity_id(), req.callback).await {
+    match svc::record_mpesa_payment(&state.engine, state.engine.entity_id(), req.invoice_id, req.callback).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }

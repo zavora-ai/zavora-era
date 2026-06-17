@@ -12,7 +12,7 @@
 use crate::error::{ErpError, ErpResult};
 use crate::ledger::account::CreateAccountRequest;
 use crate::ledger::coa_template::{kenya_standard_coa, CoaTemplate};
-use chrono::Utc;
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use uuid::Uuid;
 
 /// Raw signup inputs as received from the API layer, before validation.
@@ -63,6 +63,8 @@ pub struct ProvisionedTenant {
     pub organization_name: String,
     /// Number of chart-of-accounts rows seeded (0 when seeding is disabled).
     pub accounts_seeded: u32,
+    /// Number of fiscal periods seeded for the current fiscal year.
+    pub periods_seeded: u32,
 }
 
 /// Minimum accepted password length, per the Password_Policy (Req 7.2, 7.3).
@@ -230,6 +232,74 @@ pub(crate) async fn seed_coa_in_tx(
     Ok(count)
 }
 
+/// Seed 12 monthly fiscal periods for `fiscal_year` within the caller's open
+/// transaction, returning the number of periods created.
+///
+/// `year_start_month` is the first month of the fiscal year (1 = January). Each
+/// period that has already started (relative to today) is opened; periods that
+/// begin in the future are marked `future`. Without these rows a brand-new
+/// tenant can create drafts but cannot post to the GL, since posting resolves
+/// the period for the document date.
+///
+/// Mirrors [`crate::services::periods::generate_periods`] but runs inside a
+/// caller-supplied transaction and is parameterised by `entity_id`, so tenant
+/// provisioning seeds periods atomically alongside the settings, Owner, and
+/// chart-of-accounts rows.
+pub(crate) async fn seed_periods_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    entity_id: Uuid,
+    fiscal_year: i32,
+    year_start_month: u32,
+) -> ErpResult<u32> {
+    let today = Utc::now().date_naive();
+    let now = Utc::now();
+    let mut count: u32 = 0;
+
+    for month_offset in 0..12u32 {
+        let month = ((year_start_month - 1 + month_offset) % 12) + 1;
+        let year = if month < year_start_month {
+            fiscal_year + 1
+        } else {
+            fiscal_year
+        };
+
+        let start_date = NaiveDate::from_ymd_opt(year, month, 1).ok_or_else(|| {
+            ErpError::ValidationFailed {
+                message: format!("Invalid date: {year}-{month}-01"),
+            }
+        })?;
+        let end_date = if month == 12 {
+            NaiveDate::from_ymd_opt(year, 12, 31).unwrap()
+        } else {
+            NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap() - Duration::days(1)
+        };
+
+        let status = if start_date > today { "future" } else { "open" };
+
+        sqlx::query(
+            r#"INSERT INTO fiscal_periods
+               (id, entity_id, name, start_date, end_date, status, fiscal_year, period_number, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (entity_id, start_date) DO NOTHING"#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(entity_id)
+        .bind(start_date.format("%B %Y").to_string())
+        .bind(start_date)
+        .bind(end_date)
+        .bind(status)
+        .bind(fiscal_year)
+        .bind((month_offset + 1) as i32)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+
+        count += 1;
+    }
+
+    Ok(count)
+}
+
 /// Provision a brand-new tenant atomically.
 ///
 /// All writes share a single [`sqlx::Transaction`]; any failure returns `Err`
@@ -323,6 +393,11 @@ pub async fn provision_tenant(
         0
     };
 
+    // Seed the current fiscal year's monthly periods so the tenant can post to
+    // the GL immediately. Defaults to a January-start fiscal year (matching the
+    // default Dec-31 year-end in entity_settings).
+    let periods_seeded = seed_periods_in_tx(&mut tx, entity_id, created_at.year(), 1).await?;
+
     // 7. Tenant-creation audit record — no password or hash is written
     //    (Req 11.1, 11.2, 11.3).
     let actor = serde_json::json!({
@@ -364,6 +439,7 @@ pub async fn provision_tenant(
         role: "Owner".to_string(),
         organization_name: req.organization_name,
         accounts_seeded,
+        periods_seeded,
     })
 }
 

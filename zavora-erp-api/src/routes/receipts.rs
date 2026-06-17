@@ -62,7 +62,7 @@ pub async fn capture(
                     confidence: 0.0,
                     raw_text: None,
                 };
-                if let Err(e) = ocr::process_ocr_result(engine, capture_id, entity_id, result).await {
+                if let Err(e) = ocr::process_ocr_result(engine, entity_id, capture_id, result).await {
                     tracing::error!("OCR processing failed for capture {}: {}", capture_id, e);
                 }
             });
