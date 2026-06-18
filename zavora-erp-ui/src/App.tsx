@@ -26,6 +26,7 @@ import JournalEntryDetailPage from './pages/accounts/JournalEntryDetailPage';
 import BudgetsPage from './pages/budgets/BudgetsPage';
 import DimensionsPage from './pages/dimensions/DimensionsPage';
 import CustomReportsPage from './pages/reports/CustomReportsPage';
+import ReportSchedulesPage from './pages/reports/ReportSchedulesPage';
 import ConsolidationPage from './pages/consolidation/ConsolidationPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
@@ -113,6 +114,7 @@ export default function App() {
             <Route path="consolidation" element={<ConsolidationPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="reports/custom" element={<CustomReportsPage />} />
+            <Route path="reports/schedules" element={<ReportSchedulesPage />} />
             <Route path="reports/:slug" element={<ReportPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />

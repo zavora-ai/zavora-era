@@ -7,6 +7,84 @@ use crate::error::{ErpError, ErpResult};
 use crate::invoicing::RecurringInvoiceRow;
 use crate::types::Channel;
 
+#[derive(Debug, sqlx::FromRow)]
+struct ReportScheduleRow {
+    id: Uuid,
+    name: String,
+    report_type: String,
+    cadence: String,
+    recipients: String,
+}
+
+/// Run any report schedules that are due for this entity: generate the report,
+/// queue it (as CSV) to each recipient via the notification outbox, and advance
+/// next_run_at by the cadence. Returns the number of schedules run.
+pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
+    use crate::reporting::{ReportParameters, ReportRequest, ReportType};
+
+    let now = Utc::now();
+    let due = sqlx::query_as::<_, ReportScheduleRow>(
+        "SELECT id, name, report_type, cadence, recipients FROM report_schedules
+         WHERE entity_id = $1 AND is_active = true AND (next_run_at IS NULL OR next_run_at <= $2)",
+    )
+    .bind(engine.entity_id())
+    .bind(now)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut count = 0u32;
+    for s in due {
+        // Stored report_type is the enum variant name, e.g. "TrialBalance".
+        let Ok(report_type) = serde_json::from_str::<ReportType>(&format!("\"{}\"", s.report_type)) else {
+            tracing::warn!("Report schedule {} has unknown report_type {}", s.id, s.report_type);
+            continue;
+        };
+        let req = ReportRequest {
+            entity_id: engine.entity_id(),
+            report_type,
+            parameters: ReportParameters {
+                as_at: None, period_from: None, period_to: None, compare_to: None,
+                comparative: None, customer_id: None, vendor_id: None, account_code: None,
+                bank_account_id: None, statement_id: None, period_id: None, dimension_type: None,
+            },
+        };
+
+        let report = match crate::services::reporting::generate_report(engine, req).await {
+            Ok(r) => r,
+            Err(e) => { tracing::error!("Scheduled report {} failed: {}", s.id, e); continue; }
+        };
+        let csv = crate::services::reporting::export_to_csv(&report).unwrap_or_default();
+
+        let recipients: Vec<String> = s.recipients.split(',').map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
+        if !recipients.is_empty() {
+            let req = crate::notifications::SendNotificationRequest {
+                event_type: crate::notifications::NotificationEventType::ScheduledReport,
+                channels: vec![crate::types::Channel::Email],
+                recipients,
+                subject: Some(format!("{} — {}", s.name, now.date_naive())),
+                body: String::from_utf8_lossy(&csv).to_string(),
+                related_type: Some("report_schedule".to_string()),
+                related_id: Some(s.id),
+                schedule_at: None,
+            };
+            let _ = crate::services::notifications::send_notification(engine, engine.entity_id(), req).await;
+        }
+
+        let next = match s.cadence.as_str() {
+            "daily" => now + chrono::Duration::days(1),
+            "weekly" => now + chrono::Duration::days(7),
+            _ => now.checked_add_months(chrono::Months::new(1)).unwrap_or(now + chrono::Duration::days(30)),
+        };
+        sqlx::query("UPDATE report_schedules SET last_run_at = $1, next_run_at = $2 WHERE id = $3")
+            .bind(now).bind(next).bind(s.id)
+            .execute(engine.pool())
+            .await?;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
 /// Process all recurring invoices that are due today or earlier.
 /// Creates invoices for each due recurring template.
 pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uuid>> {

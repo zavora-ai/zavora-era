@@ -11,6 +11,7 @@ pub mod budgets;
 pub mod consolidation;
 pub mod custom_reports;
 pub mod dimensions;
+pub mod report_schedules;
 pub mod supplier_credit_notes;
 pub mod payments;
 pub mod transactions;

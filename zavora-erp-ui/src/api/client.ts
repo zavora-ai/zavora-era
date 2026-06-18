@@ -121,6 +121,10 @@ export const saveCustomReport = (data: { id?: string; name: string; definition: 
 export const deleteCustomReport = (id: string) => api.delete(`/custom-reports/${id}`);
 export const runCustomReport = (id: string, from: string, to: string) =>
   api.get(`/custom-reports/${id}/run`, { params: { from, to } });
+export const getReportSchedules = () => api.get('/report-schedules');
+export const saveReportSchedule = (data: { id?: string; name: string; report_type: string; cadence: string; recipients: string; is_active?: boolean }) =>
+  api.post('/report-schedules', data);
+export const deleteReportSchedule = (id: string) => api.delete(`/report-schedules/${id}`);
 export const getConsolidationEntities = () => api.get('/consolidation/entities');
 export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
   api.post('/consolidation/trial-balance', data);

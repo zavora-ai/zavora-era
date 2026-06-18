@@ -17,6 +17,7 @@ pub enum NotificationEventType {
     ReceiptProcessed,
     PaymentReceived,
     CreditLimitExceeded,
+    ScheduledReport,
 }
 
 /// Status of a notification.
