@@ -64,19 +64,50 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = vat_return(engine, entity_id, req.parameters).await?;
             ReportContent::VatReturn(report)
         }
+        ReportType::CustomerStatement => {
+            let report = party_statement(engine, entity_id, req.parameters, PartyKind::Customer).await?;
+            ReportContent::PartyStatement(report)
+        }
+        ReportType::VendorStatement => {
+            let report = party_statement(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
+            ReportContent::PartyStatement(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
     };
 
     Ok(ReportData {
-        report_type: req.report_type,
+        report_type: req.report_type.clone(),
         generated_at: now,
         entity_id: req.entity_id,
-        title: "Report".to_string(),
+        title: title_for(&req.report_type),
         subtitle: None,
         content,
     })
+}
+
+/// Human-readable title for a report type (shown on the statement letterhead).
+fn title_for(report_type: &ReportType) -> String {
+    match report_type {
+        ReportType::TrialBalance => "Trial Balance",
+        ReportType::BalanceSheet => "Balance Sheet",
+        ReportType::ProfitAndLoss => "Profit & Loss Statement",
+        ReportType::CashFlow => "Cash Flow Statement",
+        ReportType::ArAgeing => "Accounts Receivable Ageing",
+        ReportType::ApAgeing => "Accounts Payable Ageing",
+        ReportType::VatReturn => "VAT Return",
+        ReportType::GlDetail => "General Ledger",
+        ReportType::CustomerStatement => "Customer Statement",
+        ReportType::VendorStatement => "Vendor Statement",
+        ReportType::CustomerPaymentHistory => "Customer Payment History",
+        ReportType::BankReconSummary => "Bank Reconciliation Summary",
+        ReportType::PayrollSummary => "Payroll Summary",
+        ReportType::PayeP10 => "PAYE Return (P10)",
+        ReportType::WhtCertificate => "Withholding Tax Certificate",
+        ReportType::SalesTaxSummary => "Sales Tax Summary",
+    }
+    .to_string()
 }
 
 /// Generate dashboard summary.
@@ -876,6 +907,24 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
             output.extend_from_slice(format!("{},{}\n", label, v.net_vat.abs()).as_bytes());
         }
+        ReportContent::PartyStatement(s) => {
+            output.extend_from_slice(format!("Statement for {} ({})\n", csv_escape(&s.party_name), s.party_kind).as_bytes());
+            output.extend_from_slice(b"Date,Type,Reference,Charge,Payment,Balance\n");
+            output.extend_from_slice(format!(",,Opening Balance,,,{}\n", s.opening_balance).as_bytes());
+            for line in &s.lines {
+                let row = format!(
+                    "{},{},{},{},{},{}\n",
+                    line.date,
+                    csv_escape(&line.doc_type),
+                    csv_escape(&line.reference),
+                    line.charge,
+                    line.payment,
+                    line.balance,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,Closing Balance,{},{},{}\n", s.total_charges, s.total_payments, s.closing_balance).as_bytes());
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1019,6 +1068,158 @@ struct AgeingQueryRow {
     party_name: String,
     balance_due: Decimal,
     due_date: NaiveDate,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum PartyKind {
+    Customer,
+    Vendor,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StatementRow {
+    date: NaiveDate,
+    doc_type: String,
+    reference: String,
+    charge: Decimal,
+    payment: Decimal,
+}
+
+/// Customer or vendor statement: opening balance + dated charges/payments with a
+/// running balance. A customer's charges are invoices and payments are receipts;
+/// a vendor's charges are bills and payments are payments we made. Payments are
+/// matched to the party by `party_id` (customer and vendor ids never collide).
+async fn party_statement(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+    kind: PartyKind,
+) -> ErpResult<PartyStatementReport> {
+    let today = Utc::now().date_naive();
+    let period_to = params.period_to.unwrap_or(today);
+    // Default to the start of period_to's year if no explicit start given.
+    let period_from = params
+        .period_from
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(period_to.year(), 1, 1).unwrap());
+
+    let (party_id, party_table, doc_table, fk_col, charge_label, party_kind) = match kind {
+        PartyKind::Customer => (
+            params.customer_id,
+            "customers",
+            "invoices",
+            "customer_id",
+            "Invoice",
+            "customer",
+        ),
+        PartyKind::Vendor => (
+            params.vendor_id,
+            "vendors",
+            "bills",
+            "vendor_id",
+            "Bill",
+            "vendor",
+        ),
+    };
+
+    let party_id = party_id.ok_or_else(|| crate::error::ErpError::ValidationFailed {
+        message: format!("A {party_kind} must be selected for this statement"),
+    })?;
+
+    let party_name: String = sqlx::query_scalar(&format!(
+        "SELECT name FROM {party_table} WHERE id = $1 AND entity_id = $2"
+    ))
+    .bind(party_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| crate::error::ErpError::NotFound {
+        entity_type: party_kind.to_string(),
+        id: party_id,
+    })?;
+
+    // Invoices/bills excluded while still a draft (not yet a real obligation).
+    let charge_status_excl = "('draft', 'voided', 'cancelled')";
+    let pay_label = match kind {
+        PartyKind::Customer => "Receipt",
+        PartyKind::Vendor => "Payment",
+    };
+
+    // Opening balance = charges - payments strictly before the period start.
+    let opening_charges: Decimal = sqlx::query_scalar(&format!(
+        "SELECT COALESCE(SUM(gross_total), 0) FROM {doc_table}
+         WHERE entity_id = $1 AND {fk_col} = $2
+           AND status NOT IN {charge_status_excl} AND issue_date < $3"
+    ))
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await?;
+
+    let opening_payments: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM payments
+         WHERE entity_id = $1 AND party_id = $2 AND status = 'completed' AND payment_date < $3",
+    )
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await?;
+
+    let opening_balance = opening_charges - opening_payments;
+
+    // Activity within the period, charges and payments interleaved by date.
+    let rows = sqlx::query_as::<_, StatementRow>(&format!(
+        "SELECT issue_date AS date, '{charge_label}' AS doc_type, number AS reference,
+                gross_total AS charge, 0::numeric AS payment
+         FROM {doc_table}
+         WHERE entity_id = $1 AND {fk_col} = $2
+           AND status NOT IN {charge_status_excl} AND issue_date BETWEEN $3 AND $4
+         UNION ALL
+         SELECT payment_date AS date, '{pay_label}' AS doc_type, number AS reference,
+                0::numeric AS charge, amount AS payment
+         FROM payments
+         WHERE entity_id = $1 AND party_id = $2 AND status = 'completed'
+           AND payment_date BETWEEN $3 AND $4
+         ORDER BY date, doc_type"
+    ))
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut balance = opening_balance;
+    let mut total_charges = Decimal::ZERO;
+    let mut total_payments = Decimal::ZERO;
+    let mut lines = Vec::with_capacity(rows.len());
+    for r in rows {
+        balance += r.charge - r.payment;
+        total_charges += r.charge;
+        total_payments += r.payment;
+        lines.push(StatementLine {
+            date: r.date,
+            doc_type: r.doc_type,
+            reference: r.reference,
+            charge: r.charge,
+            payment: r.payment,
+            balance,
+        });
+    }
+
+    Ok(PartyStatementReport {
+        party_id,
+        party_name,
+        party_kind: party_kind.to_string(),
+        period_from,
+        period_to,
+        opening_balance,
+        lines,
+        total_charges,
+        total_payments,
+        closing_balance: balance,
+    })
 }
 
 /// GL detail report.

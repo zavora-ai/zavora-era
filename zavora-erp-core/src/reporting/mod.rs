@@ -25,6 +25,7 @@ pub enum ReportType {
     VatReturn,
     GlDetail,
     CustomerStatement,
+    VendorStatement,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -71,6 +72,7 @@ pub enum ReportContent {
     ApAgeing(AgeingReport),
     GlDetail(GlDetailReport),
     VatReturn(VatReturnReport),
+    PartyStatement(PartyStatementReport),
     Generic(serde_json::Value),
 }
 
@@ -281,6 +283,42 @@ pub struct VatReturnReport {
     pub is_payable: bool,
     pub vat_output_account: String,
     pub vat_input_account: String,
+}
+
+/// Customer or vendor statement — a running-balance account activity report
+/// for one party over a period. Charges (invoices/bills) increase the balance
+/// outstanding; payments (receipts/payments) reduce it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyStatementReport {
+    pub party_id: Uuid,
+    pub party_name: String,
+    /// "customer" or "vendor".
+    pub party_kind: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    /// Balance outstanding immediately before period_from.
+    pub opening_balance: Decimal,
+    pub lines: Vec<StatementLine>,
+    /// Sum of charges (invoices for a customer; bills for a vendor) in the period.
+    pub total_charges: Decimal,
+    /// Sum of payments (receipts for a customer; payments for a vendor) in the period.
+    pub total_payments: Decimal,
+    /// Balance outstanding at period_to (opening + charges - payments).
+    pub closing_balance: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatementLine {
+    pub date: NaiveDate,
+    /// "Invoice" / "Bill" / "Receipt" / "Payment".
+    pub doc_type: String,
+    pub reference: String,
+    /// Amount that increases the outstanding balance (invoice/bill).
+    pub charge: Decimal,
+    /// Amount that reduces the outstanding balance (receipt/payment).
+    pub payment: Decimal,
+    /// Running outstanding balance after this line.
+    pub balance: Decimal,
 }
 
 /// Export output from report generation.

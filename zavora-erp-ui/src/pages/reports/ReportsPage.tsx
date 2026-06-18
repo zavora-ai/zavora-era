@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { generateReport, exportReport, getSettings } from '../../api/client';
+import { generateReport, exportReport, getSettings, getCustomers, getVendors } from '../../api/client';
 import PageHeader from '../../components/shared/PageHeader';
 import { formatCurrency } from '../../utils/format';
 import { BarChart3, FileDown, FileSpreadsheet, Printer, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 const ZERO_ENTITY = '00000000-0000-0000-0000-000000000000';
 
-type CtrlKind = 'asAt' | 'period' | 'account';
+type CtrlKind = 'asAt' | 'period' | 'account' | 'party';
 
-const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind[]; comparable?: boolean }[] = [
+const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind[]; comparable?: boolean; party?: 'customer' | 'vendor' }[] = [
   { key: 'TrialBalance', name: 'Trial Balance', desc: 'Account balances at a point in time', controls: ['asAt'] },
   { key: 'BalanceSheet', name: 'Balance Sheet', desc: 'Assets, liabilities, and equity', controls: ['asAt'], comparable: true },
   { key: 'ProfitAndLoss', name: 'Profit & Loss', desc: 'Revenue and expenses for a period', controls: ['period'], comparable: true },
@@ -17,6 +17,8 @@ const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind
   { key: 'ArAgeing', name: 'AR Ageing', desc: 'Customer balances by age bucket', controls: ['asAt'] },
   { key: 'ApAgeing', name: 'AP Ageing', desc: 'Vendor balances by age bucket', controls: ['asAt'] },
   { key: 'VatReturn', name: 'VAT Return', desc: 'Output vs input VAT, net payable to KRA', controls: ['period'] },
+  { key: 'CustomerStatement', name: 'Customer Statement', desc: 'Account activity & balance for one customer', controls: ['party', 'period'], party: 'customer' },
+  { key: 'VendorStatement', name: 'Vendor Statement', desc: 'Account activity & balance for one vendor', controls: ['party', 'period'], party: 'vendor' },
   { key: 'GlDetail', name: 'General Ledger', desc: 'Transaction detail by account', controls: ['period', 'account'] },
 ];
 
@@ -29,12 +31,18 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(yearStart);
   const [to, setTo] = useState(today);
   const [account, setAccount] = useState('1200');
+  const [partyId, setPartyId] = useState('');
   const [compare, setCompare] = useState(false);
   const [result, setResult] = useState<any>(null);
 
   const meta = reportTypes.find((r) => r.key === selected)!;
   const { data: settingsRes } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
   const branding = settingsRes?.data?.branding;
+
+  const { data: customersRes } = useQuery({ queryKey: ['customers'], queryFn: getCustomers });
+  const { data: vendorsRes } = useQuery({ queryKey: ['vendors'], queryFn: getVendors });
+  const parties: { id: string; name: string }[] = (meta.party === 'vendor' ? vendorsRes?.data : customersRes?.data) ?? [];
+  const needsParty = meta.controls.includes('party');
 
   const buildReq = () => ({
     entity_id: ZERO_ENTITY,
@@ -44,6 +52,8 @@ export default function ReportsPage() {
       period_from: meta.controls.includes('period') ? from : null,
       period_to: meta.controls.includes('period') ? to : null,
       account_code: meta.controls.includes('account') ? account : null,
+      customer_id: meta.party === 'customer' ? partyId || null : null,
+      vendor_id: meta.party === 'vendor' ? partyId || null : null,
       comparative: meta.comparable ? compare : false,
     },
   });
@@ -86,6 +96,15 @@ export default function ReportsPage() {
 
         {/* Controls */}
         <div className="card p-4 mb-5 flex flex-wrap items-end gap-4">
+          {needsParty && (
+            <div>
+              <label className="label">{meta.party === 'vendor' ? 'Vendor' : 'Customer'}</label>
+              <select className="input min-w-[12rem]" value={partyId} onChange={(e) => setPartyId(e.target.value)}>
+                <option value="">Select {meta.party}…</option>
+                {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
           {meta.controls.includes('asAt') && (
             <div>
               <label className="label">As at</label>
@@ -108,7 +127,7 @@ export default function ReportsPage() {
             </label>
           )}
           <div className="flex-1" />
-          <button onClick={() => mutation.mutate()} className="btn-primary" disabled={mutation.isPending}>
+          <button onClick={() => mutation.mutate()} className="btn-primary" disabled={mutation.isPending || (needsParty && !partyId)}>
             {mutation.isPending ? 'Generating…' : 'Generate'}
           </button>
           <button onClick={() => window.print()} className="btn-secondary" disabled={!result} title="Print / save as PDF">
@@ -185,8 +204,9 @@ function ReportDocument({ result, branding }: { result: any; branding: any }) {
         {key === 'BalanceSheet' && <BalanceSheet c={c} />}
         {key === 'ProfitAndLoss' && <ProfitAndLoss c={c} />}
         {key === 'VatReturn' && <VatReturn c={c} />}
+        {key === 'PartyStatement' && <PartyStatement c={c} />}
         {key === 'GlDetail' && <GlDetail c={c} />}
-        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'GlDetail'].includes(key) && (
+        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'GlDetail'].includes(key) && (
           <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
         )}
       </div>
@@ -315,6 +335,53 @@ function VatReturn({ c }: { c: any }) {
         </tr>
       </tbody>
     </table>
+  );
+}
+
+function PartyStatement({ c }: { c: any }) {
+  return (
+    <div>
+      <p className="text-sm mb-3"><span className="text-gray-500">Statement for:</span> <span className="font-semibold text-gray-900">{c.party_name}</span></p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-gray-500 uppercase border-b">
+            <th className="text-left py-2">Date</th>
+            <th className="text-left">Type</th>
+            <th className="text-left">Reference</th>
+            <th className="text-right">Charge</th>
+            <th className="text-right">Payment</th>
+            <th className="text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-gray-50 text-gray-500">
+            <td className="py-1.5" colSpan={5}>Opening balance</td>
+            <td className="text-right font-medium">{num(c.opening_balance)}</td>
+          </tr>
+          {c.lines.map((l: any, i: number) => (
+            <tr key={i} className="border-b border-gray-50">
+              <td className="py-1.5">{l.date}</td>
+              <td>{l.doc_type}</td>
+              <td className="text-gray-500">{l.reference}</td>
+              <td className="text-right">{Number(l.charge) ? num(l.charge) : '—'}</td>
+              <td className="text-right">{Number(l.payment) ? num(l.payment) : '—'}</td>
+              <td className="text-right">{num(l.balance)}</td>
+            </tr>
+          ))}
+          {c.lines.length === 0 && (
+            <tr><td colSpan={6} className="py-4 text-center text-gray-400">No activity in this period</td></tr>
+          )}
+        </tbody>
+        <tfoot>
+          <tr className="font-bold border-t-2">
+            <td className="py-2" colSpan={3}>Closing balance</td>
+            <td className="text-right">{num(c.total_charges)}</td>
+            <td className="text-right">{num(c.total_payments)}</td>
+            <td className="text-right">{num(c.closing_balance)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   );
 }
 

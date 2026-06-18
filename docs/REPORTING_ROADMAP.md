@@ -9,7 +9,7 @@ AR/AP Ageing, VAT Return — with audit-grade balancing/reconciliation, comparat
 periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 
 ## 1. Pending reports
-- ⬜ **Customer & Vendor statements** — opening balance, activity, running/closing balance; party + date-range filters.
+- ✅ **Customer & Vendor statements** — opening balance, dated activity, running/closing balance; party + date-range filters. (CustomerStatement / VendorStatement report types.)
 - ⬜ **KRA statutory** — PAYE P10 monthly schedule, WHT certificate (P10A), VAT summary by document & rate.
 - ⬜ **Payroll Summary** — gross, PAYE, NSSF, SHA, housing levy, HELB, net; per-run and per-employee.
 - ⬜ **Bank Reconciliation Summary** — GL vs statement balance, matched/unmatched, outstanding items.
