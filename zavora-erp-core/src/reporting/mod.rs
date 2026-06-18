@@ -84,6 +84,7 @@ pub enum ReportContent {
     PartyRanking(PartyRankingReport),
     InventoryValuation(InventoryValuationReport),
     FixedAssetRegister(FixedAssetRegisterReport),
+    BankReconSummary(BankReconSummaryReport),
     Generic(serde_json::Value),
 }
 
@@ -530,6 +531,38 @@ pub struct FixedAssetLine {
     pub accumulated_depreciation: Decimal,
     pub net_book_value: Decimal,
     pub status: String,
+}
+
+/// Bank reconciliation summary — for each bank account, the statement balance
+/// (the bank's own running balance) against the GL balance of its control
+/// account, with the matched/unmatched feed items that explain any difference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankReconSummaryReport {
+    pub as_at: NaiveDate,
+    pub accounts: Vec<BankReconLine>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankReconLine {
+    pub bank_account_id: Uuid,
+    pub account_name: String,
+    pub bank_name: String,
+    pub gl_account: String,
+    /// Latest running balance from the imported bank feed (as-at).
+    pub statement_balance: Decimal,
+    /// GL balance of the bank control account (debit positive).
+    pub gl_balance: Decimal,
+    /// Feed lines already posted to the GL.
+    pub matched_count: u32,
+    /// Feed lines not yet posted (the reconciling items).
+    pub unmatched_count: u32,
+    /// Net of the unmatched feed lines (money in − money out).
+    pub unreconciled_amount: Decimal,
+    /// statement_balance − gl_balance.
+    pub difference: Decimal,
+    /// True when the difference is fully explained by the unmatched items
+    /// (|difference − unreconciled_amount| < 0.01).
+    pub is_reconciled: bool,
 }
 
 /// Export output from report generation.

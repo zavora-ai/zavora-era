@@ -104,6 +104,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = fixed_asset_register(engine, entity_id, req.parameters).await?;
             ReportContent::FixedAssetRegister(report)
         }
+        ReportType::BankReconSummary => {
+            let report = bank_recon_summary(engine, entity_id, req.parameters).await?;
+            ReportContent::BankReconSummary(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -1073,6 +1077,21 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 format!(",,,Total,{},{},{},\n", fa.total_cost, fa.total_accumulated_depreciation, fa.total_net_book_value).as_bytes(),
             );
         }
+        ReportContent::BankReconSummary(br) => {
+            output.extend_from_slice(b"Account,Bank,GL Account,Statement Balance,GL Balance,Difference,Unmatched Items,Unreconciled Amount,Reconciled\n");
+            for l in &br.accounts {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.account_name),
+                    csv_escape(&l.bank_name),
+                    csv_escape(&l.gl_account),
+                    l.statement_balance, l.gl_balance, l.difference,
+                    l.unmatched_count, l.unreconciled_amount,
+                    if l.is_reconciled { "Yes" } else { "No" },
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1910,6 +1929,119 @@ async fn fixed_asset_register(
         total_net_book_value: lines.iter().map(|l| l.net_book_value).sum(),
         lines,
     })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BankAccountRow {
+    id: Uuid,
+    name: String,
+    bank_name: String,
+    gl_account: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BankFeedStatsRow {
+    matched_count: i64,
+    unmatched_count: i64,
+    unreconciled_amount: Decimal,
+}
+
+/// Bank reconciliation summary: statement balance vs GL balance per bank account
+/// as at a date, with matched/unmatched feed lines explaining the difference.
+async fn bank_recon_summary(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<BankReconSummaryReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    // One account, or all of them.
+    let accounts = if let Some(bank_id) = params.bank_account_id {
+        sqlx::query_as::<_, BankAccountRow>(
+            "SELECT id, name, bank_name, gl_account FROM bank_accounts WHERE entity_id = $1 AND id = $2",
+        )
+        .bind(entity_id)
+        .bind(bank_id)
+        .fetch_all(engine.pool())
+        .await?
+    } else {
+        sqlx::query_as::<_, BankAccountRow>(
+            "SELECT id, name, bank_name, gl_account FROM bank_accounts WHERE entity_id = $1 ORDER BY name",
+        )
+        .bind(entity_id)
+        .fetch_all(engine.pool())
+        .await?
+    };
+
+    let mut lines = Vec::with_capacity(accounts.len());
+    for a in accounts {
+        // Bank's own running balance on the most recent feed line up to the date.
+        let statement_balance: Decimal = sqlx::query_scalar(
+            "SELECT running_bal FROM imported_transactions
+             WHERE entity_id = $1 AND bank_account = $2 AND value_date <= $3
+             ORDER BY value_date DESC, created_at DESC
+             LIMIT 1",
+        )
+        .bind(entity_id)
+        .bind(a.id)
+        .bind(as_at)
+        .fetch_optional(engine.pool())
+        .await?
+        .unwrap_or(Decimal::ZERO);
+
+        // GL balance of the control account (debit positive) up to the date.
+        let gl_balance: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(COALESCE(functional_debit, 0) - COALESCE(functional_credit, 0)), 0)
+             FROM journal_lines
+             WHERE entity_id = $1 AND account_code = $2 AND entry_date <= $3",
+        )
+        .bind(entity_id)
+        .bind(&a.gl_account)
+        .bind(as_at)
+        .fetch_one(engine.pool())
+        .await?;
+
+        // Matched/unmatched feed lines and the net of the unmatched ones.
+        let stats = sqlx::query_as::<_, BankFeedStatsRow>(
+            "SELECT
+                 COUNT(*) FILTER (WHERE journal_entry_id IS NOT NULL) AS matched_count,
+                 COUNT(*) FILTER (WHERE journal_entry_id IS NULL)     AS unmatched_count,
+                 COALESCE(SUM(CASE WHEN journal_entry_id IS NULL
+                                   THEN COALESCE(credit, 0) - COALESCE(debit, 0) ELSE 0 END), 0)
+                     AS unreconciled_amount
+             FROM imported_transactions
+             WHERE entity_id = $1 AND bank_account = $2 AND value_date <= $3",
+        )
+        .bind(entity_id)
+        .bind(a.id)
+        .bind(as_at)
+        .fetch_one(engine.pool())
+        .await?;
+
+        let difference = statement_balance - gl_balance;
+        let is_reconciled = (difference - stats.unreconciled_amount).abs() < dec_cent();
+
+        lines.push(BankReconLine {
+            bank_account_id: a.id,
+            account_name: a.name,
+            bank_name: a.bank_name,
+            gl_account: a.gl_account,
+            statement_balance,
+            gl_balance,
+            matched_count: stats.matched_count as u32,
+            unmatched_count: stats.unmatched_count as u32,
+            unreconciled_amount: stats.unreconciled_amount,
+            difference,
+            is_reconciled,
+        });
+    }
+
+    Ok(BankReconSummaryReport { as_at, accounts: lines })
+}
+
+/// 0.01 tolerance for balance comparisons.
+fn dec_cent() -> Decimal {
+    Decimal::new(1, 2)
 }
 
 /// GL detail report.
