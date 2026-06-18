@@ -17,8 +17,8 @@ periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 - ⬜ **Inventory Valuation & Fixed-Asset register** — qty/cost/value; cost/accum-dep/NBV.
 
 ## 2. Presentation
-- ⬜ **Full-page statement layout** — company name/logo + KRA PIN header, title, period/as-at, indented sections, bold subtotals, right-aligned figures, generated-on footer.
-- ⬜ **Print + PDF + Excel export** — print stylesheet (Print → PDF), XLSX export alongside CSV.
+- ✅ **Full-page statement layout** — company name/logo + KRA PIN header, title, period/as-at, indented sections, bold subtotals, right-aligned figures, generated-on footer.
+- ✅ **Print + PDF + Excel export** — print stylesheet (Print → PDF), .xls export alongside CSV.
 - ⬜ **Drill-down to transactions** — account on TB/BS/P&L → General Ledger → source document.
 - ⬜ **Collapsible sections + loading/empty/error states** — expand/collapse, skeletons, empty/error with retry.
 
