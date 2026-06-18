@@ -24,6 +24,7 @@ import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
+import ReportPage from './pages/reports/ReportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="journal-entries" element={<JournalEntriesPage />} />
             <Route path="periods" element={<PeriodsPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/:slug" element={<ReportPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
