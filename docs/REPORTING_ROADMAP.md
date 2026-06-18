@@ -19,7 +19,7 @@ periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 ## 2. Presentation
 - ✅ **Full-page statement layout** — company name/logo + KRA PIN header, title, period/as-at, indented sections, bold subtotals, right-aligned figures, generated-on footer.
 - ✅ **Print + PDF + Excel export** — print stylesheet (Print → PDF), .xls export alongside CSV.
-- ⬜ **Drill-down to transactions** — account on TB/BS/P&L → General Ledger → source document.
+- ◻ **Drill-down to transactions** — account on TB/BS/P&L → General Ledger ✅ (period carried through). GL → source document still pending (needs a Journals/transactions page + entry id on GL lines).
 - ⬜ **Collapsible sections + loading/empty/error states** — expand/collapse, skeletons, empty/error with retry.
 
 ## 3. Customisation

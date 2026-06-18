@@ -80,6 +80,32 @@ export default function ReportsPage() {
   const select = (key: string) => { setSelected(key); setResult(null); };
   const exportExcel = () => exportDomAsExcel(result?.title || meta.name);
 
+  // Drill from an account on a statement into its General Ledger detail,
+  // carrying the statement's period (or year-to-date for an as-at report).
+  const drillMutation = useMutation({
+    mutationFn: (v: { account: string; from: string; to: string }) =>
+      generateReport({
+        entity_id: ZERO_ENTITY,
+        report_type: 'GlDetail',
+        parameters: { as_at: null, period_from: v.from, period_to: v.to, account_code: v.account, customer_id: null, vendor_id: null, comparative: false },
+      }),
+    onSuccess: (res) => setResult(res.data),
+  });
+
+  const drillTo = (accountCode: string) => {
+    const content = result?.content ?? {};
+    const cc = content[Object.keys(content)[0]] ?? {};
+    let f = from, t = to;
+    if (cc.as_at) { f = `${new Date(cc.as_at).getFullYear()}-01-01`; t = cc.as_at; }
+    else if (cc.period_from && cc.period_to) { f = cc.period_from; t = cc.period_to; }
+    setSelected('GlDetail');
+    setAccount(accountCode);
+    setFrom(f);
+    setTo(t);
+    setResult(null);
+    drillMutation.mutate({ account: accountCode, from: f, to: t });
+  };
+
   return (
     <div>
       <div className="no-print">
@@ -155,9 +181,12 @@ export default function ReportsPage() {
             <AlertTriangle className="w-4 h-4" /> Could not generate this report. Check the dates and try again.
           </div>
         )}
+        {drillMutation.isPending && (
+          <div className="card p-4 mb-5 text-sm text-gray-500">Loading general ledger…</div>
+        )}
       </div>
 
-      {result && <ReportDocument result={result} branding={branding} />}
+      {result && <ReportDocument result={result} branding={branding} onDrill={drillTo} />}
     </div>
   );
 }
@@ -172,7 +201,7 @@ function periodLabel(c: any): string {
   return '';
 }
 
-function ReportDocument({ result, branding }: { result: any; branding: any }) {
+function ReportDocument({ result, branding, onDrill }: { result: any; branding: any; onDrill?: (code: string) => void }) {
   const content = result.content ?? {};
   const key = Object.keys(content)[0];
   const c = content[key];
@@ -209,9 +238,9 @@ function ReportDocument({ result, branding }: { result: any; branding: any }) {
 
       {/* Body */}
       <div className="px-10 py-8">
-        {key === 'TrialBalance' && <TrialBalance c={c} />}
-        {key === 'BalanceSheet' && <BalanceSheet c={c} />}
-        {key === 'ProfitAndLoss' && <ProfitAndLoss c={c} />}
+        {key === 'TrialBalance' && <TrialBalance c={c} onDrill={onDrill} />}
+        {key === 'BalanceSheet' && <BalanceSheet c={c} onDrill={onDrill} />}
+        {key === 'ProfitAndLoss' && <ProfitAndLoss c={c} onDrill={onDrill} />}
         {key === 'VatReturn' && <VatReturn c={c} />}
         {key === 'PartyStatement' && <PartyStatement c={c} />}
         {key === 'PayrollSummary' && <PayrollSummary c={c} />}
@@ -251,14 +280,25 @@ function Balanced({ ok, diff }: { ok: boolean; diff: number }) {
 
 const num = (n: number) => <span className="tabular-nums">{formatCurrency(n)}</span>;
 
-function TrialBalance({ c }: { c: any }) {
+// An account label that drills into the General Ledger when clicked.
+function AccountCell({ code, name, onDrill }: { code: string; name: string; onDrill?: (code: string) => void }) {
+  const inner = <><span className="font-mono text-xs text-gray-400">{code}</span> {name}</>;
+  if (!onDrill || !code) return <>{inner}</>;
+  return (
+    <button onClick={() => onDrill(code)} className="text-left hover:text-indigo-600 hover:underline cursor-pointer" title="View general ledger">
+      {inner}
+    </button>
+  );
+}
+
+function TrialBalance({ c, onDrill }: { c: any; onDrill?: (code: string) => void }) {
   return (
     <table className="w-full text-sm">
       <thead><tr className="text-xs text-gray-500 uppercase border-b"><th className="text-left py-2">Account</th><th className="text-right">Debit</th><th className="text-right">Credit</th></tr></thead>
       <tbody>
         {c.lines.map((l: any) => (
           <tr key={l.account_code} className="border-b border-gray-50">
-            <td className="py-1.5"><span className="font-mono text-xs text-gray-400">{l.account_code}</span> {l.account_name}</td>
+            <td className="py-1.5"><AccountCell code={l.account_code} name={l.account_name} onDrill={onDrill} /></td>
             <td className="text-right">{l.closing_debit ? num(l.closing_debit) : '—'}</td>
             <td className="text-right">{l.closing_credit ? num(l.closing_credit) : '—'}</td>
           </tr>
@@ -279,13 +319,13 @@ function TwoColHead({ comparative, label }: { comparative?: string; label: strin
   );
 }
 
-function Section({ title, section, comparative }: { title: string; section: any; comparative?: string }) {
+function Section({ title, section, comparative, onDrill }: { title: string; section: any; comparative?: string; onDrill?: (code: string) => void }) {
   return (
     <>
       <tr className="bg-gray-50"><td className="py-1.5 font-semibold text-gray-700" colSpan={comparative ? 3 : 2}>{title}</td></tr>
       {section.lines.map((l: any) => (
         <tr key={l.account_code + l.account_name} className="border-b border-gray-50">
-          <td className="py-1.5 pl-4"><span className="font-mono text-xs text-gray-400">{l.account_code}</span> {l.account_name}</td>
+          <td className="py-1.5 pl-4"><AccountCell code={l.account_code} name={l.account_name} onDrill={onDrill} /></td>
           <td className="text-right">{num(l.amount)}</td>
           {comparative && <td className="text-right text-gray-500">{l.comparative != null ? num(l.comparative) : '—'}</td>}
         </tr>
@@ -295,16 +335,16 @@ function Section({ title, section, comparative }: { title: string; section: any;
   );
 }
 
-function BalanceSheet({ c }: { c: any }) {
+function BalanceSheet({ c, onDrill }: { c: any; onDrill?: (code: string) => void }) {
   const cmp = c.comparative_as_at as string | null;
   return (
     <table className="w-full text-sm">
       <thead><TwoColHead label={`As at ${c.as_at}`} comparative={cmp ?? undefined} /></thead>
       <tbody>
-        {c.assets.map((s: any, i: number) => <Section key={'a' + i} title={s.name} section={s} comparative={cmp ?? undefined} />)}
+        {c.assets.map((s: any, i: number) => <Section key={'a' + i} title={s.name} section={s} comparative={cmp ?? undefined} onDrill={onDrill} />)}
         <tr className="font-bold"><td className="py-2">Total Assets</td><td className="text-right">{num(c.total_assets)}</td>{cmp && <td className="text-right">{c.total_assets_comparative != null ? num(c.total_assets_comparative) : '—'}</td>}</tr>
-        {c.liabilities.map((s: any, i: number) => <Section key={'l' + i} title={s.name} section={s} comparative={cmp ?? undefined} />)}
-        {c.equity.map((s: any, i: number) => <Section key={'e' + i} title={s.name} section={s} comparative={cmp ?? undefined} />)}
+        {c.liabilities.map((s: any, i: number) => <Section key={'l' + i} title={s.name} section={s} comparative={cmp ?? undefined} onDrill={onDrill} />)}
+        {c.equity.map((s: any, i: number) => <Section key={'e' + i} title={s.name} section={s} comparative={cmp ?? undefined} onDrill={onDrill} />)}
         <tr className="font-bold border-t-2"><td className="py-2">Total Liabilities + Equity</td><td className="text-right">{num(c.total_liabilities + c.total_equity)}</td>{cmp && <td className="text-right">{num((c.total_liabilities_comparative ?? 0) + (c.total_equity_comparative ?? 0))}</td>}</tr>
       </tbody>
     </table>
@@ -321,19 +361,19 @@ function PnlRow({ label, amount, comparative, cmp, bold }: { label: string; amou
   );
 }
 
-function ProfitAndLoss({ c }: { c: any }) {
+function ProfitAndLoss({ c, onDrill }: { c: any; onDrill?: (code: string) => void }) {
   const cmp = c.comparative_from != null;
   const cmpLabel = cmp ? `${c.comparative_from} – ${c.comparative_to}` : undefined;
   return (
     <table className="w-full text-sm">
       <thead><TwoColHead label={`${c.period_from} – ${c.period_to}`} comparative={cmpLabel} /></thead>
       <tbody>
-        {c.revenue.map((s: any, i: number) => <Section key={'r' + i} title={s.name} section={s} comparative={cmpLabel} />)}
-        {c.cost_of_sales.map((s: any, i: number) => <Section key={'c' + i} title={s.name} section={s} comparative={cmpLabel} />)}
+        {c.revenue.map((s: any, i: number) => <Section key={'r' + i} title={s.name} section={s} comparative={cmpLabel} onDrill={onDrill} />)}
+        {c.cost_of_sales.map((s: any, i: number) => <Section key={'c' + i} title={s.name} section={s} comparative={cmpLabel} onDrill={onDrill} />)}
         <PnlRow label="Gross Profit" amount={c.gross_profit} comparative={c.gross_profit_comparative} cmp={cmp} bold />
-        {c.operating_expenses.map((s: any, i: number) => <Section key={'o' + i} title={s.name} section={s} comparative={cmpLabel} />)}
+        {c.operating_expenses.map((s: any, i: number) => <Section key={'o' + i} title={s.name} section={s} comparative={cmpLabel} onDrill={onDrill} />)}
         <PnlRow label="Operating Profit" amount={c.operating_profit} comparative={c.operating_profit_comparative} cmp={cmp} bold />
-        {c.other_income_expense.map((s: any, i: number) => <Section key={'x' + i} title={s.name} section={s} comparative={cmpLabel} />)}
+        {c.other_income_expense.map((s: any, i: number) => <Section key={'x' + i} title={s.name} section={s} comparative={cmpLabel} onDrill={onDrill} />)}
         <PnlRow label="Net Profit" amount={c.net_profit} comparative={c.net_profit_comparative} cmp={cmp} bold />
       </tbody>
     </table>
