@@ -282,3 +282,42 @@ hr {
 .animate-slideUp {
   animation: slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* ============================================
+   PRINT (Print -> PDF of the active report)
+   ============================================ */
+@media print {
+  /* Hide app chrome and any control marked .no-print */
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Print only the report document, full-bleed */
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+
+  /* Avoid awkward breaks inside report rows/sections */
+  tr,
+  .report-section {
+    break-inside: avoid;
+  }
+}

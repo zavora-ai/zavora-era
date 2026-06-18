@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { generateReport, exportReport } from '../../api/client';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { generateReport, exportReport, getSettings } from '../../api/client';
 import PageHeader from '../../components/shared/PageHeader';
 import { formatCurrency } from '../../utils/format';
-import { BarChart3, FileDown, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { BarChart3, FileDown, FileSpreadsheet, Printer, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 const ZERO_ENTITY = '00000000-0000-0000-0000-000000000000';
 
@@ -33,6 +33,8 @@ export default function ReportsPage() {
   const [result, setResult] = useState<any>(null);
 
   const meta = reportTypes.find((r) => r.key === selected)!;
+  const { data: settingsRes } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
+  const branding = settingsRes?.data?.branding;
 
   const buildReq = () => ({
     entity_id: ZERO_ENTITY,
@@ -53,73 +55,147 @@ export default function ReportsPage() {
 
   const exportMutation = useMutation({
     mutationFn: () => exportReport(buildReq()),
-    onSuccess: (res) => {
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${selected}-${today}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
+    onSuccess: (res) => downloadBlob(new Blob([res.data], { type: 'text/csv' }), `${selected}-${today}.csv`),
   });
 
   const select = (key: string) => { setSelected(key); setResult(null); };
+  const exportExcel = () => exportDomAsExcel(result?.title || meta.name);
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle="Financial and compliance reports" />
+      <div className="no-print">
+        <PageHeader title="Reports" subtitle="Financial and compliance reports" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        {reportTypes.map((rt) => (
-          <button
-            key={rt.key}
-            onClick={() => select(rt.key)}
-            className={`card p-3 text-left transition-all ${selected === rt.key ? 'border-indigo-400 ring-1 ring-indigo-200' : 'hover:border-gray-300'}`}
-          >
-            <div className="flex items-start gap-2">
-              <BarChart3 className={`w-4 h-4 mt-0.5 shrink-0 ${selected === rt.key ? 'text-indigo-600' : 'text-gray-400'}`} />
-              <div>
-                <p className="text-sm font-medium text-gray-900">{rt.name}</p>
-                <p className="text-[11px] text-gray-500 mt-0.5">{rt.desc}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          {reportTypes.map((rt) => (
+            <button
+              key={rt.key}
+              onClick={() => select(rt.key)}
+              className={`card p-3 text-left transition-all ${selected === rt.key ? 'border-indigo-400 ring-1 ring-indigo-200' : 'hover:border-gray-300'}`}
+            >
+              <div className="flex items-start gap-2">
+                <BarChart3 className={`w-4 h-4 mt-0.5 shrink-0 ${selected === rt.key ? 'text-indigo-600' : 'text-gray-400'}`} />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{rt.name}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{rt.desc}</p>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
-      </div>
+            </button>
+          ))}
+        </div>
 
-      {/* Controls */}
-      <div className="card p-4 mb-5 flex flex-wrap items-end gap-4">
-        {meta.controls.includes('asAt') && (
-          <div>
-            <label className="label">As at</label>
-            <input type="date" className="input" value={asAt} onChange={(e) => setAsAt(e.target.value)} />
+        {/* Controls */}
+        <div className="card p-4 mb-5 flex flex-wrap items-end gap-4">
+          {meta.controls.includes('asAt') && (
+            <div>
+              <label className="label">As at</label>
+              <input type="date" className="input" value={asAt} onChange={(e) => setAsAt(e.target.value)} />
+            </div>
+          )}
+          {meta.controls.includes('period') && (
+            <>
+              <div><label className="label">From</label><input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+              <div><label className="label">To</label><input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+            </>
+          )}
+          {meta.controls.includes('account') && (
+            <div><label className="label">Account code</label><input className="input w-32" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="1200" /></div>
+          )}
+          {meta.comparable && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">
+              <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} className="rounded" />
+              Compare to prior year
+            </label>
+          )}
+          <div className="flex-1" />
+          <button onClick={() => mutation.mutate()} className="btn-primary" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Generating…' : 'Generate'}
+          </button>
+          <button onClick={() => window.print()} className="btn-secondary" disabled={!result} title="Print / save as PDF">
+            <Printer className="w-4 h-4" /> Print
+          </button>
+          <button onClick={exportExcel} className="btn-secondary" disabled={!result} title="Export to Excel">
+            <FileSpreadsheet className="w-4 h-4" /> Excel
+          </button>
+          <button onClick={() => exportMutation.mutate()} className="btn-secondary" disabled={exportMutation.isPending} title="Export to CSV">
+            <FileDown className="w-4 h-4" /> CSV
+          </button>
+        </div>
+
+        {mutation.isError && (
+          <div className="card p-4 mb-5 flex items-center gap-2 text-sm text-red-700 bg-red-50 border-red-200">
+            <AlertTriangle className="w-4 h-4" /> Could not generate this report. Check the dates and try again.
           </div>
         )}
-        {meta.controls.includes('period') && (
-          <>
-            <div><label className="label">From</label><input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-            <div><label className="label">To</label><input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          </>
-        )}
-        {meta.controls.includes('account') && (
-          <div><label className="label">Account code</label><input className="input w-32" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="1200" /></div>
-        )}
-        {meta.comparable && (
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">
-            <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} className="rounded" />
-            Compare to prior year
-          </label>
-        )}
-        <div className="flex-1" />
-        <button onClick={() => mutation.mutate()} className="btn-primary" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Generating…' : 'Generate'}
-        </button>
-        <button onClick={() => exportMutation.mutate()} className="btn-secondary" disabled={exportMutation.isPending}>
-          <FileDown className="w-4 h-4" /> CSV
-        </button>
       </div>
 
-      {result && <ReportView result={result} />}
+      {result && <ReportDocument result={result} branding={branding} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Document shell — full-page statement with header + footer          */
+/* ------------------------------------------------------------------ */
+
+function periodLabel(c: any): string {
+  if (c?.as_at) return `As at ${c.as_at}`;
+  if (c?.period_from && c?.period_to) return `For the period ${c.period_from} to ${c.period_to}`;
+  return '';
+}
+
+function ReportDocument({ result, branding }: { result: any; branding: any }) {
+  const content = result.content ?? {};
+  const key = Object.keys(content)[0];
+  const c = content[key];
+  const b = branding ?? {};
+  const generatedAt = new Date().toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' });
+
+  return (
+    <div id="report-document" className="print-area mx-auto max-w-4xl bg-white border border-gray-200 rounded-lg shadow-sm">
+      {/* Letterhead */}
+      <div className="px-10 pt-10 pb-6 border-b border-gray-200">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex items-center gap-3">
+            {b.logo_url && <img src={b.logo_url} alt="" className="h-12 w-auto object-contain" />}
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 leading-tight">{b.company_name || 'Your Company'}</h1>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {[b.address, b.phone, b.email].filter(Boolean).join('  ·  ')}
+              </p>
+              <p className="text-xs text-gray-500">
+                {[b.kra_pin && `KRA PIN: ${b.kra_pin}`, b.vat_number && `VAT: ${b.vat_number}`].filter(Boolean).join('  ·  ')}
+              </p>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            {key === 'TrialBalance' && <Balanced ok={c.is_balanced} diff={c.difference} />}
+            {key === 'BalanceSheet' && <Balanced ok={c.is_balanced} diff={c.difference} />}
+          </div>
+        </div>
+        <div className="text-center mt-6">
+          <h2 className="text-lg font-semibold text-gray-900">{result.title || key}</h2>
+          <p className="text-sm text-gray-500 mt-0.5">{periodLabel(c)}</p>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="px-10 py-8">
+        {key === 'TrialBalance' && <TrialBalance c={c} />}
+        {key === 'BalanceSheet' && <BalanceSheet c={c} />}
+        {key === 'ProfitAndLoss' && <ProfitAndLoss c={c} />}
+        {key === 'VatReturn' && <VatReturn c={c} />}
+        {key === 'GlDetail' && <GlDetail c={c} />}
+        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'GlDetail'].includes(key) && (
+          <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-10 py-4 border-t border-gray-200 text-[11px] text-gray-400 flex justify-between">
+        <span>{b.footer_text || `${b.company_name || ''}`}</span>
+        <span>Generated {generatedAt}</span>
+      </div>
     </div>
   );
 }
@@ -133,31 +209,6 @@ function Balanced({ ok, diff }: { ok: boolean; diff: number }) {
     <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded">
       <AlertTriangle className="w-3.5 h-3.5" /> Out of balance by {formatCurrency(Math.abs(diff))}
     </span>
-  );
-}
-
-function ReportView({ result }: { result: any }) {
-  const content = result.content ?? {};
-  const key = Object.keys(content)[0];
-  const c = content[key];
-
-  return (
-    <div className="card p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900">{result.title || key}</h3>
-        {key === 'TrialBalance' && <Balanced ok={c.is_balanced} diff={c.difference} />}
-        {key === 'BalanceSheet' && <Balanced ok={c.is_balanced} diff={c.difference} />}
-      </div>
-
-      {key === 'TrialBalance' && <TrialBalance c={c} />}
-      {key === 'BalanceSheet' && <BalanceSheet c={c} />}
-      {key === 'ProfitAndLoss' && <ProfitAndLoss c={c} />}
-      {key === 'VatReturn' && <VatReturn c={c} />}
-      {key === 'GlDetail' && <GlDetail c={c} />}
-      {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'GlDetail'].includes(key) && (
-        <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
-      )}
-    </div>
   );
 }
 
@@ -254,15 +305,16 @@ function ProfitAndLoss({ c }: { c: any }) {
 
 function VatReturn({ c }: { c: any }) {
   return (
-    <div className="max-w-md space-y-2 text-sm">
-      <p className="text-xs text-gray-500">Period {c.period_from} – {c.period_to}</p>
-      <div className="flex justify-between border-b py-1.5"><span>Output VAT (on sales)</span>{num(c.output_vat)}</div>
-      <div className="flex justify-between border-b py-1.5"><span>Input VAT (on purchases)</span>{num(c.input_vat)}</div>
-      <div className="flex justify-between font-bold border-t-2 pt-2">
-        <span>{c.is_payable ? 'Net VAT payable to KRA' : 'Net VAT credit carried forward'}</span>
-        <span className={c.is_payable ? 'text-red-600' : 'text-green-600'}>{formatCurrency(Math.abs(c.net_vat))}</span>
-      </div>
-    </div>
+    <table className="w-full max-w-lg text-sm">
+      <tbody>
+        <tr className="border-b border-gray-50"><td className="py-1.5">Output VAT (on sales)</td><td className="text-right">{num(c.output_vat)}</td></tr>
+        <tr className="border-b border-gray-50"><td className="py-1.5">Input VAT (on purchases)</td><td className="text-right">{num(c.input_vat)}</td></tr>
+        <tr className="font-bold border-t-2">
+          <td className="py-2">{c.is_payable ? 'Net VAT payable to KRA' : 'Net VAT credit carried forward'}</td>
+          <td className={`text-right ${c.is_payable ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(Math.abs(c.net_vat))}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -282,4 +334,31 @@ function GlDetail({ c }: { c: any }) {
       </tbody>
     </table>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Export helpers                                                     */
+/* ------------------------------------------------------------------ */
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Serialize the rendered statement (tables) to an Excel-readable .xls workbook.
+// Excel opens HTML tables natively, so this preserves layout with zero deps.
+function exportDomAsExcel(title: string) {
+  const node = document.getElementById('report-document');
+  if (!node) return;
+  const tables = Array.from(node.querySelectorAll('table'));
+  const body = tables.map((t) => t.outerHTML).join('<br/>');
+  const html =
+    `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">` +
+    `<head><meta charset="utf-8"><style>td,th{border:1px solid #ddd;padding:4px 8px;}</style></head>` +
+    `<body><h3>${title}</h3>${body}</body></html>`;
+  downloadBlob(new Blob([html], { type: 'application/vnd.ms-excel' }), `${title.replace(/\s+/g, '-')}-${today}.xls`);
 }
