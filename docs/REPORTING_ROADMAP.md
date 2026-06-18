@@ -14,7 +14,7 @@ periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 - ✅ **Payroll Summary** — gross, PAYE, NSSF, SHA, housing levy, HELB, net; per-run and per-employee. (PayrollSummary report type.)
 - ⬜ **Bank Reconciliation Summary** — GL vs statement balance, matched/unmatched, outstanding items.
 - ✅ **Income by Customer / Expense by Vendor** — net (ex-VAT) revenue/expense grouped, ranked, with % share. (IncomeByCustomer / ExpenseByVendor report types.)
-- ⬜ **Inventory Valuation & Fixed-Asset register** — qty/cost/value; cost/accum-dep/NBV.
+- ✅ **Inventory Valuation & Fixed-Asset register** — on-hand qty/cost/value; cost/accum-dep/NBV. (InventoryValuation / FixedAssetRegister report types.)
 
 ## 2. Presentation
 - ✅ **Full-page statement layout** — company name/logo + KRA PIN header, title, period/as-at, indented sections, bold subtotals, right-aligned figures, generated-on footer.

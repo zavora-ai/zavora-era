@@ -96,6 +96,14 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = party_ranking(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
             ReportContent::PartyRanking(report)
         }
+        ReportType::InventoryValuation => {
+            let report = inventory_valuation(engine, entity_id, req.parameters).await?;
+            ReportContent::InventoryValuation(report)
+        }
+        ReportType::FixedAssetRegister => {
+            let report = fixed_asset_register(engine, entity_id, req.parameters).await?;
+            ReportContent::FixedAssetRegister(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -126,6 +134,8 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::VendorStatement => "Vendor Statement",
         ReportType::IncomeByCustomer => "Income by Customer",
         ReportType::ExpenseByVendor => "Expense by Vendor",
+        ReportType::InventoryValuation => "Inventory Valuation",
+        ReportType::FixedAssetRegister => "Fixed-Asset Register",
         ReportType::CustomerPaymentHistory => "Customer Payment History",
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
@@ -1030,6 +1040,39 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             }
             output.extend_from_slice(format!("Total,,{},100.0\n", p.total).as_bytes());
         }
+        ReportContent::InventoryValuation(inv) => {
+            output.extend_from_slice(b"SKU,Description,UoM,On Hand,Unit Cost,Total Value,Costing Method\n");
+            for l in &inv.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.sku),
+                    csv_escape(&l.description),
+                    csv_escape(&l.uom),
+                    l.on_hand, l.unit_cost, l.total_value,
+                    csv_escape(&l.costing_method),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,,,Total,{},\n", inv.total_value).as_bytes());
+        }
+        ReportContent::FixedAssetRegister(fa) => {
+            output.extend_from_slice(b"Asset No,Description,Category,Acquired,Cost,Accum. Depreciation,Net Book Value,Status\n");
+            for l in &fa.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.asset_number),
+                    csv_escape(&l.description),
+                    csv_escape(&l.category),
+                    l.acquisition_date,
+                    l.cost, l.accumulated_depreciation, l.net_book_value,
+                    csv_escape(&l.status),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(
+                format!(",,,Total,{},{},{},\n", fa.total_cost, fa.total_accumulated_depreciation, fa.total_net_book_value).as_bytes(),
+            );
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1761,6 +1804,111 @@ async fn party_ranking(
         period_to,
         lines,
         total,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct InventoryValuationLineRow {
+    sku: String,
+    description: String,
+    uom: String,
+    on_hand: Decimal,
+    unit_cost: Decimal,
+    total_value: Decimal,
+    costing_method: String,
+}
+
+/// Current inventory valuation from the running stock figures.
+async fn inventory_valuation(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<InventoryValuationReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    let rows = sqlx::query_as::<_, InventoryValuationLineRow>(
+        "SELECT sku, description, uom, on_hand, unit_cost, total_value, costing_method
+         FROM inventory_items
+         WHERE entity_id = $1 AND is_active = true
+         ORDER BY sku",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<InventoryValuationLine> = rows
+        .into_iter()
+        .map(|r| InventoryValuationLine {
+            sku: r.sku,
+            description: r.description,
+            uom: r.uom,
+            on_hand: r.on_hand,
+            unit_cost: r.unit_cost,
+            total_value: r.total_value,
+            costing_method: r.costing_method,
+        })
+        .collect();
+
+    Ok(InventoryValuationReport {
+        as_at,
+        total_value: lines.iter().map(|l| l.total_value).sum(),
+        item_count: lines.len() as u32,
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct FixedAssetLineRow {
+    asset_number: String,
+    description: String,
+    category: String,
+    acquisition_date: NaiveDate,
+    cost: Decimal,
+    accumulated_depreciation: Decimal,
+    net_book_value: Decimal,
+    status: String,
+}
+
+/// Fixed-asset register: cost, accumulated depreciation and net book value of
+/// every non-disposed asset.
+async fn fixed_asset_register(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<FixedAssetRegisterReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    let rows = sqlx::query_as::<_, FixedAssetLineRow>(
+        "SELECT asset_number, description, category, acquisition_date, cost,
+                accumulated_depreciation, net_book_value, status
+         FROM fixed_assets
+         WHERE entity_id = $1 AND status <> 'disposed'
+         ORDER BY category, asset_number",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<FixedAssetLine> = rows
+        .into_iter()
+        .map(|r| FixedAssetLine {
+            asset_number: r.asset_number,
+            description: r.description,
+            category: r.category,
+            acquisition_date: r.acquisition_date,
+            cost: r.cost,
+            accumulated_depreciation: r.accumulated_depreciation,
+            net_book_value: r.net_book_value,
+            status: r.status,
+        })
+        .collect();
+
+    Ok(FixedAssetRegisterReport {
+        as_at,
+        total_cost: lines.iter().map(|l| l.cost).sum(),
+        total_accumulated_depreciation: lines.iter().map(|l| l.accumulated_depreciation).sum(),
+        total_net_book_value: lines.iter().map(|l| l.net_book_value).sum(),
+        lines,
     })
 }
 

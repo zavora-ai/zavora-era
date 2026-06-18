@@ -28,6 +28,8 @@ pub enum ReportType {
     VendorStatement,
     IncomeByCustomer,
     ExpenseByVendor,
+    InventoryValuation,
+    FixedAssetRegister,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -80,6 +82,8 @@ pub enum ReportContent {
     WhtReport(WhtReport),
     VatDetail(VatDetailReport),
     PartyRanking(PartyRankingReport),
+    InventoryValuation(InventoryValuationReport),
+    FixedAssetRegister(FixedAssetRegisterReport),
     Generic(serde_json::Value),
 }
 
@@ -482,6 +486,50 @@ pub struct PartyRankingLine {
     pub amount: Decimal,
     /// Share of the period total, as a percentage (0–100).
     pub percent: Decimal,
+}
+
+/// Inventory valuation — current on-hand quantity, unit cost and value per
+/// stock item (the running figures inventory maintenance keeps up to date).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryValuationReport {
+    pub as_at: NaiveDate,
+    pub lines: Vec<InventoryValuationLine>,
+    pub total_value: Decimal,
+    pub item_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryValuationLine {
+    pub sku: String,
+    pub description: String,
+    pub uom: String,
+    pub on_hand: Decimal,
+    pub unit_cost: Decimal,
+    pub total_value: Decimal,
+    pub costing_method: String,
+}
+
+/// Fixed-asset register — cost, accumulated depreciation and net book value per
+/// non-disposed asset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixedAssetRegisterReport {
+    pub as_at: NaiveDate,
+    pub lines: Vec<FixedAssetLine>,
+    pub total_cost: Decimal,
+    pub total_accumulated_depreciation: Decimal,
+    pub total_net_book_value: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixedAssetLine {
+    pub asset_number: String,
+    pub description: String,
+    pub category: String,
+    pub acquisition_date: NaiveDate,
+    pub cost: Decimal,
+    pub accumulated_depreciation: Decimal,
+    pub net_book_value: Decimal,
+    pub status: String,
 }
 
 /// Export output from report generation.

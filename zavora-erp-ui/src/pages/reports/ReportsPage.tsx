@@ -25,6 +25,8 @@ const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind
   { key: 'SalesTaxSummary', name: 'VAT by Rate', desc: 'Output & input VAT broken down by rate band', controls: ['period'] },
   { key: 'IncomeByCustomer', name: 'Income by Customer', desc: 'Net revenue ranked by customer', controls: ['period'] },
   { key: 'ExpenseByVendor', name: 'Expense by Vendor', desc: 'Net spend ranked by vendor', controls: ['period'] },
+  { key: 'InventoryValuation', name: 'Inventory Valuation', desc: 'On-hand quantity, cost & value by item', controls: ['asAt'] },
+  { key: 'FixedAssetRegister', name: 'Fixed-Asset Register', desc: 'Cost, depreciation & net book value', controls: ['asAt'] },
   { key: 'GlDetail', name: 'General Ledger', desc: 'Transaction detail by account', controls: ['period', 'account'] },
 ];
 
@@ -216,8 +218,10 @@ function ReportDocument({ result, branding }: { result: any; branding: any }) {
         {key === 'WhtReport' && <WhtReport c={c} />}
         {key === 'VatDetail' && <VatDetail c={c} />}
         {key === 'PartyRanking' && <PartyRanking c={c} />}
+        {key === 'InventoryValuation' && <InventoryValuation c={c} />}
+        {key === 'FixedAssetRegister' && <FixedAssetRegister c={c} />}
         {key === 'GlDetail' && <GlDetail c={c} />}
-        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'PayeP10', 'WhtReport', 'VatDetail', 'PartyRanking', 'GlDetail'].includes(key) && (
+        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'PayeP10', 'WhtReport', 'VatDetail', 'PartyRanking', 'InventoryValuation', 'FixedAssetRegister', 'GlDetail'].includes(key) && (
           <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
         )}
       </div>
@@ -593,6 +597,80 @@ function PartyRanking({ c }: { c: any }) {
           <td />
           <td className="text-right">{num(c.total)}</td>
           <td className="text-right">100.0%</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
+function InventoryValuation({ c }: { c: any }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">SKU</th>
+          <th className="text-left">Description</th>
+          <th className="text-left">UoM</th>
+          <th className="text-right">On Hand</th>
+          <th className="text-right">Unit Cost</th>
+          <th className="text-right">Total Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {c.lines.map((l: any, i: number) => (
+          <tr key={i} className="border-b border-gray-50">
+            <td className="py-1.5 font-mono text-xs">{l.sku}</td>
+            <td>{l.description}</td>
+            <td className="text-gray-500">{l.uom}</td>
+            <td className="text-right">{Number(l.on_hand).toLocaleString()}</td>
+            <td className="text-right">{num(l.unit_cost)}</td>
+            <td className="text-right font-medium">{num(l.total_value)}</td>
+          </tr>
+        ))}
+        {c.lines.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-gray-400">No stock items</td></tr>}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold border-t-2">
+          <td className="py-2" colSpan={5}>Total ({c.item_count} item{c.item_count === 1 ? '' : 's'})</td>
+          <td className="text-right">{num(c.total_value)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
+function FixedAssetRegister({ c }: { c: any }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">Asset</th>
+          <th className="text-left">Category</th>
+          <th className="text-left">Acquired</th>
+          <th className="text-right">Cost</th>
+          <th className="text-right">Accum. Depr.</th>
+          <th className="text-right">Net Book Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {c.lines.map((l: any, i: number) => (
+          <tr key={i} className="border-b border-gray-50">
+            <td className="py-1.5">{l.description} <span className="text-xs text-gray-400">{l.asset_number}</span></td>
+            <td className="text-gray-500">{l.category}</td>
+            <td>{l.acquisition_date}</td>
+            <td className="text-right">{num(l.cost)}</td>
+            <td className="text-right text-gray-500">{num(l.accumulated_depreciation)}</td>
+            <td className="text-right font-medium">{num(l.net_book_value)}</td>
+          </tr>
+        ))}
+        {c.lines.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-gray-400">No assets on register</td></tr>}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold border-t-2">
+          <td className="py-2" colSpan={3}>Total</td>
+          <td className="text-right">{num(c.total_cost)}</td>
+          <td className="text-right">{num(c.total_accumulated_depreciation)}</td>
+          <td className="text-right">{num(c.total_net_book_value)}</td>
         </tr>
       </tfoot>
     </table>
