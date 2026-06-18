@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getSettings, getCustomers, getVendors } from '../../api/client';
+import { getSettings, getCustomers, getVendors, getDimensions } from '../../api/client';
 import PageHeader from '../../components/shared/PageHeader';
 import { AlertTriangle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -42,8 +42,9 @@ function ReportView({ meta }: { meta: ReportMeta }) {
   const [account, setAccount] = useState(qAccount ?? '1200');
   const [partyId, setPartyId] = useState('');
   const [compare, setCompare] = useState(false);
+  const [dimensionType, setDimensionType] = useState('');
 
-  const params: ReportParams = { asAt, from, to, account, partyId, compare };
+  const params: ReportParams = { asAt, from, to, account, partyId, compare, dimensionType };
   const { result, generate, csvExport } = useReport(meta, params);
 
   const { data: settingsRes } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
@@ -53,6 +54,9 @@ function ReportView({ meta }: { meta: ReportMeta }) {
   const { data: vendorsRes } = useQuery({ queryKey: ['vendors'], queryFn: getVendors });
   const parties: { id: string; name: string }[] =
     (meta.party === 'vendor' ? vendorsRes?.data : customersRes?.data) ?? [];
+
+  const { data: dimsRes } = useQuery({ queryKey: ['dimensions'], queryFn: getDimensions });
+  const dimensionTypes: { code: string; name: string }[] = dimsRes?.data ?? [];
 
   // Deep-link prefill: when account/from/to are present, generate on load so a
   // drill-down link renders its report immediately.
@@ -99,7 +103,9 @@ function ReportView({ meta }: { meta: ReportMeta }) {
           setAccount={setAccount}
           setPartyId={setPartyId}
           setCompare={setCompare}
+          setDimensionType={setDimensionType}
           parties={parties}
+          dimensionTypes={dimensionTypes}
           result={result}
           onGenerate={() => generate.mutate()}
           isPending={generate.isPending}

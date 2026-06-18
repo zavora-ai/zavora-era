@@ -13,7 +13,9 @@ interface Props {
   setAccount: (v: string) => void;
   setPartyId: (v: string) => void;
   setCompare: (v: boolean) => void;
+  setDimensionType: (v: string) => void;
   parties: { id: string; name: string }[];
+  dimensionTypes: { code: string; name: string }[];
   result: any;
   onGenerate: () => void;
   isPending: boolean;
@@ -22,10 +24,11 @@ interface Props {
 }
 
 export default function ReportFilters({
-  meta, params, setAsAt, setFrom, setTo, setAccount, setPartyId, setCompare,
-  parties, result, onGenerate, isPending, onExportCsv, csvPending,
+  meta, params, setAsAt, setFrom, setTo, setAccount, setPartyId, setCompare, setDimensionType,
+  parties, dimensionTypes, result, onGenerate, isPending, onExportCsv, csvPending,
 }: Props) {
   const needsParty = meta.controls.includes('party');
+  const needsDimension = meta.controls.includes('dimension');
   const exportExcel = () => exportDomAsExcel(result?.title || meta.name);
 
   return (
@@ -36,6 +39,15 @@ export default function ReportFilters({
           <select className="input min-w-[12rem]" value={params.partyId} onChange={(e) => setPartyId(e.target.value)}>
             <option value="">Select {meta.party}…</option>
             {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+      )}
+      {needsDimension && (
+        <div>
+          <label className="label">Dimension</label>
+          <select className="input min-w-[12rem]" value={params.dimensionType} onChange={(e) => setDimensionType(e.target.value)}>
+            <option value="">Select dimension…</option>
+            {dimensionTypes.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
           </select>
         </div>
       )}
@@ -61,7 +73,7 @@ export default function ReportFilters({
         </label>
       )}
       <div className="flex-1" />
-      <button onClick={onGenerate} className="btn-primary" disabled={isPending || (needsParty && !params.partyId)}>
+      <button onClick={onGenerate} className="btn-primary" disabled={isPending || (needsParty && !params.partyId) || (needsDimension && !params.dimensionType)}>
         {isPending ? 'Generating…' : 'Generate'}
       </button>
       <button onClick={() => window.print()} className="btn-secondary" disabled={!result} title="Print / save as PDF">

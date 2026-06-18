@@ -5,7 +5,7 @@
 // exactly as the original implementation did.
 export const ZERO_ENTITY = '00000000-0000-0000-0000-000000000000';
 
-export type CtrlKind = 'asAt' | 'period' | 'account' | 'party';
+export type CtrlKind = 'asAt' | 'period' | 'account' | 'party' | 'dimension';
 
 export type ReportCategory =
   | 'Financial'
@@ -32,6 +32,7 @@ export interface ReportParams {
   account: string;
   partyId: string;
   compare: boolean;
+  dimensionType: string;
 }
 
 export const reportTypes: ReportMeta[] = [
@@ -54,6 +55,8 @@ export const reportTypes: ReportMeta[] = [
   { key: 'InventoryValuation', name: 'Inventory Valuation', desc: 'On-hand quantity, cost & value by item', controls: ['asAt'], category: 'Management' },
   { key: 'FixedAssetRegister', name: 'Fixed-Asset Register', desc: 'Cost, depreciation & net book value', controls: ['asAt'], category: 'Management' },
   { key: 'BankReconSummary', name: 'Bank Reconciliation', desc: 'Statement vs GL balance, matched & unmatched', controls: ['asAt'], category: 'Management' },
+  { key: 'BudgetVsActual', name: 'Budget vs Actual', desc: 'Actual vs budget by account, with variance', controls: ['period'], category: 'Management' },
+  { key: 'DimensionalAnalysis', name: 'Dimensional Analysis', desc: 'Ledger movement grouped by a dimension (cost centre, project…)', controls: ['dimension', 'period'], category: 'Management' },
 ];
 
 // Display order for the launcher grid.
@@ -86,6 +89,8 @@ const KEY_TO_SLUG: Record<string, string> = {
   InventoryValuation: 'inventory-valuation',
   FixedAssetRegister: 'fixed-asset-register',
   BankReconSummary: 'bank-reconciliation',
+  BudgetVsActual: 'budget-vs-actual',
+  DimensionalAnalysis: 'dimensional-analysis',
 };
 
 const SLUG_TO_KEY: Record<string, string> = Object.fromEntries(
@@ -117,6 +122,7 @@ export function buildReportRequest(meta: ReportMeta, p: ReportParams) {
       customer_id: meta.party === 'customer' ? p.partyId || null : null,
       vendor_id: meta.party === 'vendor' ? p.partyId || null : null,
       comparative: meta.comparable ? p.compare : false,
+      dimension_type: meta.controls.includes('dimension') ? p.dimensionType || null : null,
     },
   };
 }

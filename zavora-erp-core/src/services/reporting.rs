@@ -112,6 +112,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = budget_vs_actual(engine, entity_id, req.parameters).await?;
             ReportContent::BudgetVsActual(report)
         }
+        ReportType::DimensionalAnalysis => {
+            let report = dimensional_analysis(engine, entity_id, req.parameters).await?;
+            ReportContent::DimensionalAnalysis(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -145,6 +149,7 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::InventoryValuation => "Inventory Valuation",
         ReportType::FixedAssetRegister => "Fixed-Asset Register",
         ReportType::BudgetVsActual => "Budget vs Actual",
+        ReportType::DimensionalAnalysis => "Dimensional Analysis",
         ReportType::CustomerPaymentHistory => "Customer Payment History",
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
@@ -1110,6 +1115,18 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 output.extend_from_slice(row.as_bytes());
             }
             output.extend_from_slice(format!(",Total,{},{},{},\n", r.total_actual, r.total_budget, r.total_variance).as_bytes());
+        }
+        ReportContent::DimensionalAnalysis(r) => {
+            output.extend_from_slice(format!("Dimension: {}\n", csv_escape(&r.dimension_type)).as_bytes());
+            output.extend_from_slice(b"Value,Name,Debit,Credit,Net\n");
+            for l in &r.lines {
+                let row = format!(
+                    "{},{},{},{},{}\n",
+                    csv_escape(&l.value_code), csv_escape(&l.value_name), l.debit, l.credit, l.net,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!("Total,,{},{},{}\n", r.total_debit, r.total_credit, r.total_net).as_bytes());
         }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
@@ -2143,6 +2160,78 @@ async fn budget_vs_actual(
         total_actual: lines.iter().map(|l| l.actual).sum(),
         total_budget: lines.iter().map(|l| l.budget).sum(),
         total_variance: lines.iter().map(|l| l.variance).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct DimensionalRow {
+    value_code: String,
+    debit: Decimal,
+    credit: Decimal,
+}
+
+/// Dimensional analysis: ledger movement grouped by the values of one dimension
+/// type over the period (Option A — scans the date-bounded lines and reads the
+/// JSONB dimension key). Values are resolved to names from dimension_values.
+async fn dimensional_analysis(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<DimensionalAnalysisReport> {
+    let (period_from, period_to) = resolve_period(&params);
+    let dimension_type = params.dimension_type.clone().ok_or_else(|| {
+        crate::error::ErpError::ValidationFailed {
+            message: "A dimension type must be selected for this report".to_string(),
+        }
+    })?;
+
+    let rows = sqlx::query_as::<_, DimensionalRow>(
+        "SELECT COALESCE(NULLIF(dimensions->>$2, ''), '(unassigned)') AS value_code,
+                COALESCE(SUM(functional_debit), 0)  AS debit,
+                COALESCE(SUM(functional_credit), 0) AS credit
+         FROM journal_lines
+         WHERE entity_id = $1 AND entry_date BETWEEN $3 AND $4
+         GROUP BY value_code
+         ORDER BY value_code",
+    )
+    .bind(entity_id)
+    .bind(&dimension_type)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    // Resolve value codes to names.
+    let names: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT code, name FROM dimension_values WHERE entity_id = $1 AND type_code = $2",
+    )
+    .bind(entity_id)
+    .bind(&dimension_type)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+
+    let lines: Vec<DimensionalLine> = rows
+        .into_iter()
+        .map(|r| DimensionalLine {
+            value_name: names.get(&r.value_code).cloned().unwrap_or_else(|| r.value_code.clone()),
+            net: r.debit - r.credit,
+            value_code: r.value_code,
+            debit: r.debit,
+            credit: r.credit,
+        })
+        .collect();
+
+    Ok(DimensionalAnalysisReport {
+        dimension_type,
+        period_from,
+        period_to,
+        total_debit: lines.iter().map(|l| l.debit).sum(),
+        total_credit: lines.iter().map(|l| l.credit).sum(),
+        total_net: lines.iter().map(|l| l.net).sum(),
         lines,
     })
 }

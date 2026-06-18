@@ -114,6 +114,11 @@ export const getPeriods = () => api.get('/periods');
 export const getBudgets = () => api.get('/budgets');
 export const setBudget = (data: { period_id: string; account_code: string; amount: number }) =>
   api.put('/budgets', data);
+export const getDimensions = () => api.get('/dimensions');
+export const createDimensionType = (data: { code: string; name: string }) =>
+  api.post('/dimension-types', data);
+export const createDimensionValue = (data: { type_code: string; code: string; name: string }) =>
+  api.post('/dimension-values', data);
 export const generatePeriods = (data: { fiscal_year: number; year_start_month: number }) =>
   api.post('/periods', data);
 export const closePeriod = (id: string, data: { close_type: 'Soft' | 'Hard' }) =>

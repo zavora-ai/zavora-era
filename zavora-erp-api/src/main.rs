@@ -218,6 +218,9 @@ async fn main() -> anyhow::Result<()> {
         // Settings
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
         .route("/api/v1/budgets", get(routes::budgets::list).put(routes::budgets::set))
+        .route("/api/v1/dimensions", get(routes::dimensions::list))
+        .route("/api/v1/dimension-types", post(routes::dimensions::create_type))
+        .route("/api/v1/dimension-values", post(routes::dimensions::create_value))
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         .route("/api/v1/users/{id}", put(routes::users::update))

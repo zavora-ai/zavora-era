@@ -35,6 +35,7 @@ fn empty_params() -> ReportParameters {
         bank_account_id: None,
         statement_id: None,
         period_id: None,
+        dimension_type: None,
     }
 }
 

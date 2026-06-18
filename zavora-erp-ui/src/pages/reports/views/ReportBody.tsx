@@ -18,6 +18,7 @@ import InventoryValuationView from './InventoryValuationView';
 import FixedAssetRegisterView from './FixedAssetRegisterView';
 import BankReconSummaryView from './BankReconSummaryView';
 import BudgetVsActualView from './BudgetVsActualView';
+import DimensionalAnalysisView from './DimensionalAnalysisView';
 import GlDetailView from './GlDetailView';
 import RawJsonView from './RawJsonView';
 
@@ -55,6 +56,8 @@ export default function ReportBody({ result, onDrill }: { result: any; onDrill?:
       return <BankReconSummaryView c={c} />;
     case 'BudgetVsActual':
       return <BudgetVsActualView c={c} />;
+    case 'DimensionalAnalysis':
+      return <DimensionalAnalysisView c={c} />;
     case 'GlDetail':
       return <GlDetailView c={c} />;
     default:

@@ -31,6 +31,7 @@ pub enum ReportType {
     InventoryValuation,
     FixedAssetRegister,
     BudgetVsActual,
+    DimensionalAnalysis,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -53,6 +54,9 @@ pub struct ReportParameters {
     pub bank_account_id: Option<Uuid>,
     pub statement_id: Option<Uuid>,
     pub period_id: Option<Uuid>,
+    /// Dimension type code to group by (Dimensional Analysis report).
+    #[serde(default)]
+    pub dimension_type: Option<String>,
 }
 
 /// Report data — the generated report content.
@@ -87,6 +91,7 @@ pub enum ReportContent {
     FixedAssetRegister(FixedAssetRegisterReport),
     BankReconSummary(BankReconSummaryReport),
     BudgetVsActual(BudgetVsActualReport),
+    DimensionalAnalysis(DimensionalAnalysisReport),
     Generic(serde_json::Value),
 }
 
@@ -595,6 +600,30 @@ pub struct BudgetVsActualLine {
     pub variance: Decimal,
     /// variance / budget * 100; None when budget is zero.
     pub variance_pct: Option<Decimal>,
+}
+
+/// Dimensional analysis — ledger movement grouped by the values of one
+/// dimension type (e.g. by Cost Centre) for a period. Lines with no value for
+/// that type are grouped under "(unassigned)".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionalAnalysisReport {
+    pub dimension_type: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<DimensionalLine>,
+    pub total_debit: Decimal,
+    pub total_credit: Decimal,
+    pub total_net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionalLine {
+    pub value_code: String,
+    pub value_name: String,
+    pub debit: Decimal,
+    pub credit: Decimal,
+    /// debit − credit.
+    pub net: Decimal,
 }
 
 /// Export output from report generation.
