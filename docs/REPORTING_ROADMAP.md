@@ -39,12 +39,15 @@ maintained transactionally and covered by `snapshots_reconcile_to_ledger` and
 - ✅ Trial Balance, Balance Sheet, Profit & Loss, Cash Flow, General Ledger,
   AR/AP Ageing, VAT Return.
 - ✅ Customer & Vendor statements (opening/running/closing balances).
-- ✅ KRA statutory — PAYE P10, WHT schedule, VAT summary by rate. *SQL pending
-  live re-validation (see Phase 4).*
+- ✅ KRA statutory — PAYE P10, WHT schedule, VAT summary by rate.
 - ✅ Payroll Summary; Bank Reconciliation Summary; Income-by-Customer /
-  Expense-by-Vendor; Inventory Valuation & Fixed-Asset register. *Last four
-  pending live re-validation (Phase 4).*
+  Expense-by-Vendor; Inventory Valuation & Fixed-Asset register.
 - ✅ Full-page branded layout + print/PDF/Excel export.
+- ✅ Drill GL line → source document (journal_entries.source_id, migration 015).
+
+All report SQL re-validated live (executes clean; VAT-by-rate and
+Income-by-Customer return correct figures on real data). Numeric tie-out for
+bills/payroll/inventory/bank awaits seed data in those modules (Phase 4).
 
 ---
 
@@ -106,9 +109,11 @@ branded layout, pre- and post-posting where applicable.
 
 First hop (statement → account → GL) is done. Close the loop to source.
 
-- ◻ Add journal-entry id to GL detail lines.
-- ⬜ Journal entry detail page (header + balanced lines + source link).
-- ⬜ Wire GL line → journal entry → source document (invoice/bill/payment/etc.).
+- ✅ Add entry id + source + source_id to GL detail lines.
+- ✅ Wire GL line → source document (invoice/credit note/bill) via source_id —
+  verified live (38/38 invoice entries link, 0 id mismatches).
+- ⬜ Journal entry detail page (header + balanced lines + source link). JE # in
+  the GL currently links to the journal list, not a per-entry page.
 - ⬜ Collapsible/expandable sections on TB/BS/P&L.
 
 **Exit criteria:** no figure is a dead end — every number drills to its source
@@ -116,13 +121,14 @@ document.
 
 ---
 
-## Phase 4 — Live re-validation  ⬜
+## Phase 4 — Live re-validation  ◻
 
-The four reports built while the DB was unavailable are schema-verified only.
-
-- ⬜ Re-validate KRA statutory (P10, WHT, VAT-by-rate), Income/Expense,
-  Inventory & Fixed-Asset, and Bank-Rec against real posted data; add tie-out
-  integration tests for each; fix discrepancies.
+- ✅ All report SQL re-validated against the live schema (every query executes
+  clean under ON_ERROR_STOP; VAT-by-rate and Income-by-Customer return correct
+  figures on real invoice data). Schema-correctness risk closed.
+- ⬜ Numeric tie-out for bills/payroll/inventory/bank-rec awaits seed data in
+  those modules (currently empty).
+- ⬜ Add tie-out integration tests for each statutory/management report.
 
 ---
 
