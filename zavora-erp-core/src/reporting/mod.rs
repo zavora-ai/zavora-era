@@ -272,9 +272,11 @@ pub struct GlDetailReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlDetailLine {
     pub date: NaiveDate,
+    pub entry_id: Uuid,
     pub journal_number: String,
     pub description: String,
     pub reference: String,
+    pub source: String,
     pub debit: Decimal,
     pub credit: Decimal,
     pub balance: Decimal,
