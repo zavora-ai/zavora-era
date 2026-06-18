@@ -120,6 +120,7 @@ export const reopenPeriod = (id: string, data: { reason: string }) =>
 
 // === Journal Entries ===
 export const getJournalEntries = () => api.get('/journal-entries');
+export const getJournalEntry = (id: string) => api.get(`/journal-entries/${id}`);
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
 export const reverseJournalEntry = (id: string, data: { reason?: string }) =>

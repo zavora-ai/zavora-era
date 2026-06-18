@@ -1,5 +1,6 @@
 // Shared rendering primitives used by the individual report views.
-// Extracted verbatim from the original ReportsPage monolith.
+import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../../../utils/format';
 
 export const num = (n: number) => <span className="tabular-nums">{formatCurrency(n)}</span>;
@@ -25,12 +26,28 @@ export function TwoColHead({ comparative, label }: { comparative?: string; label
   );
 }
 
+// A statement section whose lines collapse/expand on screen. Collapsed rows stay
+// in the DOM (hidden) and are forced visible for print, so a printed statement
+// always shows every line regardless of the on-screen state.
 export function Section({ title, section, comparative, onDrill }: { title: string; section: any; comparative?: string; onDrill?: (code: string) => void }) {
+  const [open, setOpen] = useState(true);
+  const span = comparative ? 3 : 2;
   return (
     <>
-      <tr className="bg-gray-50"><td className="py-1.5 font-semibold text-gray-700" colSpan={comparative ? 3 : 2}>{title}</td></tr>
+      <tr className="bg-gray-50">
+        <td className="py-1.5 font-semibold text-gray-700" colSpan={span}>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className="no-print mr-1 align-middle text-gray-400 hover:text-indigo-600"
+            title={open ? 'Collapse section' : 'Expand section'}
+          >
+            {open ? <ChevronDown className="w-3.5 h-3.5 inline" /> : <ChevronRight className="w-3.5 h-3.5 inline" />}
+          </button>
+          {title}
+        </td>
+      </tr>
       {section.lines.map((l: any) => (
-        <tr key={l.account_code + l.account_name} className="border-b border-gray-50">
+        <tr key={l.account_code + l.account_name} className={`border-b border-gray-50 ${open ? '' : 'hidden print:table-row'}`}>
           <td className="py-1.5 pl-4"><AccountCell code={l.account_code} name={l.account_name} onDrill={onDrill} /></td>
           <td className="text-right">{num(l.amount)}</td>
           {comparative && <td className="text-right text-gray-500">{l.comparative != null ? num(l.comparative) : '—'}</td>}

@@ -24,7 +24,7 @@ export default function GlDetailView({ c }: { c: any }) {
             <tr key={i} className="border-b border-gray-50">
               <td className="py-1.5">{l.date}</td>
               <td className="font-mono text-xs">
-                <Link to={`/journal-entries`} className="text-blue-600 hover:underline" title="View journal entry">{l.journal_number}</Link>
+                <Link to={`/journal-entries/${l.entry_id}`} className="text-blue-600 hover:underline" title="View journal entry">{l.journal_number}</Link>
               </td>
               <td className="text-xs text-gray-400">{(l.source || '').replace(/"/g, '')}</td>
               <td className="text-gray-500">

@@ -124,6 +124,8 @@ pub struct JournalEntryRow {
     pub date: NaiveDate,
     pub period_id: Uuid,
     pub source: String,
+    #[serde(default)]
+    pub source_id: Option<Uuid>,
     pub reference: String,
     pub description: String,
     pub status: String,

@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         // Journal entries
         .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
+        .route("/api/v1/journal-entries/{id}", get(routes::journal::get))
         .route("/api/v1/journal-entries/{id}/reverse", post(routes::journal::reverse))
         // Customers
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
