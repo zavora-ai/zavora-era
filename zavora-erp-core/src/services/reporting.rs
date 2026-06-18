@@ -72,6 +72,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = party_statement(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
             ReportContent::PartyStatement(report)
         }
+        ReportType::PayrollSummary => {
+            let report = payroll_summary(engine, entity_id, req.parameters).await?;
+            ReportContent::PayrollSummary(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -925,6 +929,25 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             }
             output.extend_from_slice(format!(",,Closing Balance,{},{},{}\n", s.total_charges, s.total_payments, s.closing_balance).as_bytes());
         }
+        ReportContent::PayrollSummary(p) => {
+            output.extend_from_slice(b"Employee,Gross,PAYE,NSSF,SHA,Housing Levy,HELB,Net\n");
+            for e in &p.employees {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&e.employee_name),
+                    e.gross, e.paye, e.nssf, e.sha, e.housing_levy, e.helb, e.net,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            let t = &p.totals;
+            output.extend_from_slice(
+                format!(
+                    "Total,{},{},{},{},{},{},{}\n",
+                    t.gross, t.paye, t.nssf, t.sha, t.housing_levy, t.helb, t.net
+                )
+                .as_bytes(),
+            );
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1219,6 +1242,148 @@ async fn party_statement(
         total_charges,
         total_payments,
         closing_balance: balance,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayRunSummaryRow {
+    id: Uuid,
+    pay_date: NaiveDate,
+    status: String,
+    total_gross: Decimal,
+    total_paye: Decimal,
+    total_nssf: Decimal,
+    total_sha: Decimal,
+    total_housing_levy: Decimal,
+    total_helb: Decimal,
+    total_net: Decimal,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayslipSummaryRow {
+    pay_run_id: Uuid,
+    employee_id: Uuid,
+    employee_name: String,
+    gross: Decimal,
+    paye: Decimal,
+    nssf: Decimal,
+    sha: Decimal,
+    housing_levy: Decimal,
+    helb: Decimal,
+    net: Decimal,
+}
+
+/// Payroll summary across the pay runs whose pay date falls in the period.
+/// Run-level money comes from `pay_runs`; per-employee figures are read from
+/// each payslip's deduction breakdown (JSONB) and aggregated. Draft runs are
+/// excluded.
+async fn payroll_summary(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<PayrollSummaryReport> {
+    let today = Utc::now().date_naive();
+    let period_to = params.period_to.unwrap_or(today);
+    let period_from = params
+        .period_from
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(period_to.year(), 1, 1).unwrap());
+
+    let runs = sqlx::query_as::<_, PayRunSummaryRow>(
+        "SELECT id, pay_date, status, total_gross, total_paye, total_nssf, total_sha,
+                total_housing_levy, total_helb, total_net
+         FROM pay_runs
+         WHERE entity_id = $1 AND status <> 'draft' AND pay_date BETWEEN $2 AND $3
+         ORDER BY pay_date",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let payslips = sqlx::query_as::<_, PayslipSummaryRow>(
+        "SELECT ps.pay_run_id, ps.employee_id, e.full_name AS employee_name,
+                (ps.deductions->>'gross_salary')::numeric          AS gross,
+                (ps.deductions->>'net_paye')::numeric              AS paye,
+                (ps.deductions->>'nssf_employee')::numeric         AS nssf,
+                (ps.deductions->>'sha')::numeric                   AS sha,
+                (ps.deductions->>'housing_levy_employee')::numeric AS housing_levy,
+                (ps.deductions->>'helb')::numeric                  AS helb,
+                (ps.deductions->>'net_salary')::numeric            AS net
+         FROM payslips ps
+         JOIN pay_runs pr ON pr.id = ps.pay_run_id
+         JOIN employees e ON e.id = ps.employee_id
+         WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    // Employees per run, and per-employee aggregation across runs.
+    let mut count_by_run: std::collections::HashMap<Uuid, u32> = std::collections::HashMap::new();
+    let mut emp_map: std::collections::HashMap<Uuid, PayrollEmployeeLine> = std::collections::HashMap::new();
+    for p in &payslips {
+        *count_by_run.entry(p.pay_run_id).or_insert(0) += 1;
+        let e = emp_map.entry(p.employee_id).or_insert_with(|| PayrollEmployeeLine {
+            employee_id: p.employee_id,
+            employee_name: p.employee_name.clone(),
+            gross: Decimal::ZERO,
+            paye: Decimal::ZERO,
+            nssf: Decimal::ZERO,
+            sha: Decimal::ZERO,
+            housing_levy: Decimal::ZERO,
+            helb: Decimal::ZERO,
+            net: Decimal::ZERO,
+        });
+        e.gross += p.gross;
+        e.paye += p.paye;
+        e.nssf += p.nssf;
+        e.sha += p.sha;
+        e.housing_levy += p.housing_levy;
+        e.helb += p.helb;
+        e.net += p.net;
+    }
+
+    let run_lines: Vec<PayrollRunLine> = runs
+        .iter()
+        .map(|r| PayrollRunLine {
+            pay_run_id: r.id,
+            pay_date: r.pay_date,
+            status: r.status.clone(),
+            employee_count: *count_by_run.get(&r.id).unwrap_or(&0),
+            gross: r.total_gross,
+            paye: r.total_paye,
+            nssf: r.total_nssf,
+            sha: r.total_sha,
+            housing_levy: r.total_housing_levy,
+            helb: r.total_helb,
+            net: r.total_net,
+        })
+        .collect();
+
+    let totals = PayrollTotals {
+        gross: run_lines.iter().map(|r| r.gross).sum(),
+        paye: run_lines.iter().map(|r| r.paye).sum(),
+        nssf: run_lines.iter().map(|r| r.nssf).sum(),
+        sha: run_lines.iter().map(|r| r.sha).sum(),
+        housing_levy: run_lines.iter().map(|r| r.housing_levy).sum(),
+        helb: run_lines.iter().map(|r| r.helb).sum(),
+        net: run_lines.iter().map(|r| r.net).sum(),
+    };
+
+    let mut employees: Vec<PayrollEmployeeLine> = emp_map.into_values().collect();
+    employees.sort_by(|a, b| a.employee_name.cmp(&b.employee_name));
+
+    Ok(PayrollSummaryReport {
+        period_from,
+        period_to,
+        run_count: run_lines.len() as u32,
+        employee_count: employees.len() as u32,
+        runs: run_lines,
+        employees,
+        totals,
     })
 }
 

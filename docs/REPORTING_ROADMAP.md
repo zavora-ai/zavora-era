@@ -11,7 +11,7 @@ periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 ## 1. Pending reports
 - ✅ **Customer & Vendor statements** — opening balance, dated activity, running/closing balance; party + date-range filters. (CustomerStatement / VendorStatement report types.)
 - ⬜ **KRA statutory** — PAYE P10 monthly schedule, WHT certificate (P10A), VAT summary by document & rate.
-- ⬜ **Payroll Summary** — gross, PAYE, NSSF, SHA, housing levy, HELB, net; per-run and per-employee.
+- ✅ **Payroll Summary** — gross, PAYE, NSSF, SHA, housing levy, HELB, net; per-run and per-employee. (PayrollSummary report type.)
 - ⬜ **Bank Reconciliation Summary** — GL vs statement balance, matched/unmatched, outstanding items.
 - ⬜ **Income by Customer / Expense by Vendor** — revenue/expense grouped and ranked for a period.
 - ⬜ **Inventory Valuation & Fixed-Asset register** — qty/cost/value; cost/accum-dep/NBV.

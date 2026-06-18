@@ -73,6 +73,7 @@ pub enum ReportContent {
     GlDetail(GlDetailReport),
     VatReturn(VatReturnReport),
     PartyStatement(PartyStatementReport),
+    PayrollSummary(PayrollSummaryReport),
     Generic(serde_json::Value),
 }
 
@@ -319,6 +320,61 @@ pub struct StatementLine {
     pub payment: Decimal,
     /// Running outstanding balance after this line.
     pub balance: Decimal,
+}
+
+/// Payroll summary — statutory and net-pay totals across the pay runs whose
+/// pay date falls in the period, with a per-run and a per-employee breakdown.
+/// Draft runs are excluded (not yet real payroll). NSSF/SHA/housing figures are
+/// the employee-side deductions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollSummaryReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub runs: Vec<PayrollRunLine>,
+    pub employees: Vec<PayrollEmployeeLine>,
+    pub totals: PayrollTotals,
+    /// Distinct employees paid in the period.
+    pub employee_count: u32,
+    pub run_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollTotals {
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollRunLine {
+    pub pay_run_id: Uuid,
+    pub pay_date: NaiveDate,
+    pub status: String,
+    pub employee_count: u32,
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollEmployeeLine {
+    pub employee_id: Uuid,
+    pub employee_name: String,
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
 }
 
 /// Export output from report generation.
