@@ -121,6 +121,9 @@ export const saveCustomReport = (data: { id?: string; name: string; definition: 
 export const deleteCustomReport = (id: string) => api.delete(`/custom-reports/${id}`);
 export const runCustomReport = (id: string, from: string, to: string) =>
   api.get(`/custom-reports/${id}/run`, { params: { from, to } });
+export const getConsolidationEntities = () => api.get('/consolidation/entities');
+export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
+  api.post('/consolidation/trial-balance', data);
 export const getDimensions = () => api.get('/dimensions');
 export const createDimensionType = (data: { code: string; name: string }) =>
   api.post('/dimension-types', data);

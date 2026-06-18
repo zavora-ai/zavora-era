@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
-  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers
+  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -34,6 +34,7 @@ const navigation = [
   { name: 'Periods', href: '/periods', icon: CalendarClock },
   { name: 'Budgets', href: '/budgets', icon: Target },
   { name: 'Dimensions', href: '/dimensions', icon: Layers },
+  { name: 'Consolidation', href: '/consolidation', icon: Network },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { divider: true, label: '' },
   { name: 'Settings', href: '/settings', icon: Settings },

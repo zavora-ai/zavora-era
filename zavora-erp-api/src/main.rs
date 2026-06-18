@@ -221,6 +221,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/custom-reports", get(routes::custom_reports::list).post(routes::custom_reports::save))
         .route("/api/v1/custom-reports/{id}", get(routes::custom_reports::get).delete(routes::custom_reports::delete))
         .route("/api/v1/custom-reports/{id}/run", get(routes::custom_reports::run))
+        .route("/api/v1/consolidation/entities", get(routes::consolidation::my_entities))
+        .route("/api/v1/consolidation/trial-balance", post(routes::consolidation::trial_balance))
         .route("/api/v1/dimensions", get(routes::dimensions::list))
         .route("/api/v1/dimension-types", post(routes::dimensions::create_type))
         .route("/api/v1/dimension-values", post(routes::dimensions::create_value))
