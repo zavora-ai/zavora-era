@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceEtims, getAuditForObject, getPayments, mpesaStkPush } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
@@ -9,7 +9,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import {
   ArrowLeft, Send, CheckCircle, CreditCard,
-  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck
+  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck, FileText
 } from 'lucide-react';
 
 const ETIMS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -79,6 +79,9 @@ export default function InvoiceDetailPage() {
             <button onClick={() => navigate('/invoices')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
+            <Link to={`/documents/invoice/${id}`} className="btn-secondary">
+              <FileText className="w-4 h-4" /> Preview
+            </Link>
             {invoice.status === 'draft' && hasRole(ROLES_POST) && (
               <button onClick={() => postMutation.mutate()} className="btn-primary" disabled={postMutation.isPending}>
                 <CheckCircle className="w-4 h-4" /> {postMutation.isPending ? 'Posting...' : 'Post Invoice'}

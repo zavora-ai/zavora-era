@@ -177,6 +177,7 @@ export const createSupplierCreditNote = (data: any) => api.post('/supplier-credi
 
 // === Payments ===
 export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
+export const getPayment = (id: string) => api.get(`/payments/${id}`);
 export const recordPayment = (data: any) => api.post('/payments', data);
 export const applyPayment = (data: { payment_id: string; document_id: string; amount: number }) =>
   api.post('/payments/apply', data);

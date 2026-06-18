@@ -8,7 +8,8 @@ import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
-import { Plus, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { Plus, CheckCircle, Pencil, Trash2, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -49,6 +50,13 @@ export default function BillsPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Link
+            to={`/documents/bill/${r.id}`}
+            className="btn-secondary text-xs py-1 px-2"
+            title="Preview document"
+          >
+            <Eye className="w-3 h-3" />
+          </Link>
           {r.status === 'draft' && (
             <>
               {hasRole(ROLES_APPROVE) && (

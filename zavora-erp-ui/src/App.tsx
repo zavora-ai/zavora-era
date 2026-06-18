@@ -32,6 +32,11 @@ import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
 import ReceiptCapturePage from './pages/receipts/ReceiptCapturePage';
+import InvoicePreview from './pages/documents/InvoicePreview';
+import EstimatePreview from './pages/documents/EstimatePreview';
+import CreditNotePreview from './pages/documents/CreditNotePreview';
+import BillPreview from './pages/documents/BillPreview';
+import PaymentReceiptPreview from './pages/documents/PaymentReceiptPreview';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -105,6 +110,11 @@ export default function App() {
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="documents/invoice/:id" element={<InvoicePreview />} />
+            <Route path="documents/estimate/:id" element={<EstimatePreview />} />
+            <Route path="documents/credit-note/:id" element={<CreditNotePreview />} />
+            <Route path="documents/bill/:id" element={<BillPreview />} />
+            <Route path="documents/receipt/:id" element={<PaymentReceiptPreview />} />
           </Route>
         </Routes>
       </BrowserRouter>
