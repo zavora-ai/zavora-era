@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, getCustomers, getProducts } from '../../api/client';
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, getCustomers, getProducts, getDimensions } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
@@ -124,6 +124,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => r.data) });
 
   const isEdit = !!editId;
 
@@ -161,6 +162,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
         unit_price: l.unit_price || 0,
         tax_rate: l.vat_treatment === 'Standard16' ? 16 : l.vat_treatment === 'ZeroRated' ? 0 : 0,
         account_code: l.account_code || '5000',
+        dimensions: l.dimensions || {},
       }));
       setForm({
         customer_id: inv.customer_id || '',
@@ -182,7 +184,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
 
   function emptyLine() {
-    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '5000' };
+    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '5000', dimensions: {} as Record<string, string> };
   }
 
   const applyProductToLine = (i: number, p: QuickProduct) => {
@@ -261,6 +263,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
         unit_price: l.unit_price,
         account_code: l.account_code,
         vat_treatment: l.tax_rate === 16 ? 'Standard16' : l.tax_rate === 0 ? 'ZeroRated' : 'Exempt',
+        dimensions: l.dimensions && Object.keys(l.dimensions).length ? l.dimensions : undefined,
       })),
       notes: form.notes || undefined,
       send_immediately: form.send_on_save,
@@ -369,6 +372,17 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
                 </div>
                 <div className="col-span-3">
                   <input className="input text-sm py-1.5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} />
+                  {dimensionTypes.map((dt: any) => (
+                    <select
+                      key={dt.code}
+                      className="input text-xs py-1 mt-1"
+                      value={(line.dimensions ?? {})[dt.code] ?? ''}
+                      onChange={(e) => updateLine(i, 'dimensions', { ...(line.dimensions ?? {}), [dt.code]: e.target.value })}
+                    >
+                      <option value="">{dt.name}…</option>
+                      {(dt.values ?? []).map((v: any) => <option key={v.code} value={v.code}>{v.name}</option>)}
+                    </select>
+                  ))}
                 </div>
                 <div className="col-span-1">
                   <input className="input text-sm py-1.5 text-center" type="number" min="1" step="0.01" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', +e.target.value)} />

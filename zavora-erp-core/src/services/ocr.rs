@@ -276,6 +276,7 @@ pub async fn confirm_and_create_bill(
             discount_percent: None,
             account_code: Some(account_code),
             vat_treatment: None,
+            dimensions: None,
         }],
         notes: Some("Created from receipt capture".to_string()),
     };

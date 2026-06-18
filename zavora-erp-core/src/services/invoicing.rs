@@ -112,9 +112,9 @@ pub async fn create_invoice(
     // Insert invoice lines
     for line in &lines {
         sqlx::query(
-            r#"INSERT INTO invoice_lines 
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+            r#"INSERT INTO invoice_lines
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(id)
@@ -127,6 +127,7 @@ pub async fn create_invoice(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -237,6 +238,7 @@ pub async fn create_credit_note(
                     .unwrap_or(crate::types::VatTreatment::Standard16),
                 line_total: l.line_total,
                 vat_amount: l.vat_amount,
+                dimensions: serde_json::from_value(l.dimensions.clone()).unwrap_or_default(),
             })
             .collect()
     } else {
@@ -308,8 +310,8 @@ pub async fn create_credit_note(
     for line in &cn_lines {
         sqlx::query(
             r#"INSERT INTO invoice_lines
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(cn_id)
@@ -322,6 +324,7 @@ pub async fn create_credit_note(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -619,6 +622,7 @@ pub async fn create_estimate(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -693,6 +697,7 @@ pub async fn convert_estimate_to_invoice(
             discount_percent: Some(l.discount_percent),
             account_code: Some(l.account_code.clone()),
             vat_treatment: serde_json::from_str(&l.vat_treatment).ok(),
+            dimensions: serde_json::from_value(l.dimensions.clone()).ok(),
         })
         .collect();
 
@@ -766,6 +771,7 @@ pub(crate) async fn resolve_invoice_line(
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     } else {
         // Manual line — all fields required
@@ -783,6 +789,7 @@ pub(crate) async fn resolve_invoice_line(
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     }
 }
@@ -932,8 +939,8 @@ pub async fn update_invoice_draft(
     for line in &lines {
         sqlx::query(
             r#"INSERT INTO invoice_lines
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(invoice_id)
@@ -946,6 +953,7 @@ pub async fn update_invoice_draft(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -1160,7 +1168,7 @@ pub async fn post_invoice(
             currency: invoice.currency.clone(),
             fx_rate: Some(invoice.fx_rate),
             description: Some(line.description.clone()),
-            dimensions: None,
+            dimensions: serde_json::from_value(line.dimensions.clone()).ok(),
         });
 
         // CR VAT Output (if applicable)
@@ -1320,6 +1328,7 @@ pub async fn resolve_bill_line(
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     } else {
         let default_account = match vendor.default_expense_account.clone() {
@@ -1338,6 +1347,7 @@ pub async fn resolve_bill_line(
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     }
 }

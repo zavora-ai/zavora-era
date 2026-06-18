@@ -134,15 +134,19 @@ source document.
 
 - ✅ **Masters**: `dimension_types` + `dimension_values` (migration 017) with a
   Dimensions management page and API.
-- ✅ **Capture**: journal lines persist `{ type_code: value_code }` (already
-  supported end-to-end); validated live.
+- ✅ **Capture**: journal lines and **invoice lines** persist
+  `{ type_code: value_code }`; invoice line dimensions propagate to the GL at
+  posting (migration 020). Invoice form has per-line dimension selectors.
 - ✅ **Reporting**: Dimensional Analysis report groups movement by a chosen
   dimension type for a period (Option A — scans date-bounded lines, reads the
   JSONB key), values resolved to names.
-- ⬜ **Capture on every form**: dimension selectors on invoice/bill/expense
-  lines (only the journal-entry path is wired so far) — larger UI effort.
+- ◻ **Capture on bills**: `bill_lines.dimensions` column added, but bill
+  posting is header-level (one expense line to a default account, no per-line
+  iteration) — per-line bill dimensions need a bill-posting rework that is
+  independent of dimensions.
 - ⬜ **Controls**: per-account rules (e.g. expense accounts require a Cost
-  Centre).
+  Centre) — opt-in governance, enforced at posting; deferred to avoid
+  destabilising existing auto-postings.
 - ⬜ **Option B**: extend the snapshot key to `account + dimension + period`
   (only if dimensional volume warrants it).
 
