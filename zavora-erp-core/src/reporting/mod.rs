@@ -30,6 +30,7 @@ pub enum ReportType {
     ExpenseByVendor,
     InventoryValuation,
     FixedAssetRegister,
+    BudgetVsActual,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -85,6 +86,7 @@ pub enum ReportContent {
     InventoryValuation(InventoryValuationReport),
     FixedAssetRegister(FixedAssetRegisterReport),
     BankReconSummary(BankReconSummaryReport),
+    BudgetVsActual(BudgetVsActualReport),
     Generic(serde_json::Value),
 }
 
@@ -567,6 +569,32 @@ pub struct BankReconLine {
     /// True when the difference is fully explained by the unmatched items
     /// (|difference − unreconciled_amount| < 0.01).
     pub is_reconciled: bool,
+}
+
+/// Budget vs Actual — for each P&L account, actual ledger movement in the period
+/// against the budgeted figure, with variance and variance %. Amounts are in the
+/// account's natural sign (revenue positive when earned, expense positive when
+/// incurred). Variance = actual − budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetVsActualReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<BudgetVsActualLine>,
+    pub total_actual: Decimal,
+    pub total_budget: Decimal,
+    pub total_variance: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetVsActualLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub account_type: String,
+    pub actual: Decimal,
+    pub budget: Decimal,
+    pub variance: Decimal,
+    /// variance / budget * 100; None when budget is zero.
+    pub variance_pct: Option<Decimal>,
 }
 
 /// Export output from report generation.

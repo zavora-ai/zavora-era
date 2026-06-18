@@ -217,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/agent/report", post(routes::agent::run_report))
         // Settings
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
+        .route("/api/v1/budgets", get(routes::budgets::list).put(routes::budgets::set))
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         .route("/api/v1/users/{id}", put(routes::users::update))

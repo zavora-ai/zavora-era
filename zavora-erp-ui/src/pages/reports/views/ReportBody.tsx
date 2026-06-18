@@ -17,6 +17,7 @@ import PartyRankingView from './PartyRankingView';
 import InventoryValuationView from './InventoryValuationView';
 import FixedAssetRegisterView from './FixedAssetRegisterView';
 import BankReconSummaryView from './BankReconSummaryView';
+import BudgetVsActualView from './BudgetVsActualView';
 import GlDetailView from './GlDetailView';
 import RawJsonView from './RawJsonView';
 
@@ -52,6 +53,8 @@ export default function ReportBody({ result, onDrill }: { result: any; onDrill?:
       return <FixedAssetRegisterView c={c} />;
     case 'BankReconSummary':
       return <BankReconSummaryView c={c} />;
+    case 'BudgetVsActual':
+      return <BudgetVsActualView c={c} />;
     case 'GlDetail':
       return <GlDetailView c={c} />;
     default:

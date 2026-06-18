@@ -108,6 +108,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = bank_recon_summary(engine, entity_id, req.parameters).await?;
             ReportContent::BankReconSummary(report)
         }
+        ReportType::BudgetVsActual => {
+            let report = budget_vs_actual(engine, entity_id, req.parameters).await?;
+            ReportContent::BudgetVsActual(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -140,6 +144,7 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::ExpenseByVendor => "Expense by Vendor",
         ReportType::InventoryValuation => "Inventory Valuation",
         ReportType::FixedAssetRegister => "Fixed-Asset Register",
+        ReportType::BudgetVsActual => "Budget vs Actual",
         ReportType::CustomerPaymentHistory => "Customer Payment History",
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
@@ -1092,6 +1097,20 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 output.extend_from_slice(row.as_bytes());
             }
         }
+        ReportContent::BudgetVsActual(r) => {
+            output.extend_from_slice(b"Account Code,Account,Actual,Budget,Variance,Variance %\n");
+            for l in &r.lines {
+                let row = format!(
+                    "{},{},{},{},{},{}\n",
+                    csv_escape(&l.account_code),
+                    csv_escape(&l.account_name),
+                    l.actual, l.budget, l.variance,
+                    l.variance_pct.map(|p| p.round_dp(1).to_string()).unwrap_or_default(),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",Total,{},{},{},\n", r.total_actual, r.total_budget, r.total_variance).as_bytes());
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -2042,6 +2061,90 @@ async fn bank_recon_summary(
 /// 0.01 tolerance for balance comparisons.
 fn dec_cent() -> Decimal {
     Decimal::new(1, 2)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BudgetVsActualRow {
+    account_code: String,
+    account_name: String,
+    account_type: String,
+    actual: Decimal,
+    budget: Decimal,
+}
+
+/// Budget vs Actual for P&L accounts over the period. Actual is the ledger
+/// movement in the account's natural sign (revenue credit-positive, expense
+/// debit-positive); budget is the sum of budget entries for fiscal periods that
+/// fall fully within the range. Includes any account with a budget or activity.
+async fn budget_vs_actual(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<BudgetVsActualReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let rows = sqlx::query_as::<_, BudgetVsActualRow>(
+        r#"
+        WITH actual AS (
+            SELECT a.code AS account_code, a.name AS account_name, a.account_type,
+                   CASE WHEN a.account_type IN ('Revenue', 'ContraRevenue')
+                        THEN COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
+                        ELSE COALESCE(SUM(jl.functional_debit), 0) - COALESCE(SUM(jl.functional_credit), 0)
+                   END AS actual
+            FROM accounts a
+            LEFT JOIN journal_lines jl
+                   ON jl.account_code = a.code AND jl.entity_id = $1
+                  AND jl.entry_date BETWEEN $2 AND $3
+            WHERE a.entity_id = $1
+              AND a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')
+            GROUP BY a.code, a.name, a.account_type
+        ),
+        budget AS (
+            SELECT be.account_code, COALESCE(SUM(be.amount), 0) AS budget
+            FROM budget_entries be
+            JOIN fiscal_periods fp ON fp.id = be.period_id
+            WHERE be.entity_id = $1 AND fp.start_date >= $2 AND fp.end_date <= $3
+            GROUP BY be.account_code
+        )
+        SELECT actual.account_code, actual.account_name, actual.account_type,
+               actual.actual AS actual, COALESCE(budget.budget, 0) AS budget
+        FROM actual
+        LEFT JOIN budget ON budget.account_code = actual.account_code
+        WHERE actual.actual <> 0 OR COALESCE(budget.budget, 0) <> 0
+        ORDER BY actual.account_code
+        "#,
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let hundred = Decimal::from(100);
+    let lines: Vec<BudgetVsActualLine> = rows
+        .into_iter()
+        .map(|r| {
+            let variance = r.actual - r.budget;
+            BudgetVsActualLine {
+                variance_pct: if r.budget.is_zero() { None } else { Some((variance * hundred) / r.budget) },
+                account_code: r.account_code,
+                account_name: r.account_name,
+                account_type: r.account_type,
+                actual: r.actual,
+                budget: r.budget,
+                variance,
+            }
+        })
+        .collect();
+
+    Ok(BudgetVsActualReport {
+        period_from,
+        period_to,
+        total_actual: lines.iter().map(|l| l.actual).sum(),
+        total_budget: lines.iter().map(|l| l.budget).sum(),
+        total_variance: lines.iter().map(|l| l.variance).sum(),
+        lines,
+    })
 }
 
 /// GL detail report.

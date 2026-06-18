@@ -111,6 +111,9 @@ export const updateAccount = (code: string, data: any) => api.put(`/accounts/${c
 
 // === Periods ===
 export const getPeriods = () => api.get('/periods');
+export const getBudgets = () => api.get('/budgets');
+export const setBudget = (data: { period_id: string; account_code: string; amount: number }) =>
+  api.put('/budgets', data);
 export const generatePeriods = (data: { fiscal_year: number; year_start_month: number }) =>
   api.post('/periods', data);
 export const closePeriod = (id: string, data: { close_type: 'Soft' | 'Hard' }) =>
