@@ -262,4 +262,4 @@ export const getVendor = (id: string) => api.get(`/vendors/${id}`);
 export const updateVendor = (id: string, data: any) => api.put(`/vendors/${id}`, data);
 
 // === Reports (additional) ===
-export const exportReport = (data: any) => api.post('/reports/export', data);
+export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });
