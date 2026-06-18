@@ -288,3 +288,63 @@ async fn reports_balance_after_posting() {
         other => panic!("expected balance sheet, got {other:?}"),
     }
 }
+
+/// The period-balance snapshots must reconcile exactly to the journal lines, and
+/// an as-at trial balance built from snapshot + open tail (across a prior and a
+/// current period) must still balance. Drift here would mean reports lie.
+#[tokio::test]
+async fn snapshots_reconcile_to_ledger() {
+    let Some((engine, entity_id, today)) = setup("open").await else { return };
+    seed_account(&engine, entity_id, "1000", "Cash", "Asset").await;
+    seed_account(&engine, entity_id, "4000", "Sales", "Revenue").await;
+
+    // A closed prior-year period (its end_date is in the past relative to today).
+    let prior_end = NaiveDate::from_ymd_opt(today.year() - 1, 12, 31).unwrap();
+    let prior_start = NaiveDate::from_ymd_opt(today.year() - 1, 1, 1).unwrap();
+    let prior_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO fiscal_periods (id, entity_id, name, start_date, end_date, status, fiscal_year, period_number) \
+         VALUES ($1,$2,$3,$4,$5,'open',$6,1)",
+    )
+    .bind(prior_id).bind(entity_id).bind(format!("FY{}", today.year() - 1))
+    .bind(prior_start).bind(prior_end).bind(today.year() - 1)
+    .execute(engine.pool()).await.unwrap();
+
+    let prior_date = NaiveDate::from_ymd_opt(today.year() - 1, 6, 15).unwrap();
+    let mk = |date: NaiveDate, amt| CreateJournalEntryRequest {
+        date, source: JournalSource::Manual, reference: format!("REC-{}", Uuid::new_v4()),
+        description: "x".to_string(),
+        lines: vec![line("1000", Some(amt), None), line("4000", None, Some(amt))],
+        post_immediately: true,
+    };
+    // One entry in the prior period (snapshot), one today (open tail).
+    create_and_post(&engine, entity_id, mk(prior_date, dec!(70.00)), prior_id, AgentOrUserId::User(Uuid::new_v4())).await.expect("prior post");
+    create_and_post(&engine, entity_id, mk(today, dec!(30.00)), period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4())).await.expect("current post");
+
+    // Reconcile snapshots vs raw lines, per account.
+    let mismatches: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM (
+               SELECT account_code, SUM(debit_total) d, SUM(credit_total) c
+               FROM account_period_balances WHERE entity_id = $1 GROUP BY account_code
+           ) s FULL JOIN (
+               SELECT account_code, SUM(COALESCE(functional_debit,0)) d, SUM(COALESCE(functional_credit,0)) c
+               FROM journal_lines WHERE entity_id = $1 GROUP BY account_code
+           ) l USING (account_code)
+           WHERE s.d IS DISTINCT FROM l.d OR s.c IS DISTINCT FROM l.c"#,
+    )
+    .bind(entity_id)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap();
+    assert_eq!(mismatches, 0, "snapshots must reconcile exactly to the ledger");
+
+    // As-at trial balance (snapshot prior period + open tail today) must balance
+    // and reflect both postings (70 + 30 = 100 on each side).
+    let tb = engine
+        .run_report(ReportRequest { entity_id, report_type: ReportType::TrialBalance, parameters: empty_params() })
+        .await.unwrap();
+    if let ReportContent::TrialBalance(r) = tb.content {
+        assert!(r.is_balanced, "TB must balance: diff {}", r.difference);
+        assert_eq!(r.total_debits, dec!(100.00));
+    } else { panic!("expected trial balance"); }
+}

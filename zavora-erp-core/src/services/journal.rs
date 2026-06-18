@@ -335,6 +335,42 @@ pub async fn create_and_post_in_tx(
         .await?;
     }
 
+    // Maintain per-account period-balance snapshots (Tier 2) in the same
+    // transaction, so as-at reports never rescan history and the snapshots stay
+    // in exact lockstep with the ledger.
+    let period_end: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT end_date FROM fiscal_periods WHERE id = $1")
+            .bind(period_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    let mut by_account: std::collections::HashMap<&str, (Decimal, Decimal)> =
+        std::collections::HashMap::new();
+    for line in &lines {
+        let e = by_account
+            .entry(line.account_code.as_str())
+            .or_insert((Decimal::ZERO, Decimal::ZERO));
+        e.0 += line.functional_debit.unwrap_or(Decimal::ZERO);
+        e.1 += line.functional_credit.unwrap_or(Decimal::ZERO);
+    }
+    for (code, (d, c)) in by_account {
+        sqlx::query(
+            r#"INSERT INTO account_period_balances
+                   (entity_id, account_code, period_id, period_end, debit_total, credit_total)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (entity_id, account_code, period_id)
+               DO UPDATE SET debit_total  = account_period_balances.debit_total  + EXCLUDED.debit_total,
+                             credit_total = account_period_balances.credit_total + EXCLUDED.credit_total"#,
+        )
+        .bind(entity_id)
+        .bind(code)
+        .bind(period_id)
+        .bind(period_end)
+        .bind(d)
+        .bind(c)
+        .execute(&mut **tx)
+        .await?;
+    }
+
     Ok(JournalEntry {
         id: entry_id,
         entity_id,

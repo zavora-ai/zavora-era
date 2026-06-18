@@ -6,6 +6,26 @@ use crate::engine::ErpEngine;
 use crate::error::ErpResult;
 use crate::reporting::*;
 
+/// As-at per-account movement (`account_code`, `total_debit`, `total_credit`)
+/// with `$1 = entity_id`, `$2 = as_at`. Computed from period snapshots for every
+/// period that ended on/before the date, plus the raw lines in the still-open
+/// tail — so only one period's lines are ever scanned, not the whole ledger.
+const ASAT_MOVEMENTS: &str = r#"
+    SELECT account_code, SUM(d) AS total_debit, SUM(c) AS total_credit FROM (
+        SELECT account_code, debit_total AS d, credit_total AS c
+        FROM account_period_balances
+        WHERE entity_id = $1 AND period_end <= $2
+        UNION ALL
+        SELECT account_code, COALESCE(functional_debit, 0) AS d, COALESCE(functional_credit, 0) AS c
+        FROM journal_lines
+        WHERE entity_id = $1 AND entry_date <= $2
+          AND entry_date > COALESCE(
+              (SELECT MAX(period_end) FROM account_period_balances WHERE entity_id = $1 AND period_end <= $2),
+              DATE '0001-01-01')
+    ) tail
+    GROUP BY account_code
+"#;
+
 /// Generate a report based on the request type.
 pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResult<ReportData> {
     let now = Utc::now();
@@ -179,23 +199,16 @@ async fn trial_balance(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
     // join to accounts. Gating the line sums INSIDE the subquery (rather than a
     // LEFT JOIN on the entry) is essential: otherwise lines whose entry falls
     // outside the date window still leak into the totals.
-    let lines = sqlx::query_as::<_, TrialBalanceQueryRow>(
+    let lines = sqlx::query_as::<_, TrialBalanceQueryRow>(&format!(
         r#"SELECT a.code as account_code, a.name as account_name,
                   COALESCE(m.total_debit, 0)  as total_debit,
                   COALESCE(m.total_credit, 0) as total_credit
            FROM accounts a
-           LEFT JOIN (
-               SELECT jl.account_code,
-                      SUM(jl.functional_debit)  as total_debit,
-                      SUM(jl.functional_credit) as total_credit
-               FROM journal_lines jl
-               WHERE jl.entity_id = $1 AND jl.entry_date <= $2
-               GROUP BY jl.account_code
-           ) m ON m.account_code = a.code
+           LEFT JOIN ({ASAT_MOVEMENTS}) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
              AND (COALESCE(m.total_debit, 0) <> 0 OR COALESCE(m.total_credit, 0) <> 0)
-           ORDER BY a.code"#,
-    )
+           ORDER BY a.code"#
+    ))
     .bind(entity_id)
     .bind(as_at)
     .fetch_all(engine.pool())
@@ -279,21 +292,15 @@ async fn balance_sheet(engine: &ErpEngine, entity_id: Uuid, params: ReportParame
 async fn balance_sheet_at(engine: &ErpEngine, entity_id: Uuid, as_at: NaiveDate) -> ErpResult<BalanceSheetReport> {
     // Posted balances as at the date, date-gated inside the subquery (see the
     // trial-balance note on why the gate must be on the line aggregation).
-    let rows = sqlx::query_as::<_, BalanceSheetQueryRow>(
-        r#"SELECT a.code, a.name, a.account_type, COALESCE(m.balance, 0) as balance
+    let rows = sqlx::query_as::<_, BalanceSheetQueryRow>(&format!(
+        r#"SELECT a.code, a.name, a.account_type, COALESCE(m.total_debit, 0) - COALESCE(m.total_credit, 0) as balance
            FROM accounts a
-           JOIN (
-               SELECT jl.account_code,
-                      SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)) as balance
-               FROM journal_lines jl
-               WHERE jl.entity_id = $1 AND jl.entry_date <= $2
-               GROUP BY jl.account_code
-           ) m ON m.account_code = a.code
+           JOIN ({ASAT_MOVEMENTS}) m ON m.account_code = a.code
            WHERE a.entity_id = $1 AND a.is_active = true
              AND a.account_type IN ('Asset', 'ContraAsset', 'Liability', 'ContraLiability', 'Equity')
-             AND COALESCE(m.balance, 0) <> 0
-           ORDER BY a.code"#,
-    )
+             AND (COALESCE(m.total_debit, 0) - COALESCE(m.total_credit, 0)) <> 0
+           ORDER BY a.code"#
+    ))
     .bind(entity_id)
     .bind(as_at)
     .fetch_all(engine.pool())
@@ -326,13 +333,12 @@ async fn balance_sheet_at(engine: &ErpEngine, entity_id: Uuid, as_at: NaiveDate)
     // Current-year (unclosed) earnings = net of all P&L-type movements up to the
     // as-at date, folded into equity so Assets = Liabilities + Equity holds even
     // before a year-end close has moved profit into retained earnings.
-    let pnl_net: Decimal = sqlx::query_scalar::<_, Decimal>(
-        r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
-           FROM journal_lines jl
-           JOIN accounts a ON a.entity_id = jl.entity_id AND a.code = jl.account_code
-           WHERE jl.entity_id = $1 AND jl.entry_date <= $2
-             AND a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')"#,
-    )
+    let pnl_net: Decimal = sqlx::query_scalar::<_, Decimal>(&format!(
+        r#"SELECT COALESCE(SUM(m.total_debit - m.total_credit), 0)
+           FROM ({ASAT_MOVEMENTS}) m
+           JOIN accounts a ON a.entity_id = $1 AND a.code = m.account_code
+           WHERE a.account_type IN ('Revenue', 'ContraRevenue', 'Expense', 'ContraExpense')"#
+    ))
     .bind(entity_id)
     .bind(as_at)
     .fetch_one(engine.pool())
