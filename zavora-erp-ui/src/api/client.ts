@@ -114,6 +114,13 @@ export const getPeriods = () => api.get('/periods');
 export const getBudgets = () => api.get('/budgets');
 export const setBudget = (data: { period_id: string; account_code: string; amount: number }) =>
   api.put('/budgets', data);
+export const getCustomReports = () => api.get('/custom-reports');
+export const getCustomReport = (id: string) => api.get(`/custom-reports/${id}`);
+export const saveCustomReport = (data: { id?: string; name: string; definition: any }) =>
+  api.post('/custom-reports', data);
+export const deleteCustomReport = (id: string) => api.delete(`/custom-reports/${id}`);
+export const runCustomReport = (id: string, from: string, to: string) =>
+  api.get(`/custom-reports/${id}/run`, { params: { from, to } });
 export const getDimensions = () => api.get('/dimensions');
 export const createDimensionType = (data: { code: string; name: string }) =>
   api.post('/dimension-types', data);

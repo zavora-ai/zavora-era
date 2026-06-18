@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, Wrench } from 'lucide-react';
 import PageHeader from '../../components/shared/PageHeader';
 import { REPORT_CATEGORIES, reportTypes, slugFor } from './lib/reportTypes';
 
@@ -8,6 +8,14 @@ export default function ReportsPage() {
   return (
     <div>
       <PageHeader title="Reports" subtitle="Financial and compliance reports" />
+
+      <Link to="/reports/custom" className="card p-3 mb-4 flex items-center gap-2 hover:border-indigo-300 border-indigo-200 bg-indigo-50/40">
+        <Wrench className="w-4 h-4 text-indigo-600" />
+        <div>
+          <p className="text-sm font-medium text-gray-900">Custom Report Builder</p>
+          <p className="text-[11px] text-gray-500">Build your own statement from account ranges and subtotals</p>
+        </div>
+      </Link>
 
       <div className="space-y-6">
         {REPORT_CATEGORIES.map((category) => {

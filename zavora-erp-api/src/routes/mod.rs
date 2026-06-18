@@ -8,6 +8,7 @@ pub mod invoices;
 pub mod estimates;
 pub mod bills;
 pub mod budgets;
+pub mod custom_reports;
 pub mod dimensions;
 pub mod supplier_credit_notes;
 pub mod payments;

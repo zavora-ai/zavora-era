@@ -25,6 +25,7 @@ import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import JournalEntryDetailPage from './pages/accounts/JournalEntryDetailPage';
 import BudgetsPage from './pages/budgets/BudgetsPage';
 import DimensionsPage from './pages/dimensions/DimensionsPage';
+import CustomReportsPage from './pages/reports/CustomReportsPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import ReportPage from './pages/reports/ReportPage';
@@ -109,6 +110,7 @@ export default function App() {
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="dimensions" element={<DimensionsPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/custom" element={<CustomReportsPage />} />
             <Route path="reports/:slug" element={<ReportPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />
