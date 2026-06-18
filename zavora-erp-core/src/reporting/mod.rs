@@ -26,6 +26,8 @@ pub enum ReportType {
     GlDetail,
     CustomerStatement,
     VendorStatement,
+    IncomeByCustomer,
+    ExpenseByVendor,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -77,6 +79,7 @@ pub enum ReportContent {
     PayeP10(PayeP10Report),
     WhtReport(WhtReport),
     VatDetail(VatDetailReport),
+    PartyRanking(PartyRankingReport),
     Generic(serde_json::Value),
 }
 
@@ -456,6 +459,29 @@ pub struct VatBand {
     pub taxable_amount: Decimal,
     pub vat_amount: Decimal,
     pub document_count: u32,
+}
+
+/// Income-by-customer / expense-by-vendor: net (ex-VAT) invoiced or billed
+/// amounts grouped per party for the period, ranked high to low with each
+/// party's share of the total.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRankingReport {
+    /// "customer" or "vendor".
+    pub party_kind: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<PartyRankingLine>,
+    pub total: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRankingLine {
+    pub party_id: Uuid,
+    pub party_name: String,
+    pub document_count: u32,
+    pub amount: Decimal,
+    /// Share of the period total, as a percentage (0–100).
+    pub percent: Decimal,
 }
 
 /// Export output from report generation.

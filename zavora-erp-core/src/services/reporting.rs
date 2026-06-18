@@ -88,6 +88,14 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = vat_detail(engine, entity_id, req.parameters).await?;
             ReportContent::VatDetail(report)
         }
+        ReportType::IncomeByCustomer => {
+            let report = party_ranking(engine, entity_id, req.parameters, PartyKind::Customer).await?;
+            ReportContent::PartyRanking(report)
+        }
+        ReportType::ExpenseByVendor => {
+            let report = party_ranking(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
+            ReportContent::PartyRanking(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -116,6 +124,8 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::GlDetail => "General Ledger",
         ReportType::CustomerStatement => "Customer Statement",
         ReportType::VendorStatement => "Vendor Statement",
+        ReportType::IncomeByCustomer => "Income by Customer",
+        ReportType::ExpenseByVendor => "Expense by Vendor",
         ReportType::CustomerPaymentHistory => "Customer Payment History",
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
@@ -1005,6 +1015,21 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
             output.extend_from_slice(format!(",{},,,{}\n", label, v.net_vat.abs()).as_bytes());
         }
+        ReportContent::PartyRanking(p) => {
+            let party = if p.party_kind == "vendor" { "Vendor" } else { "Customer" };
+            output.extend_from_slice(format!("{},Documents,Amount,% of Total\n", party).as_bytes());
+            for l in &p.lines {
+                let row = format!(
+                    "{},{},{},{}\n",
+                    csv_escape(&l.party_name),
+                    l.document_count,
+                    l.amount,
+                    l.percent.round_dp(1),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!("Total,,{},100.0\n", p.total).as_bytes());
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1661,6 +1686,81 @@ async fn vat_detail(
         total_input_vat,
         net_vat,
         is_payable: net_vat > Decimal::ZERO,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PartyRankingRow {
+    party_id: Uuid,
+    party_name: String,
+    document_count: i64,
+    amount: Decimal,
+}
+
+/// Income by customer (invoices) or expense by vendor (bills): net, ex-VAT
+/// amounts grouped per party for the period and ranked high to low. Drafts and
+/// voided/cancelled documents are excluded.
+async fn party_ranking(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+    kind: PartyKind,
+) -> ErpResult<PartyRankingReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    // subtotal is the net (ex-VAT) value — the P&L-relevant figure.
+    let sql = match kind {
+        PartyKind::Customer => {
+            "SELECT i.customer_id AS party_id, c.name AS party_name,
+                    COUNT(*) AS document_count, COALESCE(SUM(i.subtotal), 0) AS amount
+             FROM invoices i
+             JOIN customers c ON c.id = i.customer_id
+             WHERE i.entity_id = $1 AND i.status NOT IN ('draft', 'voided')
+               AND i.issue_date BETWEEN $2 AND $3
+             GROUP BY i.customer_id, c.name
+             ORDER BY amount DESC"
+        }
+        PartyKind::Vendor => {
+            "SELECT b.vendor_id AS party_id, v.name AS party_name,
+                    COUNT(*) AS document_count, COALESCE(SUM(b.subtotal), 0) AS amount
+             FROM bills b
+             JOIN vendors v ON v.id = b.vendor_id
+             WHERE b.entity_id = $1 AND b.status NOT IN ('draft', 'cancelled', 'voided')
+               AND b.issue_date BETWEEN $2 AND $3
+             GROUP BY b.vendor_id, v.name
+             ORDER BY amount DESC"
+        }
+    };
+
+    let rows = sqlx::query_as::<_, PartyRankingRow>(sql)
+        .bind(entity_id)
+        .bind(period_from)
+        .bind(period_to)
+        .fetch_all(engine.pool())
+        .await?;
+
+    let total: Decimal = rows.iter().map(|r| r.amount).sum();
+    let hundred = Decimal::from(100);
+    let lines: Vec<PartyRankingLine> = rows
+        .into_iter()
+        .map(|r| PartyRankingLine {
+            percent: if total.is_zero() { Decimal::ZERO } else { (r.amount * hundred) / total },
+            party_id: r.party_id,
+            party_name: r.party_name,
+            document_count: r.document_count as u32,
+            amount: r.amount,
+        })
+        .collect();
+
+    Ok(PartyRankingReport {
+        party_kind: match kind {
+            PartyKind::Customer => "customer".to_string(),
+            PartyKind::Vendor => "vendor".to_string(),
+        },
+        period_from,
+        period_to,
+        lines,
+        total,
     })
 }
 

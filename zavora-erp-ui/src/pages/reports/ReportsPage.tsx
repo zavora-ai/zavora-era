@@ -23,6 +23,8 @@ const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind
   { key: 'PayeP10', name: 'PAYE Return (P10)', desc: 'KRA monthly PAYE schedule by employee', controls: ['period'] },
   { key: 'WhtCertificate', name: 'WHT Schedule', desc: 'Withholding tax withheld from suppliers', controls: ['period'] },
   { key: 'SalesTaxSummary', name: 'VAT by Rate', desc: 'Output & input VAT broken down by rate band', controls: ['period'] },
+  { key: 'IncomeByCustomer', name: 'Income by Customer', desc: 'Net revenue ranked by customer', controls: ['period'] },
+  { key: 'ExpenseByVendor', name: 'Expense by Vendor', desc: 'Net spend ranked by vendor', controls: ['period'] },
   { key: 'GlDetail', name: 'General Ledger', desc: 'Transaction detail by account', controls: ['period', 'account'] },
 ];
 
@@ -213,8 +215,9 @@ function ReportDocument({ result, branding }: { result: any; branding: any }) {
         {key === 'PayeP10' && <PayeP10 c={c} />}
         {key === 'WhtReport' && <WhtReport c={c} />}
         {key === 'VatDetail' && <VatDetail c={c} />}
+        {key === 'PartyRanking' && <PartyRanking c={c} />}
         {key === 'GlDetail' && <GlDetail c={c} />}
-        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'PayeP10', 'WhtReport', 'VatDetail', 'GlDetail'].includes(key) && (
+        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'PayeP10', 'WhtReport', 'VatDetail', 'PartyRanking', 'GlDetail'].includes(key) && (
           <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
         )}
       </div>
@@ -557,6 +560,41 @@ function VatDetail({ c }: { c: any }) {
           <td className={`text-right ${c.is_payable ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(Math.abs(c.net_vat))}</td>
         </tr>
       </tbody>
+    </table>
+  );
+}
+
+function PartyRanking({ c }: { c: any }) {
+  const party = c.party_kind === 'vendor' ? 'Vendor' : 'Customer';
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">{party}</th>
+          <th className="text-right">Documents</th>
+          <th className="text-right">Amount</th>
+          <th className="text-right">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {c.lines.map((l: any) => (
+          <tr key={l.party_id} className="border-b border-gray-50">
+            <td className="py-1.5">{l.party_name}</td>
+            <td className="text-right text-gray-500">{l.document_count}</td>
+            <td className="text-right">{num(l.amount)}</td>
+            <td className="text-right text-gray-500">{Number(l.percent).toFixed(1)}%</td>
+          </tr>
+        ))}
+        {c.lines.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-gray-400">No activity in this period</td></tr>}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold border-t-2">
+          <td className="py-2">Total</td>
+          <td />
+          <td className="text-right">{num(c.total)}</td>
+          <td className="text-right">100.0%</td>
+        </tr>
+      </tfoot>
     </table>
   );
 }

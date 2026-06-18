@@ -13,7 +13,7 @@ periods (P&L/BS), CSV export, and a period-snapshot engine for scale.
 - ✅ **KRA statutory** — PAYE P10 monthly schedule, WHT schedule, VAT summary by rate band. (PayeP10 / WhtCertificate / SalesTaxSummary report types.) *SQL pending live re-validation.*
 - ✅ **Payroll Summary** — gross, PAYE, NSSF, SHA, housing levy, HELB, net; per-run and per-employee. (PayrollSummary report type.)
 - ⬜ **Bank Reconciliation Summary** — GL vs statement balance, matched/unmatched, outstanding items.
-- ⬜ **Income by Customer / Expense by Vendor** — revenue/expense grouped and ranked for a period.
+- ✅ **Income by Customer / Expense by Vendor** — net (ex-VAT) revenue/expense grouped, ranked, with % share. (IncomeByCustomer / ExpenseByVendor report types.)
 - ⬜ **Inventory Valuation & Fixed-Asset register** — qty/cost/value; cost/accum-dep/NBV.
 
 ## 2. Presentation
