@@ -155,6 +155,10 @@ pub struct CreateJournalEntryRequest {
     pub source: JournalSource,
     pub reference: String,
     pub description: String,
+    /// Id of the source document (invoice/bill/credit note/payment), when the
+    /// entry originates from one. Lets the GL drill back to the document.
+    #[serde(default)]
+    pub source_id: Option<Uuid>,
     pub lines: Vec<CreateJournalLineRequest>,
     pub post_immediately: bool,
 }

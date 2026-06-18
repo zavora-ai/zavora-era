@@ -129,6 +129,7 @@ async fn balanced_entry_posts_and_persists_balanced() {
     let req = CreateJournalEntryRequest {
         date: today,
         source: JournalSource::Manual,
+        source_id: None,
         reference: format!("TEST-{}", Uuid::new_v4()),
         description: "balanced".to_string(),
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(100.00)))],
@@ -159,6 +160,7 @@ async fn subcent_imbalance_gets_rounding_line() {
     let req = CreateJournalEntryRequest {
         date: today,
         source: JournalSource::Invoice,
+        source_id: None,
         reference: format!("RND-{}", Uuid::new_v4()),
         description: "rounding".to_string(),
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(99.99)))],
@@ -187,6 +189,7 @@ async fn out_of_tolerance_entry_is_rejected() {
     let req = CreateJournalEntryRequest {
         date: today,
         source: JournalSource::Manual,
+        source_id: None,
         reference: format!("BAD-{}", Uuid::new_v4()),
         description: "unbalanced".to_string(),
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(99.00)))],
@@ -203,6 +206,7 @@ async fn posting_to_hard_closed_period_is_rejected() {
     let req = CreateJournalEntryRequest {
         date: today,
         source: JournalSource::Manual,
+        source_id: None,
         reference: format!("CLOSED-{}", Uuid::new_v4()),
         description: "closed period".to_string(),
         lines: vec![line("1000", Some(dec!(10.00)), None), line("4000", None, Some(dec!(10.00)))],
@@ -251,6 +255,7 @@ async fn reports_balance_after_posting() {
     let req = CreateJournalEntryRequest {
         date: today,
         source: JournalSource::Manual,
+        source_id: None,
         reference: format!("RPT-{}", Uuid::new_v4()),
         description: "sale".to_string(),
         lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(100.00)))],
@@ -312,7 +317,7 @@ async fn snapshots_reconcile_to_ledger() {
 
     let prior_date = NaiveDate::from_ymd_opt(today.year() - 1, 6, 15).unwrap();
     let mk = |date: NaiveDate, amt| CreateJournalEntryRequest {
-        date, source: JournalSource::Manual, reference: format!("REC-{}", Uuid::new_v4()),
+        date, source: JournalSource::Manual, source_id: None, reference: format!("REC-{}", Uuid::new_v4()),
         description: "x".to_string(),
         lines: vec![line("1000", Some(amt), None), line("4000", None, Some(amt))],
         post_immediately: true,

@@ -197,6 +197,7 @@ pub async fn run_fx_revaluation(
     let entry_req = CreateJournalEntryRequest {
         date: rate_date,
         source: JournalSource::FxRevaluation,
+        source_id: None,
         reference: format!("FXREVAL-{}", rate_date),
         description: format!("FX revaluation as at {}", rate_date),
         lines: journal_lines.clone(),
@@ -230,6 +231,7 @@ pub async fn run_fx_revaluation(
     let reversal_req = CreateJournalEntryRequest {
         date: reversal_date,
         source: JournalSource::FxRevaluation,
+        source_id: None,
         reference: format!("FXREVAL-REV-{}", rate_date),
         description: format!("Reversal of FX revaluation as at {}", rate_date),
         lines: reversal_lines,

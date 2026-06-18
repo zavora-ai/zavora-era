@@ -277,6 +277,8 @@ pub struct GlDetailLine {
     pub description: String,
     pub reference: String,
     pub source: String,
+    /// Id of the originating document (invoice/bill/credit note), when any.
+    pub source_id: Option<Uuid>,
     pub debit: Decimal,
     pub credit: Decimal,
     pub balance: Decimal,

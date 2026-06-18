@@ -475,6 +475,7 @@ pub async fn create_credit_note(
     let entry_req = CreateJournalEntryRequest {
         date: cn_date,
         source: JournalSource::CreditNote,
+        source_id: Some(cn_id),
         reference: cn_number.clone(),
         description: format!("Credit note {} against invoice {}", cn_number, original.number),
         lines: journal_lines,
@@ -1251,6 +1252,7 @@ pub async fn post_invoice(
     let entry_req = CreateJournalEntryRequest {
         date: invoice.issue_date,
         source: JournalSource::Invoice,
+        source_id: Some(invoice.id),
         reference: invoice.number.clone(),
         description: format!("Invoice {} posted", invoice.number),
         lines: journal_lines,

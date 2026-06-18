@@ -2,13 +2,14 @@ import { Link } from 'react-router-dom';
 import { num } from './primitives';
 
 function sourceDocLink(l: any): string | null {
+  // Link by the source document's own id (NOT the journal-entry id).
+  const id = l.source_id;
+  if (!id) return null;
   const src = (l.source || '').replace(/"/g, '');
-  const ref = l.reference || '';
-  if (src === 'Invoice' || ref.startsWith('INV-')) return `/documents/invoice/${l.entry_id}`;
-  if (src === 'CreditNote' || ref.startsWith('CN-') || ref.startsWith('VOID-')) return `/documents/credit-note/${l.entry_id}`;
-  if (src === 'Bill' || ref.startsWith('BILL-')) return `/documents/bill/${l.entry_id}`;
-  if (src === 'Payment' || ref.startsWith('PAY-')) return null; // payment detail page doesn't exist yet as a document preview with entry_id route
-  return null;
+  if (src === 'Invoice') return `/documents/invoice/${id}`;
+  if (src === 'CreditNote') return `/documents/credit-note/${id}`; // customer CN (invoices table)
+  if (src === 'Bill') return `/documents/bill/${id}`;
+  return null; // SupplierCreditNote/Payment/Payroll/etc. have no preview route
 }
 
 export default function GlDetailView({ c }: { c: any }) {

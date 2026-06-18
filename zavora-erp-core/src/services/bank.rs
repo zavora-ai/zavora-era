@@ -927,6 +927,7 @@ pub async fn post_unmatched(engine: &ErpEngine, entity_id: Uuid, req: PostUnmatc
     let je_request = CreateJournalEntryRequest {
         date: txn.value_date,
         source: JournalSource::Payment,
+        source_id: None,
         reference: txn.reference.clone(),
         description: req.description.clone(),
         lines,

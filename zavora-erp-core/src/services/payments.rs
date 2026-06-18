@@ -596,6 +596,7 @@ async fn post_payment_journal_entry(
     let je_req = CreateJournalEntryRequest {
         date: payment_date,
         source: JournalSource::Payment,
+        source_id: None,
         reference: payment_number.to_string(),
         description,
         lines,
@@ -939,6 +940,7 @@ pub async fn apply_unapplied_payment(
     let je_req = CreateJournalEntryRequest {
         date: payment_date,
         source: JournalSource::Payment,
+        source_id: None,
         reference: format!("{}-APPLY", row.number),
         description: format!(
             "Apply unapplied funds ({}) from payment {} to document",
@@ -1195,6 +1197,7 @@ async fn post_fx_gain_loss_entry(
     let je_req = CreateJournalEntryRequest {
         date: payment_date,
         source: JournalSource::Payment,
+        source_id: None,
         reference: format!("{}-FX", payment_number),
         description,
         lines,

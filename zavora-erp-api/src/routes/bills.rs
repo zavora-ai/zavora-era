@@ -149,6 +149,7 @@ pub async fn post_bill(
             let entry_req = zavora_erp_core::ledger::journal::CreateJournalEntryRequest {
                 date: b.issue_date,
                 source: zavora_erp_core::ledger::journal::JournalSource::Bill,
+                source_id: Some(b.id),
                 reference: b.number.clone(),
                 description: format!("Bill {} posted", b.number),
                 lines,

@@ -2078,7 +2078,7 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
     let rows = sqlx::query_as::<_, GlDetailQueryRow>(
         r#"SELECT
                je.id as entry_id, je.date, je.number as journal_number,
-               je.description, je.reference, je.source,
+               je.description, je.reference, je.source, je.source_id,
                COALESCE(jl.functional_debit, 0) as debit,
                COALESCE(jl.functional_credit, 0) as credit
            FROM journal_lines jl
@@ -2107,6 +2107,7 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
                 description: r.description.clone(),
                 reference: r.reference.clone(),
                 source: r.source.clone(),
+                source_id: r.source_id,
                 debit: r.debit,
                 credit: r.credit,
                 balance,
@@ -2133,6 +2134,7 @@ struct GlDetailQueryRow {
     description: String,
     reference: String,
     source: String,
+    source_id: Option<Uuid>,
     debit: Decimal,
     credit: Decimal,
 }

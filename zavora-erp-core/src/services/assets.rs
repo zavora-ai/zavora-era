@@ -159,6 +159,7 @@ pub async fn run_depreciation(
     let entry_req = CreateJournalEntryRequest {
         date: period.end_date,
         source: JournalSource::Depreciation,
+        source_id: None,
         reference: format!("DEPR-{}", period.name),
         description: format!("Monthly depreciation for {}", period.name),
         lines: journal_lines,

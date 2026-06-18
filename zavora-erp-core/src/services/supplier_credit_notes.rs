@@ -175,6 +175,7 @@ pub async fn create_supplier_credit_note(
     let entry_req = CreateJournalEntryRequest {
         date: cn_date,
         source: JournalSource::SupplierCreditNote,
+        source_id: Some(cn_id),
         reference: number.clone(),
         description: format!("Supplier credit note {number}"),
         lines: je_lines,
