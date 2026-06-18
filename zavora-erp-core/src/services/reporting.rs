@@ -64,19 +64,90 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = vat_return(engine, entity_id, req.parameters).await?;
             ReportContent::VatReturn(report)
         }
+        ReportType::CustomerStatement => {
+            let report = party_statement(engine, entity_id, req.parameters, PartyKind::Customer).await?;
+            ReportContent::PartyStatement(report)
+        }
+        ReportType::VendorStatement => {
+            let report = party_statement(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
+            ReportContent::PartyStatement(report)
+        }
+        ReportType::PayrollSummary => {
+            let report = payroll_summary(engine, entity_id, req.parameters).await?;
+            ReportContent::PayrollSummary(report)
+        }
+        ReportType::PayeP10 => {
+            let report = paye_p10(engine, entity_id, req.parameters).await?;
+            ReportContent::PayeP10(report)
+        }
+        ReportType::WhtCertificate => {
+            let report = wht_report(engine, entity_id, req.parameters).await?;
+            ReportContent::WhtReport(report)
+        }
+        ReportType::SalesTaxSummary => {
+            let report = vat_detail(engine, entity_id, req.parameters).await?;
+            ReportContent::VatDetail(report)
+        }
+        ReportType::IncomeByCustomer => {
+            let report = party_ranking(engine, entity_id, req.parameters, PartyKind::Customer).await?;
+            ReportContent::PartyRanking(report)
+        }
+        ReportType::ExpenseByVendor => {
+            let report = party_ranking(engine, entity_id, req.parameters, PartyKind::Vendor).await?;
+            ReportContent::PartyRanking(report)
+        }
+        ReportType::InventoryValuation => {
+            let report = inventory_valuation(engine, entity_id, req.parameters).await?;
+            ReportContent::InventoryValuation(report)
+        }
+        ReportType::FixedAssetRegister => {
+            let report = fixed_asset_register(engine, entity_id, req.parameters).await?;
+            ReportContent::FixedAssetRegister(report)
+        }
+        ReportType::BankReconSummary => {
+            let report = bank_recon_summary(engine, entity_id, req.parameters).await?;
+            ReportContent::BankReconSummary(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
     };
 
     Ok(ReportData {
-        report_type: req.report_type,
+        report_type: req.report_type.clone(),
         generated_at: now,
         entity_id: req.entity_id,
-        title: "Report".to_string(),
+        title: title_for(&req.report_type),
         subtitle: None,
         content,
     })
+}
+
+/// Human-readable title for a report type (shown on the statement letterhead).
+fn title_for(report_type: &ReportType) -> String {
+    match report_type {
+        ReportType::TrialBalance => "Trial Balance",
+        ReportType::BalanceSheet => "Balance Sheet",
+        ReportType::ProfitAndLoss => "Profit & Loss Statement",
+        ReportType::CashFlow => "Cash Flow Statement",
+        ReportType::ArAgeing => "Accounts Receivable Ageing",
+        ReportType::ApAgeing => "Accounts Payable Ageing",
+        ReportType::VatReturn => "VAT Return",
+        ReportType::GlDetail => "General Ledger",
+        ReportType::CustomerStatement => "Customer Statement",
+        ReportType::VendorStatement => "Vendor Statement",
+        ReportType::IncomeByCustomer => "Income by Customer",
+        ReportType::ExpenseByVendor => "Expense by Vendor",
+        ReportType::InventoryValuation => "Inventory Valuation",
+        ReportType::FixedAssetRegister => "Fixed-Asset Register",
+        ReportType::CustomerPaymentHistory => "Customer Payment History",
+        ReportType::BankReconSummary => "Bank Reconciliation Summary",
+        ReportType::PayrollSummary => "Payroll Summary",
+        ReportType::PayeP10 => "PAYE Return (P10)",
+        ReportType::WhtCertificate => "Withholding Tax (WHT) Schedule",
+        ReportType::SalesTaxSummary => "VAT Summary by Rate",
+    }
+    .to_string()
 }
 
 /// Generate dashboard summary.
@@ -876,6 +947,151 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
             output.extend_from_slice(format!("{},{}\n", label, v.net_vat.abs()).as_bytes());
         }
+        ReportContent::PartyStatement(s) => {
+            output.extend_from_slice(format!("Statement for {} ({})\n", csv_escape(&s.party_name), s.party_kind).as_bytes());
+            output.extend_from_slice(b"Date,Type,Reference,Charge,Payment,Balance\n");
+            output.extend_from_slice(format!(",,Opening Balance,,,{}\n", s.opening_balance).as_bytes());
+            for line in &s.lines {
+                let row = format!(
+                    "{},{},{},{},{},{}\n",
+                    line.date,
+                    csv_escape(&line.doc_type),
+                    csv_escape(&line.reference),
+                    line.charge,
+                    line.payment,
+                    line.balance,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,Closing Balance,{},{},{}\n", s.total_charges, s.total_payments, s.closing_balance).as_bytes());
+        }
+        ReportContent::PayrollSummary(p) => {
+            output.extend_from_slice(b"Employee,Gross,PAYE,NSSF,SHA,Housing Levy,HELB,Net\n");
+            for e in &p.employees {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&e.employee_name),
+                    e.gross, e.paye, e.nssf, e.sha, e.housing_levy, e.helb, e.net,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            let t = &p.totals;
+            output.extend_from_slice(
+                format!(
+                    "Total,{},{},{},{},{},{},{}\n",
+                    t.gross, t.paye, t.nssf, t.sha, t.housing_levy, t.helb, t.net
+                )
+                .as_bytes(),
+            );
+        }
+        ReportContent::PayeP10(p) => {
+            output.extend_from_slice(b"Staff No,Employee,KRA PIN,Gross Pay,Taxable Pay,Tax,Personal Relief,Insurance Relief,PAYE Payable\n");
+            for l in &p.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.staff_number),
+                    csv_escape(&l.employee_name),
+                    csv_escape(&l.kra_pin),
+                    l.gross_pay, l.taxable_pay, l.tax, l.personal_relief, l.insurance_relief, l.paye_payable,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(
+                format!(",Total,,{},{},{},{},,{}\n", p.total_gross, p.total_taxable, p.total_paye, p.total_relief, p.total_payable).as_bytes(),
+            );
+        }
+        ReportContent::WhtReport(w) => {
+            output.extend_from_slice(b"Date,Bill,Vendor,KRA PIN,Category,Base Amount,WHT Amount\n");
+            for l in &w.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    l.date,
+                    csv_escape(&l.document_number),
+                    csv_escape(&l.vendor_name),
+                    csv_escape(l.kra_pin.as_deref().unwrap_or("")),
+                    csv_escape(l.wht_category.as_deref().unwrap_or("")),
+                    l.base_amount, l.wht_amount,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,,,Total,{},{}\n", w.total_base, w.total_wht).as_bytes());
+        }
+        ReportContent::VatDetail(v) => {
+            output.extend_from_slice(b"Section,Treatment,Documents,Taxable Amount,VAT Amount\n");
+            for b in &v.output {
+                output.extend_from_slice(format!("Output,{},{},{},{}\n", csv_escape(&b.treatment), b.document_count, b.taxable_amount, b.vat_amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Output,,{},{}\n", v.total_output_taxable, v.total_output_vat).as_bytes());
+            for b in &v.input {
+                output.extend_from_slice(format!("Input,{},{},{},{}\n", csv_escape(&b.treatment), b.document_count, b.taxable_amount, b.vat_amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Input,,{},{}\n", v.total_input_taxable, v.total_input_vat).as_bytes());
+            let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
+            output.extend_from_slice(format!(",{},,,{}\n", label, v.net_vat.abs()).as_bytes());
+        }
+        ReportContent::PartyRanking(p) => {
+            let party = if p.party_kind == "vendor" { "Vendor" } else { "Customer" };
+            output.extend_from_slice(format!("{},Documents,Amount,% of Total\n", party).as_bytes());
+            for l in &p.lines {
+                let row = format!(
+                    "{},{},{},{}\n",
+                    csv_escape(&l.party_name),
+                    l.document_count,
+                    l.amount,
+                    l.percent.round_dp(1),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!("Total,,{},100.0\n", p.total).as_bytes());
+        }
+        ReportContent::InventoryValuation(inv) => {
+            output.extend_from_slice(b"SKU,Description,UoM,On Hand,Unit Cost,Total Value,Costing Method\n");
+            for l in &inv.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.sku),
+                    csv_escape(&l.description),
+                    csv_escape(&l.uom),
+                    l.on_hand, l.unit_cost, l.total_value,
+                    csv_escape(&l.costing_method),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,,,Total,{},\n", inv.total_value).as_bytes());
+        }
+        ReportContent::FixedAssetRegister(fa) => {
+            output.extend_from_slice(b"Asset No,Description,Category,Acquired,Cost,Accum. Depreciation,Net Book Value,Status\n");
+            for l in &fa.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.asset_number),
+                    csv_escape(&l.description),
+                    csv_escape(&l.category),
+                    l.acquisition_date,
+                    l.cost, l.accumulated_depreciation, l.net_book_value,
+                    csv_escape(&l.status),
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(
+                format!(",,,Total,{},{},{},\n", fa.total_cost, fa.total_accumulated_depreciation, fa.total_net_book_value).as_bytes(),
+            );
+        }
+        ReportContent::BankReconSummary(br) => {
+            output.extend_from_slice(b"Account,Bank,GL Account,Statement Balance,GL Balance,Difference,Unmatched Items,Unreconciled Amount,Reconciled\n");
+            for l in &br.accounts {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.account_name),
+                    csv_escape(&l.bank_name),
+                    csv_escape(&l.gl_account),
+                    l.statement_balance, l.gl_balance, l.difference,
+                    l.unmatched_count, l.unreconciled_amount,
+                    if l.is_reconciled { "Yes" } else { "No" },
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1019,6 +1235,813 @@ struct AgeingQueryRow {
     party_name: String,
     balance_due: Decimal,
     due_date: NaiveDate,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum PartyKind {
+    Customer,
+    Vendor,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StatementRow {
+    date: NaiveDate,
+    doc_type: String,
+    reference: String,
+    charge: Decimal,
+    payment: Decimal,
+}
+
+/// Customer or vendor statement: opening balance + dated charges/payments with a
+/// running balance. A customer's charges are invoices and payments are receipts;
+/// a vendor's charges are bills and payments are payments we made. Payments are
+/// matched to the party by `party_id` (customer and vendor ids never collide).
+async fn party_statement(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+    kind: PartyKind,
+) -> ErpResult<PartyStatementReport> {
+    let today = Utc::now().date_naive();
+    let period_to = params.period_to.unwrap_or(today);
+    // Default to the start of period_to's year if no explicit start given.
+    let period_from = params
+        .period_from
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(period_to.year(), 1, 1).unwrap());
+
+    let (party_id, party_table, doc_table, fk_col, charge_label, party_kind) = match kind {
+        PartyKind::Customer => (
+            params.customer_id,
+            "customers",
+            "invoices",
+            "customer_id",
+            "Invoice",
+            "customer",
+        ),
+        PartyKind::Vendor => (
+            params.vendor_id,
+            "vendors",
+            "bills",
+            "vendor_id",
+            "Bill",
+            "vendor",
+        ),
+    };
+
+    let party_id = party_id.ok_or_else(|| crate::error::ErpError::ValidationFailed {
+        message: format!("A {party_kind} must be selected for this statement"),
+    })?;
+
+    let party_name: String = sqlx::query_scalar(&format!(
+        "SELECT name FROM {party_table} WHERE id = $1 AND entity_id = $2"
+    ))
+    .bind(party_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| crate::error::ErpError::NotFound {
+        entity_type: party_kind.to_string(),
+        id: party_id,
+    })?;
+
+    // Invoices/bills excluded while still a draft (not yet a real obligation).
+    let charge_status_excl = "('draft', 'voided', 'cancelled')";
+    let pay_label = match kind {
+        PartyKind::Customer => "Receipt",
+        PartyKind::Vendor => "Payment",
+    };
+
+    // Opening balance = charges - payments strictly before the period start.
+    let opening_charges: Decimal = sqlx::query_scalar(&format!(
+        "SELECT COALESCE(SUM(gross_total), 0) FROM {doc_table}
+         WHERE entity_id = $1 AND {fk_col} = $2
+           AND status NOT IN {charge_status_excl} AND issue_date < $3"
+    ))
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await?;
+
+    let opening_payments: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM payments
+         WHERE entity_id = $1 AND party_id = $2 AND status = 'completed' AND payment_date < $3",
+    )
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .fetch_one(engine.pool())
+    .await?;
+
+    let opening_balance = opening_charges - opening_payments;
+
+    // Activity within the period, charges and payments interleaved by date.
+    let rows = sqlx::query_as::<_, StatementRow>(&format!(
+        "SELECT issue_date AS date, '{charge_label}' AS doc_type, number AS reference,
+                gross_total AS charge, 0::numeric AS payment
+         FROM {doc_table}
+         WHERE entity_id = $1 AND {fk_col} = $2
+           AND status NOT IN {charge_status_excl} AND issue_date BETWEEN $3 AND $4
+         UNION ALL
+         SELECT payment_date AS date, '{pay_label}' AS doc_type, number AS reference,
+                0::numeric AS charge, amount AS payment
+         FROM payments
+         WHERE entity_id = $1 AND party_id = $2 AND status = 'completed'
+           AND payment_date BETWEEN $3 AND $4
+         ORDER BY date, doc_type"
+    ))
+    .bind(entity_id)
+    .bind(party_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut balance = opening_balance;
+    let mut total_charges = Decimal::ZERO;
+    let mut total_payments = Decimal::ZERO;
+    let mut lines = Vec::with_capacity(rows.len());
+    for r in rows {
+        balance += r.charge - r.payment;
+        total_charges += r.charge;
+        total_payments += r.payment;
+        lines.push(StatementLine {
+            date: r.date,
+            doc_type: r.doc_type,
+            reference: r.reference,
+            charge: r.charge,
+            payment: r.payment,
+            balance,
+        });
+    }
+
+    Ok(PartyStatementReport {
+        party_id,
+        party_name,
+        party_kind: party_kind.to_string(),
+        period_from,
+        period_to,
+        opening_balance,
+        lines,
+        total_charges,
+        total_payments,
+        closing_balance: balance,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayRunSummaryRow {
+    id: Uuid,
+    pay_date: NaiveDate,
+    status: String,
+    total_gross: Decimal,
+    total_paye: Decimal,
+    total_nssf: Decimal,
+    total_sha: Decimal,
+    total_housing_levy: Decimal,
+    total_helb: Decimal,
+    total_net: Decimal,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayslipSummaryRow {
+    pay_run_id: Uuid,
+    employee_id: Uuid,
+    employee_name: String,
+    gross: Decimal,
+    paye: Decimal,
+    nssf: Decimal,
+    sha: Decimal,
+    housing_levy: Decimal,
+    helb: Decimal,
+    net: Decimal,
+}
+
+/// Payroll summary across the pay runs whose pay date falls in the period.
+/// Run-level money comes from `pay_runs`; per-employee figures are read from
+/// each payslip's deduction breakdown (JSONB) and aggregated. Draft runs are
+/// excluded.
+async fn payroll_summary(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<PayrollSummaryReport> {
+    let today = Utc::now().date_naive();
+    let period_to = params.period_to.unwrap_or(today);
+    let period_from = params
+        .period_from
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(period_to.year(), 1, 1).unwrap());
+
+    let runs = sqlx::query_as::<_, PayRunSummaryRow>(
+        "SELECT id, pay_date, status, total_gross, total_paye, total_nssf, total_sha,
+                total_housing_levy, total_helb, total_net
+         FROM pay_runs
+         WHERE entity_id = $1 AND status <> 'draft' AND pay_date BETWEEN $2 AND $3
+         ORDER BY pay_date",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let payslips = sqlx::query_as::<_, PayslipSummaryRow>(
+        "SELECT ps.pay_run_id, ps.employee_id, e.full_name AS employee_name,
+                (ps.deductions->>'gross_salary')::numeric          AS gross,
+                (ps.deductions->>'net_paye')::numeric              AS paye,
+                (ps.deductions->>'nssf_employee')::numeric         AS nssf,
+                (ps.deductions->>'sha')::numeric                   AS sha,
+                (ps.deductions->>'housing_levy_employee')::numeric AS housing_levy,
+                (ps.deductions->>'helb')::numeric                  AS helb,
+                (ps.deductions->>'net_salary')::numeric            AS net
+         FROM payslips ps
+         JOIN pay_runs pr ON pr.id = ps.pay_run_id
+         JOIN employees e ON e.id = ps.employee_id
+         WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    // Employees per run, and per-employee aggregation across runs.
+    let mut count_by_run: std::collections::HashMap<Uuid, u32> = std::collections::HashMap::new();
+    let mut emp_map: std::collections::HashMap<Uuid, PayrollEmployeeLine> = std::collections::HashMap::new();
+    for p in &payslips {
+        *count_by_run.entry(p.pay_run_id).or_insert(0) += 1;
+        let e = emp_map.entry(p.employee_id).or_insert_with(|| PayrollEmployeeLine {
+            employee_id: p.employee_id,
+            employee_name: p.employee_name.clone(),
+            gross: Decimal::ZERO,
+            paye: Decimal::ZERO,
+            nssf: Decimal::ZERO,
+            sha: Decimal::ZERO,
+            housing_levy: Decimal::ZERO,
+            helb: Decimal::ZERO,
+            net: Decimal::ZERO,
+        });
+        e.gross += p.gross;
+        e.paye += p.paye;
+        e.nssf += p.nssf;
+        e.sha += p.sha;
+        e.housing_levy += p.housing_levy;
+        e.helb += p.helb;
+        e.net += p.net;
+    }
+
+    let run_lines: Vec<PayrollRunLine> = runs
+        .iter()
+        .map(|r| PayrollRunLine {
+            pay_run_id: r.id,
+            pay_date: r.pay_date,
+            status: r.status.clone(),
+            employee_count: *count_by_run.get(&r.id).unwrap_or(&0),
+            gross: r.total_gross,
+            paye: r.total_paye,
+            nssf: r.total_nssf,
+            sha: r.total_sha,
+            housing_levy: r.total_housing_levy,
+            helb: r.total_helb,
+            net: r.total_net,
+        })
+        .collect();
+
+    let totals = PayrollTotals {
+        gross: run_lines.iter().map(|r| r.gross).sum(),
+        paye: run_lines.iter().map(|r| r.paye).sum(),
+        nssf: run_lines.iter().map(|r| r.nssf).sum(),
+        sha: run_lines.iter().map(|r| r.sha).sum(),
+        housing_levy: run_lines.iter().map(|r| r.housing_levy).sum(),
+        helb: run_lines.iter().map(|r| r.helb).sum(),
+        net: run_lines.iter().map(|r| r.net).sum(),
+    };
+
+    let mut employees: Vec<PayrollEmployeeLine> = emp_map.into_values().collect();
+    employees.sort_by(|a, b| a.employee_name.cmp(&b.employee_name));
+
+    Ok(PayrollSummaryReport {
+        period_from,
+        period_to,
+        run_count: run_lines.len() as u32,
+        employee_count: employees.len() as u32,
+        runs: run_lines,
+        employees,
+        totals,
+    })
+}
+
+/// Resolve a period [from, to], defaulting to the current month if neither is set.
+fn resolve_period(params: &ReportParameters) -> (NaiveDate, NaiveDate) {
+    let today = Utc::now().date_naive();
+    match (params.period_from, params.period_to) {
+        (Some(f), Some(t)) => (f, t),
+        (Some(f), None) => (f, today),
+        (None, Some(t)) => (NaiveDate::from_ymd_opt(t.year(), t.month(), 1).unwrap(), t),
+        (None, None) => (NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap(), today),
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayeP10Row {
+    staff_number: String,
+    employee_name: String,
+    kra_pin: String,
+    gross_pay: Decimal,
+    taxable_pay: Decimal,
+    tax: Decimal,
+    personal_relief: Decimal,
+    insurance_relief: Decimal,
+    paye_payable: Decimal,
+}
+
+/// PAYE return (P10): per-employee PAYE for the period, aggregated across the
+/// (non-draft) pay runs whose pay date falls in the period.
+async fn paye_p10(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<PayeP10Report> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let rows = sqlx::query_as::<_, PayeP10Row>(
+        "SELECT e.staff_number, e.full_name AS employee_name, e.kra_pin,
+                SUM((ps.deductions->>'gross_salary')::numeric)    AS gross_pay,
+                SUM((ps.deductions->>'taxable_income')::numeric)  AS taxable_pay,
+                SUM((ps.deductions->>'paye')::numeric)            AS tax,
+                SUM((ps.deductions->>'personal_relief')::numeric) AS personal_relief,
+                SUM((ps.deductions->>'insurance_relief')::numeric) AS insurance_relief,
+                SUM((ps.deductions->>'net_paye')::numeric)        AS paye_payable
+         FROM payslips ps
+         JOIN pay_runs pr ON pr.id = ps.pay_run_id
+         JOIN employees e ON e.id = ps.employee_id
+         WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+         GROUP BY e.staff_number, e.full_name, e.kra_pin
+         ORDER BY e.full_name",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<PayeP10Line> = rows
+        .into_iter()
+        .map(|r| PayeP10Line {
+            staff_number: r.staff_number,
+            employee_name: r.employee_name,
+            kra_pin: r.kra_pin,
+            gross_pay: r.gross_pay,
+            taxable_pay: r.taxable_pay,
+            tax: r.tax,
+            personal_relief: r.personal_relief,
+            insurance_relief: r.insurance_relief,
+            paye_payable: r.paye_payable,
+        })
+        .collect();
+
+    Ok(PayeP10Report {
+        period_from,
+        period_to,
+        total_gross: lines.iter().map(|l| l.gross_pay).sum(),
+        total_taxable: lines.iter().map(|l| l.taxable_pay).sum(),
+        total_paye: lines.iter().map(|l| l.tax).sum(),
+        total_relief: lines.iter().map(|l| l.personal_relief + l.insurance_relief).sum(),
+        total_payable: lines.iter().map(|l| l.paye_payable).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct WhtRow {
+    date: NaiveDate,
+    document_number: String,
+    vendor_name: String,
+    kra_pin: Option<String>,
+    wht_category: Option<String>,
+    base_amount: Decimal,
+    wht_amount: Decimal,
+}
+
+/// Withholding tax withheld from suppliers — one line per (non-draft) bill that
+/// carried WHT in the period.
+async fn wht_report(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<WhtReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let rows = sqlx::query_as::<_, WhtRow>(
+        "SELECT b.issue_date AS date, b.number AS document_number, v.name AS vendor_name,
+                v.kra_pin, v.wht_category, b.subtotal AS base_amount, b.wht_amount
+         FROM bills b
+         JOIN vendors v ON v.id = b.vendor_id
+         WHERE b.entity_id = $1 AND b.status <> 'draft' AND b.wht_amount > 0
+           AND b.issue_date BETWEEN $2 AND $3
+         ORDER BY b.issue_date, b.number",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<WhtLine> = rows
+        .into_iter()
+        .map(|r| WhtLine {
+            date: r.date,
+            document_number: r.document_number,
+            vendor_name: r.vendor_name,
+            kra_pin: r.kra_pin,
+            wht_category: r.wht_category,
+            base_amount: r.base_amount,
+            wht_amount: r.wht_amount,
+        })
+        .collect();
+
+    Ok(WhtReport {
+        period_from,
+        period_to,
+        total_base: lines.iter().map(|l| l.base_amount).sum(),
+        total_wht: lines.iter().map(|l| l.wht_amount).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct VatBandRow {
+    treatment: String,
+    taxable_amount: Decimal,
+    vat_amount: Decimal,
+    document_count: i64,
+}
+
+/// VAT summary by rate band: sales (output) from invoice lines and purchases
+/// (input) from bill lines, grouped by VAT treatment, with the net VAT position.
+async fn vat_detail(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<VatDetailReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let output_rows = sqlx::query_as::<_, VatBandRow>(
+        "SELECT il.vat_treatment AS treatment,
+                COALESCE(SUM(il.line_total), 0) AS taxable_amount,
+                COALESCE(SUM(il.vat_amount), 0) AS vat_amount,
+                COUNT(DISTINCT i.id) AS document_count
+         FROM invoice_lines il
+         JOIN invoices i ON i.id = il.invoice_id
+         WHERE i.entity_id = $1 AND i.status NOT IN ('draft', 'voided')
+           AND i.issue_date BETWEEN $2 AND $3
+         GROUP BY il.vat_treatment
+         ORDER BY il.vat_treatment",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let input_rows = sqlx::query_as::<_, VatBandRow>(
+        "SELECT bl.vat_treatment AS treatment,
+                COALESCE(SUM(bl.line_total), 0) AS taxable_amount,
+                COALESCE(SUM(bl.vat_amount), 0) AS vat_amount,
+                COUNT(DISTINCT b.id) AS document_count
+         FROM bill_lines bl
+         JOIN bills b ON b.id = bl.bill_id
+         WHERE b.entity_id = $1 AND b.status NOT IN ('draft', 'cancelled', 'voided')
+           AND b.issue_date BETWEEN $2 AND $3
+         GROUP BY bl.vat_treatment
+         ORDER BY bl.vat_treatment",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let to_band = |r: VatBandRow| VatBand {
+        treatment: r.treatment,
+        taxable_amount: r.taxable_amount,
+        vat_amount: r.vat_amount,
+        document_count: r.document_count as u32,
+    };
+    let output: Vec<VatBand> = output_rows.into_iter().map(to_band).collect();
+    let input: Vec<VatBand> = input_rows.into_iter().map(to_band).collect();
+
+    let total_output_taxable = output.iter().map(|b| b.taxable_amount).sum();
+    let total_output_vat: Decimal = output.iter().map(|b| b.vat_amount).sum();
+    let total_input_taxable = input.iter().map(|b| b.taxable_amount).sum();
+    let total_input_vat: Decimal = input.iter().map(|b| b.vat_amount).sum();
+    let net_vat = total_output_vat - total_input_vat;
+
+    Ok(VatDetailReport {
+        period_from,
+        period_to,
+        output,
+        input,
+        total_output_taxable,
+        total_output_vat,
+        total_input_taxable,
+        total_input_vat,
+        net_vat,
+        is_payable: net_vat > Decimal::ZERO,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PartyRankingRow {
+    party_id: Uuid,
+    party_name: String,
+    document_count: i64,
+    amount: Decimal,
+}
+
+/// Income by customer (invoices) or expense by vendor (bills): net, ex-VAT
+/// amounts grouped per party for the period and ranked high to low. Drafts and
+/// voided/cancelled documents are excluded.
+async fn party_ranking(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+    kind: PartyKind,
+) -> ErpResult<PartyRankingReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    // subtotal is the net (ex-VAT) value — the P&L-relevant figure.
+    let sql = match kind {
+        PartyKind::Customer => {
+            "SELECT i.customer_id AS party_id, c.name AS party_name,
+                    COUNT(*) AS document_count, COALESCE(SUM(i.subtotal), 0) AS amount
+             FROM invoices i
+             JOIN customers c ON c.id = i.customer_id
+             WHERE i.entity_id = $1 AND i.status NOT IN ('draft', 'voided')
+               AND i.issue_date BETWEEN $2 AND $3
+             GROUP BY i.customer_id, c.name
+             ORDER BY amount DESC"
+        }
+        PartyKind::Vendor => {
+            "SELECT b.vendor_id AS party_id, v.name AS party_name,
+                    COUNT(*) AS document_count, COALESCE(SUM(b.subtotal), 0) AS amount
+             FROM bills b
+             JOIN vendors v ON v.id = b.vendor_id
+             WHERE b.entity_id = $1 AND b.status NOT IN ('draft', 'cancelled', 'voided')
+               AND b.issue_date BETWEEN $2 AND $3
+             GROUP BY b.vendor_id, v.name
+             ORDER BY amount DESC"
+        }
+    };
+
+    let rows = sqlx::query_as::<_, PartyRankingRow>(sql)
+        .bind(entity_id)
+        .bind(period_from)
+        .bind(period_to)
+        .fetch_all(engine.pool())
+        .await?;
+
+    let total: Decimal = rows.iter().map(|r| r.amount).sum();
+    let hundred = Decimal::from(100);
+    let lines: Vec<PartyRankingLine> = rows
+        .into_iter()
+        .map(|r| PartyRankingLine {
+            percent: if total.is_zero() { Decimal::ZERO } else { (r.amount * hundred) / total },
+            party_id: r.party_id,
+            party_name: r.party_name,
+            document_count: r.document_count as u32,
+            amount: r.amount,
+        })
+        .collect();
+
+    Ok(PartyRankingReport {
+        party_kind: match kind {
+            PartyKind::Customer => "customer".to_string(),
+            PartyKind::Vendor => "vendor".to_string(),
+        },
+        period_from,
+        period_to,
+        lines,
+        total,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct InventoryValuationLineRow {
+    sku: String,
+    description: String,
+    uom: String,
+    on_hand: Decimal,
+    unit_cost: Decimal,
+    total_value: Decimal,
+    costing_method: String,
+}
+
+/// Current inventory valuation from the running stock figures.
+async fn inventory_valuation(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<InventoryValuationReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    let rows = sqlx::query_as::<_, InventoryValuationLineRow>(
+        "SELECT sku, description, uom, on_hand, unit_cost, total_value, costing_method
+         FROM inventory_items
+         WHERE entity_id = $1 AND is_active = true
+         ORDER BY sku",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<InventoryValuationLine> = rows
+        .into_iter()
+        .map(|r| InventoryValuationLine {
+            sku: r.sku,
+            description: r.description,
+            uom: r.uom,
+            on_hand: r.on_hand,
+            unit_cost: r.unit_cost,
+            total_value: r.total_value,
+            costing_method: r.costing_method,
+        })
+        .collect();
+
+    Ok(InventoryValuationReport {
+        as_at,
+        total_value: lines.iter().map(|l| l.total_value).sum(),
+        item_count: lines.len() as u32,
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct FixedAssetLineRow {
+    asset_number: String,
+    description: String,
+    category: String,
+    acquisition_date: NaiveDate,
+    cost: Decimal,
+    accumulated_depreciation: Decimal,
+    net_book_value: Decimal,
+    status: String,
+}
+
+/// Fixed-asset register: cost, accumulated depreciation and net book value of
+/// every non-disposed asset.
+async fn fixed_asset_register(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<FixedAssetRegisterReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    let rows = sqlx::query_as::<_, FixedAssetLineRow>(
+        "SELECT asset_number, description, category, acquisition_date, cost,
+                accumulated_depreciation, net_book_value, status
+         FROM fixed_assets
+         WHERE entity_id = $1 AND status <> 'disposed'
+         ORDER BY category, asset_number",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<FixedAssetLine> = rows
+        .into_iter()
+        .map(|r| FixedAssetLine {
+            asset_number: r.asset_number,
+            description: r.description,
+            category: r.category,
+            acquisition_date: r.acquisition_date,
+            cost: r.cost,
+            accumulated_depreciation: r.accumulated_depreciation,
+            net_book_value: r.net_book_value,
+            status: r.status,
+        })
+        .collect();
+
+    Ok(FixedAssetRegisterReport {
+        as_at,
+        total_cost: lines.iter().map(|l| l.cost).sum(),
+        total_accumulated_depreciation: lines.iter().map(|l| l.accumulated_depreciation).sum(),
+        total_net_book_value: lines.iter().map(|l| l.net_book_value).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BankAccountRow {
+    id: Uuid,
+    name: String,
+    bank_name: String,
+    gl_account: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BankFeedStatsRow {
+    matched_count: i64,
+    unmatched_count: i64,
+    unreconciled_amount: Decimal,
+}
+
+/// Bank reconciliation summary: statement balance vs GL balance per bank account
+/// as at a date, with matched/unmatched feed lines explaining the difference.
+async fn bank_recon_summary(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<BankReconSummaryReport> {
+    let as_at = params.as_at.unwrap_or_else(|| Utc::now().date_naive());
+
+    // One account, or all of them.
+    let accounts = if let Some(bank_id) = params.bank_account_id {
+        sqlx::query_as::<_, BankAccountRow>(
+            "SELECT id, name, bank_name, gl_account FROM bank_accounts WHERE entity_id = $1 AND id = $2",
+        )
+        .bind(entity_id)
+        .bind(bank_id)
+        .fetch_all(engine.pool())
+        .await?
+    } else {
+        sqlx::query_as::<_, BankAccountRow>(
+            "SELECT id, name, bank_name, gl_account FROM bank_accounts WHERE entity_id = $1 ORDER BY name",
+        )
+        .bind(entity_id)
+        .fetch_all(engine.pool())
+        .await?
+    };
+
+    let mut lines = Vec::with_capacity(accounts.len());
+    for a in accounts {
+        // Bank's own running balance on the most recent feed line up to the date.
+        let statement_balance: Decimal = sqlx::query_scalar(
+            "SELECT running_bal FROM imported_transactions
+             WHERE entity_id = $1 AND bank_account = $2 AND value_date <= $3
+             ORDER BY value_date DESC, created_at DESC
+             LIMIT 1",
+        )
+        .bind(entity_id)
+        .bind(a.id)
+        .bind(as_at)
+        .fetch_optional(engine.pool())
+        .await?
+        .unwrap_or(Decimal::ZERO);
+
+        // GL balance of the control account (debit positive) up to the date.
+        let gl_balance: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(COALESCE(functional_debit, 0) - COALESCE(functional_credit, 0)), 0)
+             FROM journal_lines
+             WHERE entity_id = $1 AND account_code = $2 AND entry_date <= $3",
+        )
+        .bind(entity_id)
+        .bind(&a.gl_account)
+        .bind(as_at)
+        .fetch_one(engine.pool())
+        .await?;
+
+        // Matched/unmatched feed lines and the net of the unmatched ones.
+        let stats = sqlx::query_as::<_, BankFeedStatsRow>(
+            "SELECT
+                 COUNT(*) FILTER (WHERE journal_entry_id IS NOT NULL) AS matched_count,
+                 COUNT(*) FILTER (WHERE journal_entry_id IS NULL)     AS unmatched_count,
+                 COALESCE(SUM(CASE WHEN journal_entry_id IS NULL
+                                   THEN COALESCE(credit, 0) - COALESCE(debit, 0) ELSE 0 END), 0)
+                     AS unreconciled_amount
+             FROM imported_transactions
+             WHERE entity_id = $1 AND bank_account = $2 AND value_date <= $3",
+        )
+        .bind(entity_id)
+        .bind(a.id)
+        .bind(as_at)
+        .fetch_one(engine.pool())
+        .await?;
+
+        let difference = statement_balance - gl_balance;
+        let is_reconciled = (difference - stats.unreconciled_amount).abs() < dec_cent();
+
+        lines.push(BankReconLine {
+            bank_account_id: a.id,
+            account_name: a.name,
+            bank_name: a.bank_name,
+            gl_account: a.gl_account,
+            statement_balance,
+            gl_balance,
+            matched_count: stats.matched_count as u32,
+            unmatched_count: stats.unmatched_count as u32,
+            unreconciled_amount: stats.unreconciled_amount,
+            difference,
+            is_reconciled,
+        });
+    }
+
+    Ok(BankReconSummaryReport { as_at, accounts: lines })
+}
+
+/// 0.01 tolerance for balance comparisons.
+fn dec_cent() -> Decimal {
+    Decimal::new(1, 2)
 }
 
 /// GL detail report.

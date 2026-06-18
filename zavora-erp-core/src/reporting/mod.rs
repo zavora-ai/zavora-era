@@ -25,6 +25,11 @@ pub enum ReportType {
     VatReturn,
     GlDetail,
     CustomerStatement,
+    VendorStatement,
+    IncomeByCustomer,
+    ExpenseByVendor,
+    InventoryValuation,
+    FixedAssetRegister,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -71,6 +76,15 @@ pub enum ReportContent {
     ApAgeing(AgeingReport),
     GlDetail(GlDetailReport),
     VatReturn(VatReturnReport),
+    PartyStatement(PartyStatementReport),
+    PayrollSummary(PayrollSummaryReport),
+    PayeP10(PayeP10Report),
+    WhtReport(WhtReport),
+    VatDetail(VatDetailReport),
+    PartyRanking(PartyRankingReport),
+    InventoryValuation(InventoryValuationReport),
+    FixedAssetRegister(FixedAssetRegisterReport),
+    BankReconSummary(BankReconSummaryReport),
     Generic(serde_json::Value),
 }
 
@@ -281,6 +295,274 @@ pub struct VatReturnReport {
     pub is_payable: bool,
     pub vat_output_account: String,
     pub vat_input_account: String,
+}
+
+/// Customer or vendor statement — a running-balance account activity report
+/// for one party over a period. Charges (invoices/bills) increase the balance
+/// outstanding; payments (receipts/payments) reduce it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyStatementReport {
+    pub party_id: Uuid,
+    pub party_name: String,
+    /// "customer" or "vendor".
+    pub party_kind: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    /// Balance outstanding immediately before period_from.
+    pub opening_balance: Decimal,
+    pub lines: Vec<StatementLine>,
+    /// Sum of charges (invoices for a customer; bills for a vendor) in the period.
+    pub total_charges: Decimal,
+    /// Sum of payments (receipts for a customer; payments for a vendor) in the period.
+    pub total_payments: Decimal,
+    /// Balance outstanding at period_to (opening + charges - payments).
+    pub closing_balance: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatementLine {
+    pub date: NaiveDate,
+    /// "Invoice" / "Bill" / "Receipt" / "Payment".
+    pub doc_type: String,
+    pub reference: String,
+    /// Amount that increases the outstanding balance (invoice/bill).
+    pub charge: Decimal,
+    /// Amount that reduces the outstanding balance (receipt/payment).
+    pub payment: Decimal,
+    /// Running outstanding balance after this line.
+    pub balance: Decimal,
+}
+
+/// Payroll summary — statutory and net-pay totals across the pay runs whose
+/// pay date falls in the period, with a per-run and a per-employee breakdown.
+/// Draft runs are excluded (not yet real payroll). NSSF/SHA/housing figures are
+/// the employee-side deductions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollSummaryReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub runs: Vec<PayrollRunLine>,
+    pub employees: Vec<PayrollEmployeeLine>,
+    pub totals: PayrollTotals,
+    /// Distinct employees paid in the period.
+    pub employee_count: u32,
+    pub run_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollTotals {
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollRunLine {
+    pub pay_run_id: Uuid,
+    pub pay_date: NaiveDate,
+    pub status: String,
+    pub employee_count: u32,
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayrollEmployeeLine {
+    pub employee_id: Uuid,
+    pub employee_name: String,
+    pub gross: Decimal,
+    pub paye: Decimal,
+    pub nssf: Decimal,
+    pub sha: Decimal,
+    pub housing_levy: Decimal,
+    pub helb: Decimal,
+    pub net: Decimal,
+}
+
+/// PAYE return (KRA P10) — per-employee PAYE for the period, with the relief
+/// breakdown KRA's P10 schedule requires.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayeP10Report {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<PayeP10Line>,
+    pub total_gross: Decimal,
+    pub total_taxable: Decimal,
+    pub total_paye: Decimal,
+    pub total_relief: Decimal,
+    pub total_payable: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayeP10Line {
+    pub staff_number: String,
+    pub employee_name: String,
+    pub kra_pin: String,
+    pub gross_pay: Decimal,
+    pub taxable_pay: Decimal,
+    /// PAYE charged before reliefs.
+    pub tax: Decimal,
+    pub personal_relief: Decimal,
+    pub insurance_relief: Decimal,
+    /// PAYE payable after reliefs (net_paye).
+    pub paye_payable: Decimal,
+}
+
+/// Withholding tax withheld from suppliers in the period — the data behind WHT
+/// certificates (one line per bill that carried WHT).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhtReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<WhtLine>,
+    pub total_base: Decimal,
+    pub total_wht: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhtLine {
+    pub date: NaiveDate,
+    pub document_number: String,
+    pub vendor_name: String,
+    pub kra_pin: Option<String>,
+    pub wht_category: Option<String>,
+    /// Amount WHT was computed on (the bill's net/subtotal).
+    pub base_amount: Decimal,
+    pub wht_amount: Decimal,
+}
+
+/// VAT summary by rate band (KRA VAT3 essentials): sales (output) and purchases
+/// (input) broken down by VAT treatment, with the net VAT position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VatDetailReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub output: Vec<VatBand>,
+    pub input: Vec<VatBand>,
+    pub total_output_taxable: Decimal,
+    pub total_output_vat: Decimal,
+    pub total_input_taxable: Decimal,
+    pub total_input_vat: Decimal,
+    /// output VAT - input VAT. Positive => payable to KRA.
+    pub net_vat: Decimal,
+    pub is_payable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VatBand {
+    /// VAT treatment (e.g. Standard16, ZeroRated, Exempt).
+    pub treatment: String,
+    pub taxable_amount: Decimal,
+    pub vat_amount: Decimal,
+    pub document_count: u32,
+}
+
+/// Income-by-customer / expense-by-vendor: net (ex-VAT) invoiced or billed
+/// amounts grouped per party for the period, ranked high to low with each
+/// party's share of the total.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRankingReport {
+    /// "customer" or "vendor".
+    pub party_kind: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<PartyRankingLine>,
+    pub total: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyRankingLine {
+    pub party_id: Uuid,
+    pub party_name: String,
+    pub document_count: u32,
+    pub amount: Decimal,
+    /// Share of the period total, as a percentage (0–100).
+    pub percent: Decimal,
+}
+
+/// Inventory valuation — current on-hand quantity, unit cost and value per
+/// stock item (the running figures inventory maintenance keeps up to date).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryValuationReport {
+    pub as_at: NaiveDate,
+    pub lines: Vec<InventoryValuationLine>,
+    pub total_value: Decimal,
+    pub item_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryValuationLine {
+    pub sku: String,
+    pub description: String,
+    pub uom: String,
+    pub on_hand: Decimal,
+    pub unit_cost: Decimal,
+    pub total_value: Decimal,
+    pub costing_method: String,
+}
+
+/// Fixed-asset register — cost, accumulated depreciation and net book value per
+/// non-disposed asset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixedAssetRegisterReport {
+    pub as_at: NaiveDate,
+    pub lines: Vec<FixedAssetLine>,
+    pub total_cost: Decimal,
+    pub total_accumulated_depreciation: Decimal,
+    pub total_net_book_value: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixedAssetLine {
+    pub asset_number: String,
+    pub description: String,
+    pub category: String,
+    pub acquisition_date: NaiveDate,
+    pub cost: Decimal,
+    pub accumulated_depreciation: Decimal,
+    pub net_book_value: Decimal,
+    pub status: String,
+}
+
+/// Bank reconciliation summary — for each bank account, the statement balance
+/// (the bank's own running balance) against the GL balance of its control
+/// account, with the matched/unmatched feed items that explain any difference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankReconSummaryReport {
+    pub as_at: NaiveDate,
+    pub accounts: Vec<BankReconLine>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankReconLine {
+    pub bank_account_id: Uuid,
+    pub account_name: String,
+    pub bank_name: String,
+    pub gl_account: String,
+    /// Latest running balance from the imported bank feed (as-at).
+    pub statement_balance: Decimal,
+    /// GL balance of the bank control account (debit positive).
+    pub gl_balance: Decimal,
+    /// Feed lines already posted to the GL.
+    pub matched_count: u32,
+    /// Feed lines not yet posted (the reconciling items).
+    pub unmatched_count: u32,
+    /// Net of the unmatched feed lines (money in − money out).
+    pub unreconciled_amount: Decimal,
+    /// statement_balance − gl_balance.
+    pub difference: Decimal,
+    /// True when the difference is fully explained by the unmatched items
+    /// (|difference − unreconciled_amount| < 0.01).
+    pub is_reconciled: bool,
 }
 
 /// Export output from report generation.
