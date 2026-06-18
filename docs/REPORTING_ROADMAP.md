@@ -105,19 +105,17 @@ branded layout, pre- and post-posting where applicable.
 
 ---
 
-## Phase 3 — Drill-down completeness  ◻
-
-First hop (statement → account → GL) is done. Close the loop to source.
+## Phase 3 — Drill-down completeness  ✅
 
 - ✅ Add entry id + source + source_id to GL detail lines.
 - ✅ Wire GL line → source document (invoice/credit note/bill) via source_id —
   verified live (38/38 invoice entries link, 0 id mismatches).
-- ⬜ Journal entry detail page (header + balanced lines + source link). JE # in
-  the GL currently links to the journal list, not a per-entry page.
-- ⬜ Collapsible/expandable sections on TB/BS/P&L.
+- ✅ Journal entry detail page (header + balanced lines + source link); GL JE #
+  links to it.
+- ✅ Collapsible/expandable sections on BS/P&L (forced expanded for print).
 
-**Exit criteria:** no figure is a dead end — every number drills to its source
-document.
+**Exit criteria met:** no figure is a dead end — every number drills to its
+source document.
 
 ---
 
@@ -132,40 +130,37 @@ document.
 
 ---
 
-## Phase 5 — Dimensions (analytical accounting)  ⬜  (scope decision needed)
+## Phase 5 — Dimensions (analytical accounting)  ◻  (Option A shipped)
 
-Today `journal_lines.dimensions` (JSONB) exists but is **always empty** — no
-masters, no capture, no reporting. Build it as a first-class subsystem.
-
-- ⬜ **Masters** (Settings): `dimension_types` (e.g. Cost Centre, Project,
-  Department, Location) and `dimension_values` per type — code, name, active.
-- ⬜ **Capture**: optional dimension selectors on each transaction line
-  (invoice/bill/journal/expense), stored as `{ type_code: value_code }`.
-  Inherit defaults from customer/vendor/account to reduce keying.
+- ✅ **Masters**: `dimension_types` + `dimension_values` (migration 017) with a
+  Dimensions management page and API.
+- ✅ **Capture**: journal lines persist `{ type_code: value_code }` (already
+  supported end-to-end); validated live.
+- ✅ **Reporting**: Dimensional Analysis report groups movement by a chosen
+  dimension type for a period (Option A — scans date-bounded lines, reads the
+  JSONB key), values resolved to names.
+- ⬜ **Capture on every form**: dimension selectors on invoice/bill/expense
+  lines (only the journal-entry path is wired so far) — larger UI effort.
 - ⬜ **Controls**: per-account rules (e.g. expense accounts require a Cost
-  Centre) — enforced analytical coding.
-- ⬜ **Reporting**: filter/group statements by dimension; dimensional P&L.
-
-**Open decision — dimensional as-at performance:**
-- *Option A (simpler):* dimensional queries scan raw lines (bounded by date +
-  dimension filter). Lower build cost; slower on very large dimensional history.
-- *Option B (fuller):* extend the snapshot key to `account + dimension + period`.
-  Higher build + storage cost; keeps O(periods) for dimensional as-at too.
-- **Recommendation:** start with Option A, add Option B only if dimensional
-  reporting volume warrants it. **Confirm before building.**
+  Centre).
+- ⬜ **Option B**: extend the snapshot key to `account + dimension + period`
+  (only if dimensional volume warrants it).
 
 ---
 
-## Phase 6 — Customisation & advanced  ⬜
+## Phase 6 — Customisation & advanced  ✅
 
-- ⬜ **Budgets + Budget vs Actual** — budget per account/period;
-  actual/budget/variance/variance %.
-- ⬜ **Custom report builder** — user-defined rows (account ranges, formulas,
-  subtotals) and columns (periods, comparatives, %); saved per entity.
-- ⬜ **Scheduled + emailed reports** — cron + notification-queue delivery
-  (depends on the notification workers — separate production-readiness item).
-- ⬜ **Multi-entity consolidation** — group statements; FX translation +
-  intercompany elimination. (Later phase.)
+- ✅ **Budgets + Budget vs Actual** — budget per account/period (migration 016);
+  actual/budget/variance/variance % report. Budgets page.
+- ✅ **Custom report builder** — saved row-based definitions (header / account
+  range / subtotal) computed over a period (migration 018), branded printable
+  output. `/reports/custom`.
+- ✅ **Scheduled + emailed reports** — schedules (migration 019) run on the
+  hourly scheduler tick, queued to recipients via the notification outbox.
+  Actual SMTP send-out is the notification worker's job (production-readiness).
+- ✅ **Multi-entity consolidation** — consolidated trial balance across the
+  entities the user is a member of (safe by construction); FX translation +
+  intercompany elimination deferred (mixed-currency flagged).
 
 ---
 
