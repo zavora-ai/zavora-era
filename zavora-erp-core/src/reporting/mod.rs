@@ -74,6 +74,9 @@ pub enum ReportContent {
     VatReturn(VatReturnReport),
     PartyStatement(PartyStatementReport),
     PayrollSummary(PayrollSummaryReport),
+    PayeP10(PayeP10Report),
+    WhtReport(WhtReport),
+    VatDetail(VatDetailReport),
     Generic(serde_json::Value),
 }
 
@@ -375,6 +378,84 @@ pub struct PayrollEmployeeLine {
     pub housing_levy: Decimal,
     pub helb: Decimal,
     pub net: Decimal,
+}
+
+/// PAYE return (KRA P10) — per-employee PAYE for the period, with the relief
+/// breakdown KRA's P10 schedule requires.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayeP10Report {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<PayeP10Line>,
+    pub total_gross: Decimal,
+    pub total_taxable: Decimal,
+    pub total_paye: Decimal,
+    pub total_relief: Decimal,
+    pub total_payable: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayeP10Line {
+    pub staff_number: String,
+    pub employee_name: String,
+    pub kra_pin: String,
+    pub gross_pay: Decimal,
+    pub taxable_pay: Decimal,
+    /// PAYE charged before reliefs.
+    pub tax: Decimal,
+    pub personal_relief: Decimal,
+    pub insurance_relief: Decimal,
+    /// PAYE payable after reliefs (net_paye).
+    pub paye_payable: Decimal,
+}
+
+/// Withholding tax withheld from suppliers in the period — the data behind WHT
+/// certificates (one line per bill that carried WHT).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhtReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<WhtLine>,
+    pub total_base: Decimal,
+    pub total_wht: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhtLine {
+    pub date: NaiveDate,
+    pub document_number: String,
+    pub vendor_name: String,
+    pub kra_pin: Option<String>,
+    pub wht_category: Option<String>,
+    /// Amount WHT was computed on (the bill's net/subtotal).
+    pub base_amount: Decimal,
+    pub wht_amount: Decimal,
+}
+
+/// VAT summary by rate band (KRA VAT3 essentials): sales (output) and purchases
+/// (input) broken down by VAT treatment, with the net VAT position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VatDetailReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub output: Vec<VatBand>,
+    pub input: Vec<VatBand>,
+    pub total_output_taxable: Decimal,
+    pub total_output_vat: Decimal,
+    pub total_input_taxable: Decimal,
+    pub total_input_vat: Decimal,
+    /// output VAT - input VAT. Positive => payable to KRA.
+    pub net_vat: Decimal,
+    pub is_payable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VatBand {
+    /// VAT treatment (e.g. Standard16, ZeroRated, Exempt).
+    pub treatment: String,
+    pub taxable_amount: Decimal,
+    pub vat_amount: Decimal,
+    pub document_count: u32,
 }
 
 /// Export output from report generation.

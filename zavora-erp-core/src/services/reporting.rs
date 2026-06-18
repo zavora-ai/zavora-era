@@ -76,6 +76,18 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = payroll_summary(engine, entity_id, req.parameters).await?;
             ReportContent::PayrollSummary(report)
         }
+        ReportType::PayeP10 => {
+            let report = paye_p10(engine, entity_id, req.parameters).await?;
+            ReportContent::PayeP10(report)
+        }
+        ReportType::WhtCertificate => {
+            let report = wht_report(engine, entity_id, req.parameters).await?;
+            ReportContent::WhtReport(report)
+        }
+        ReportType::SalesTaxSummary => {
+            let report = vat_detail(engine, entity_id, req.parameters).await?;
+            ReportContent::VatDetail(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -108,8 +120,8 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
         ReportType::PayeP10 => "PAYE Return (P10)",
-        ReportType::WhtCertificate => "Withholding Tax Certificate",
-        ReportType::SalesTaxSummary => "Sales Tax Summary",
+        ReportType::WhtCertificate => "Withholding Tax (WHT) Schedule",
+        ReportType::SalesTaxSummary => "VAT Summary by Rate",
     }
     .to_string()
 }
@@ -948,6 +960,51 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 .as_bytes(),
             );
         }
+        ReportContent::PayeP10(p) => {
+            output.extend_from_slice(b"Staff No,Employee,KRA PIN,Gross Pay,Taxable Pay,Tax,Personal Relief,Insurance Relief,PAYE Payable\n");
+            for l in &p.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{},{},{}\n",
+                    csv_escape(&l.staff_number),
+                    csv_escape(&l.employee_name),
+                    csv_escape(&l.kra_pin),
+                    l.gross_pay, l.taxable_pay, l.tax, l.personal_relief, l.insurance_relief, l.paye_payable,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(
+                format!(",Total,,{},{},{},{},,{}\n", p.total_gross, p.total_taxable, p.total_paye, p.total_relief, p.total_payable).as_bytes(),
+            );
+        }
+        ReportContent::WhtReport(w) => {
+            output.extend_from_slice(b"Date,Bill,Vendor,KRA PIN,Category,Base Amount,WHT Amount\n");
+            for l in &w.lines {
+                let row = format!(
+                    "{},{},{},{},{},{},{}\n",
+                    l.date,
+                    csv_escape(&l.document_number),
+                    csv_escape(&l.vendor_name),
+                    csv_escape(l.kra_pin.as_deref().unwrap_or("")),
+                    csv_escape(l.wht_category.as_deref().unwrap_or("")),
+                    l.base_amount, l.wht_amount,
+                );
+                output.extend_from_slice(row.as_bytes());
+            }
+            output.extend_from_slice(format!(",,,,Total,{},{}\n", w.total_base, w.total_wht).as_bytes());
+        }
+        ReportContent::VatDetail(v) => {
+            output.extend_from_slice(b"Section,Treatment,Documents,Taxable Amount,VAT Amount\n");
+            for b in &v.output {
+                output.extend_from_slice(format!("Output,{},{},{},{}\n", csv_escape(&b.treatment), b.document_count, b.taxable_amount, b.vat_amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Output,,{},{}\n", v.total_output_taxable, v.total_output_vat).as_bytes());
+            for b in &v.input {
+                output.extend_from_slice(format!("Input,{},{},{},{}\n", csv_escape(&b.treatment), b.document_count, b.taxable_amount, b.vat_amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total Input,,{},{}\n", v.total_input_taxable, v.total_input_vat).as_bytes());
+            let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
+            output.extend_from_slice(format!(",{},,,{}\n", label, v.net_vat.abs()).as_bytes());
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1384,6 +1441,226 @@ async fn payroll_summary(
         runs: run_lines,
         employees,
         totals,
+    })
+}
+
+/// Resolve a period [from, to], defaulting to the current month if neither is set.
+fn resolve_period(params: &ReportParameters) -> (NaiveDate, NaiveDate) {
+    let today = Utc::now().date_naive();
+    match (params.period_from, params.period_to) {
+        (Some(f), Some(t)) => (f, t),
+        (Some(f), None) => (f, today),
+        (None, Some(t)) => (NaiveDate::from_ymd_opt(t.year(), t.month(), 1).unwrap(), t),
+        (None, None) => (NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap(), today),
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PayeP10Row {
+    staff_number: String,
+    employee_name: String,
+    kra_pin: String,
+    gross_pay: Decimal,
+    taxable_pay: Decimal,
+    tax: Decimal,
+    personal_relief: Decimal,
+    insurance_relief: Decimal,
+    paye_payable: Decimal,
+}
+
+/// PAYE return (P10): per-employee PAYE for the period, aggregated across the
+/// (non-draft) pay runs whose pay date falls in the period.
+async fn paye_p10(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<PayeP10Report> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let rows = sqlx::query_as::<_, PayeP10Row>(
+        "SELECT e.staff_number, e.full_name AS employee_name, e.kra_pin,
+                SUM((ps.deductions->>'gross_salary')::numeric)    AS gross_pay,
+                SUM((ps.deductions->>'taxable_income')::numeric)  AS taxable_pay,
+                SUM((ps.deductions->>'paye')::numeric)            AS tax,
+                SUM((ps.deductions->>'personal_relief')::numeric) AS personal_relief,
+                SUM((ps.deductions->>'insurance_relief')::numeric) AS insurance_relief,
+                SUM((ps.deductions->>'net_paye')::numeric)        AS paye_payable
+         FROM payslips ps
+         JOIN pay_runs pr ON pr.id = ps.pay_run_id
+         JOIN employees e ON e.id = ps.employee_id
+         WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+         GROUP BY e.staff_number, e.full_name, e.kra_pin
+         ORDER BY e.full_name",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<PayeP10Line> = rows
+        .into_iter()
+        .map(|r| PayeP10Line {
+            staff_number: r.staff_number,
+            employee_name: r.employee_name,
+            kra_pin: r.kra_pin,
+            gross_pay: r.gross_pay,
+            taxable_pay: r.taxable_pay,
+            tax: r.tax,
+            personal_relief: r.personal_relief,
+            insurance_relief: r.insurance_relief,
+            paye_payable: r.paye_payable,
+        })
+        .collect();
+
+    Ok(PayeP10Report {
+        period_from,
+        period_to,
+        total_gross: lines.iter().map(|l| l.gross_pay).sum(),
+        total_taxable: lines.iter().map(|l| l.taxable_pay).sum(),
+        total_paye: lines.iter().map(|l| l.tax).sum(),
+        total_relief: lines.iter().map(|l| l.personal_relief + l.insurance_relief).sum(),
+        total_payable: lines.iter().map(|l| l.paye_payable).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct WhtRow {
+    date: NaiveDate,
+    document_number: String,
+    vendor_name: String,
+    kra_pin: Option<String>,
+    wht_category: Option<String>,
+    base_amount: Decimal,
+    wht_amount: Decimal,
+}
+
+/// Withholding tax withheld from suppliers — one line per (non-draft) bill that
+/// carried WHT in the period.
+async fn wht_report(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<WhtReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let rows = sqlx::query_as::<_, WhtRow>(
+        "SELECT b.issue_date AS date, b.number AS document_number, v.name AS vendor_name,
+                v.kra_pin, v.wht_category, b.subtotal AS base_amount, b.wht_amount
+         FROM bills b
+         JOIN vendors v ON v.id = b.vendor_id
+         WHERE b.entity_id = $1 AND b.status <> 'draft' AND b.wht_amount > 0
+           AND b.issue_date BETWEEN $2 AND $3
+         ORDER BY b.issue_date, b.number",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let lines: Vec<WhtLine> = rows
+        .into_iter()
+        .map(|r| WhtLine {
+            date: r.date,
+            document_number: r.document_number,
+            vendor_name: r.vendor_name,
+            kra_pin: r.kra_pin,
+            wht_category: r.wht_category,
+            base_amount: r.base_amount,
+            wht_amount: r.wht_amount,
+        })
+        .collect();
+
+    Ok(WhtReport {
+        period_from,
+        period_to,
+        total_base: lines.iter().map(|l| l.base_amount).sum(),
+        total_wht: lines.iter().map(|l| l.wht_amount).sum(),
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct VatBandRow {
+    treatment: String,
+    taxable_amount: Decimal,
+    vat_amount: Decimal,
+    document_count: i64,
+}
+
+/// VAT summary by rate band: sales (output) from invoice lines and purchases
+/// (input) from bill lines, grouped by VAT treatment, with the net VAT position.
+async fn vat_detail(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<VatDetailReport> {
+    let (period_from, period_to) = resolve_period(&params);
+
+    let output_rows = sqlx::query_as::<_, VatBandRow>(
+        "SELECT il.vat_treatment AS treatment,
+                COALESCE(SUM(il.line_total), 0) AS taxable_amount,
+                COALESCE(SUM(il.vat_amount), 0) AS vat_amount,
+                COUNT(DISTINCT i.id) AS document_count
+         FROM invoice_lines il
+         JOIN invoices i ON i.id = il.invoice_id
+         WHERE i.entity_id = $1 AND i.status NOT IN ('draft', 'voided')
+           AND i.issue_date BETWEEN $2 AND $3
+         GROUP BY il.vat_treatment
+         ORDER BY il.vat_treatment",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let input_rows = sqlx::query_as::<_, VatBandRow>(
+        "SELECT bl.vat_treatment AS treatment,
+                COALESCE(SUM(bl.line_total), 0) AS taxable_amount,
+                COALESCE(SUM(bl.vat_amount), 0) AS vat_amount,
+                COUNT(DISTINCT b.id) AS document_count
+         FROM bill_lines bl
+         JOIN bills b ON b.id = bl.bill_id
+         WHERE b.entity_id = $1 AND b.status NOT IN ('draft', 'cancelled', 'voided')
+           AND b.issue_date BETWEEN $2 AND $3
+         GROUP BY bl.vat_treatment
+         ORDER BY bl.vat_treatment",
+    )
+    .bind(entity_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let to_band = |r: VatBandRow| VatBand {
+        treatment: r.treatment,
+        taxable_amount: r.taxable_amount,
+        vat_amount: r.vat_amount,
+        document_count: r.document_count as u32,
+    };
+    let output: Vec<VatBand> = output_rows.into_iter().map(to_band).collect();
+    let input: Vec<VatBand> = input_rows.into_iter().map(to_band).collect();
+
+    let total_output_taxable = output.iter().map(|b| b.taxable_amount).sum();
+    let total_output_vat: Decimal = output.iter().map(|b| b.vat_amount).sum();
+    let total_input_taxable = input.iter().map(|b| b.taxable_amount).sum();
+    let total_input_vat: Decimal = input.iter().map(|b| b.vat_amount).sum();
+    let net_vat = total_output_vat - total_input_vat;
+
+    Ok(VatDetailReport {
+        period_from,
+        period_to,
+        output,
+        input,
+        total_output_taxable,
+        total_output_vat,
+        total_input_taxable,
+        total_input_vat,
+        net_vat,
+        is_payable: net_vat > Decimal::ZERO,
     })
 }
 

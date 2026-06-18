@@ -20,6 +20,9 @@ const reportTypes: { key: string; name: string; desc: string; controls: CtrlKind
   { key: 'CustomerStatement', name: 'Customer Statement', desc: 'Account activity & balance for one customer', controls: ['party', 'period'], party: 'customer' },
   { key: 'VendorStatement', name: 'Vendor Statement', desc: 'Account activity & balance for one vendor', controls: ['party', 'period'], party: 'vendor' },
   { key: 'PayrollSummary', name: 'Payroll Summary', desc: 'Gross, PAYE, NSSF, SHA, levy & net by employee', controls: ['period'] },
+  { key: 'PayeP10', name: 'PAYE Return (P10)', desc: 'KRA monthly PAYE schedule by employee', controls: ['period'] },
+  { key: 'WhtCertificate', name: 'WHT Schedule', desc: 'Withholding tax withheld from suppliers', controls: ['period'] },
+  { key: 'SalesTaxSummary', name: 'VAT by Rate', desc: 'Output & input VAT broken down by rate band', controls: ['period'] },
   { key: 'GlDetail', name: 'General Ledger', desc: 'Transaction detail by account', controls: ['period', 'account'] },
 ];
 
@@ -207,8 +210,11 @@ function ReportDocument({ result, branding }: { result: any; branding: any }) {
         {key === 'VatReturn' && <VatReturn c={c} />}
         {key === 'PartyStatement' && <PartyStatement c={c} />}
         {key === 'PayrollSummary' && <PayrollSummary c={c} />}
+        {key === 'PayeP10' && <PayeP10 c={c} />}
+        {key === 'WhtReport' && <WhtReport c={c} />}
+        {key === 'VatDetail' && <VatDetail c={c} />}
         {key === 'GlDetail' && <GlDetail c={c} />}
-        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'GlDetail'].includes(key) && (
+        {!['TrialBalance', 'BalanceSheet', 'ProfitAndLoss', 'VatReturn', 'PartyStatement', 'PayrollSummary', 'PayeP10', 'WhtReport', 'VatDetail', 'GlDetail'].includes(key) && (
           <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-96">{JSON.stringify(c, null, 2)}</pre>
         )}
       </div>
@@ -433,6 +439,125 @@ function PayrollSummary({ c }: { c: any }) {
         </tfoot>
       </table>
     </div>
+  );
+}
+
+function PayeP10({ c }: { c: any }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">Employee</th>
+          <th className="text-left">KRA PIN</th>
+          <th className="text-right">Gross</th>
+          <th className="text-right">Taxable</th>
+          <th className="text-right">Tax</th>
+          <th className="text-right">Relief</th>
+          <th className="text-right">PAYE Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {c.lines.map((l: any, i: number) => (
+          <tr key={i} className="border-b border-gray-50">
+            <td className="py-1.5">{l.employee_name} <span className="text-xs text-gray-400">{l.staff_number}</span></td>
+            <td className="font-mono text-xs">{l.kra_pin}</td>
+            <td className="text-right">{num(l.gross_pay)}</td>
+            <td className="text-right">{num(l.taxable_pay)}</td>
+            <td className="text-right">{num(l.tax)}</td>
+            <td className="text-right text-gray-500">{num(Number(l.personal_relief) + Number(l.insurance_relief))}</td>
+            <td className="text-right font-medium">{num(l.paye_payable)}</td>
+          </tr>
+        ))}
+        {c.lines.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-400">No payroll in this period</td></tr>}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold border-t-2">
+          <td className="py-2" colSpan={2}>Total</td>
+          <td className="text-right">{num(c.total_gross)}</td>
+          <td className="text-right">{num(c.total_taxable)}</td>
+          <td className="text-right">{num(c.total_paye)}</td>
+          <td className="text-right">{num(c.total_relief)}</td>
+          <td className="text-right">{num(c.total_payable)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
+function WhtReport({ c }: { c: any }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">Date</th>
+          <th className="text-left">Bill</th>
+          <th className="text-left">Vendor</th>
+          <th className="text-left">KRA PIN</th>
+          <th className="text-left">Category</th>
+          <th className="text-right">Base</th>
+          <th className="text-right">WHT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {c.lines.map((l: any, i: number) => (
+          <tr key={i} className="border-b border-gray-50">
+            <td className="py-1.5">{l.date}</td>
+            <td className="font-mono text-xs">{l.document_number}</td>
+            <td>{l.vendor_name}</td>
+            <td className="font-mono text-xs">{l.kra_pin || '—'}</td>
+            <td className="text-gray-500">{l.wht_category || '—'}</td>
+            <td className="text-right">{num(l.base_amount)}</td>
+            <td className="text-right font-medium">{num(l.wht_amount)}</td>
+          </tr>
+        ))}
+        {c.lines.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-400">No withholding tax in this period</td></tr>}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold border-t-2">
+          <td className="py-2" colSpan={5}>Total</td>
+          <td className="text-right">{num(c.total_base)}</td>
+          <td className="text-right">{num(c.total_wht)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
+function VatBands({ title, bands, totalTaxable, totalVat }: { title: string; bands: any[]; totalTaxable: number; totalVat: number }) {
+  return (
+    <>
+      <tr className="bg-gray-50"><td className="py-1.5 font-semibold text-gray-700" colSpan={4}>{title}</td></tr>
+      {bands.map((b: any) => (
+        <tr key={b.treatment} className="border-b border-gray-50">
+          <td className="py-1.5 pl-4">{b.treatment} <span className="text-xs text-gray-400">({b.document_count} doc{b.document_count === 1 ? '' : 's'})</span></td>
+          <td />
+          <td className="text-right">{num(b.taxable_amount)}</td>
+          <td className="text-right">{num(b.vat_amount)}</td>
+        </tr>
+      ))}
+      {bands.length === 0 && <tr><td className="py-1.5 pl-4 text-gray-400" colSpan={4}>None</td></tr>}
+      <tr className="font-medium border-b"><td className="py-1.5 pl-4">Total {title}</td><td /><td className="text-right">{num(totalTaxable)}</td><td className="text-right">{num(totalVat)}</td></tr>
+    </>
+  );
+}
+
+function VatDetail({ c }: { c: any }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase border-b">
+          <th className="text-left py-2">Rate band</th><th /><th className="text-right">Taxable</th><th className="text-right">VAT</th>
+        </tr>
+      </thead>
+      <tbody>
+        <VatBands title="Output VAT (Sales)" bands={c.output} totalTaxable={c.total_output_taxable} totalVat={c.total_output_vat} />
+        <VatBands title="Input VAT (Purchases)" bands={c.input} totalTaxable={c.total_input_taxable} totalVat={c.total_input_vat} />
+        <tr className="font-bold border-t-2">
+          <td className="py-2" colSpan={3}>{c.is_payable ? 'Net VAT payable to KRA' : 'Net VAT credit carried forward'}</td>
+          <td className={`text-right ${c.is_payable ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(Math.abs(c.net_vat))}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
