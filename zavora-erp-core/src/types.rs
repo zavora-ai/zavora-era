@@ -173,29 +173,9 @@ pub enum WhtCategory {
     Other(String),
 }
 
-impl WhtCategory {
-    /// Returns the WHT rate as (resident_rate, non_resident_rate)
-    pub fn rates(&self) -> (Decimal, Decimal) {
-        match self {
-            Self::Consultancy | Self::ManagementFees => {
-                (Decimal::new(5, 2), Decimal::new(20, 2))
-            }
-            Self::Rent => (Decimal::new(10, 2), Decimal::new(30, 2)),
-            Self::Royalties => (Decimal::new(5, 2), Decimal::new(20, 2)),
-            Self::Interest => (Decimal::new(15, 2), Decimal::new(15, 2)),
-            Self::Contractual => (Decimal::new(3, 2), Decimal::new(20, 2)),
-            Self::Dividends => (Decimal::new(5, 2), Decimal::new(15, 2)),
-            Self::Insurance => (Decimal::new(5, 2), Decimal::new(20, 2)),
-            Self::Transport => (Decimal::new(2, 2), Decimal::new(20, 2)),
-            Self::Other(_) => (Decimal::new(5, 2), Decimal::new(20, 2)),
-        }
-    }
-
-    pub fn rate_for(&self, resident: bool) -> Decimal {
-        let (r, nr) = self.rates();
-        if resident { r } else { nr }
-    }
-}
+// WHT rates are NOT defined here. They live solely in the `wht_rates` table
+// (single source of truth) and are read via `services::wht::wht_rate_for`, so
+// there is no risk of code and config diverging.
 
 // === Monthly amount (for charts) ===
 

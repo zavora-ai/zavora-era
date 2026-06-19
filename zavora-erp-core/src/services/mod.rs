@@ -20,3 +20,4 @@ pub mod inventory;
 pub mod notifications;
 pub mod scheduler;
 pub mod ocr;
+pub mod wht;

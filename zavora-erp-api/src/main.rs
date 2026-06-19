@@ -228,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/consolidation/trial-balance", post(routes::consolidation::trial_balance))
         .route("/api/v1/report-schedules", get(routes::report_schedules::list).post(routes::report_schedules::save))
         .route("/api/v1/report-schedules/{id}", axum::routing::delete(routes::report_schedules::delete))
+        .route("/api/v1/wht-rates", get(routes::wht::list).put(routes::wht::update))
         .route("/api/v1/dimensions", get(routes::dimensions::list))
         .route("/api/v1/dimension-types", post(routes::dimensions::create_type))
         .route("/api/v1/dimension-values", post(routes::dimensions::create_value))

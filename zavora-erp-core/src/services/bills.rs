@@ -51,13 +51,14 @@ pub async fn create_bill(
 
     // Auto-compute WHT based on vendor category
     let wht_amount = if let Some(ref wht_cat_str) = vendor.wht_category {
-        let wht_category: Option<crate::types::WhtCategory> =
-            serde_json::from_str(&format!("\"{}\"", wht_cat_str)).ok();
-        if let Some(cat) = wht_category {
-            let rate = cat.rate_for(vendor.resident);
-            (subtotal * rate).round_dp(2)
-        } else {
-            Decimal::ZERO
+        // Stored as JSON, e.g. "Rent" — parse directly (no extra quoting), then
+        // read the rate from the wht_rates table (single source of truth).
+        match serde_json::from_str::<crate::types::WhtCategory>(wht_cat_str) {
+            Ok(cat) => {
+                let rate = crate::services::wht::wht_rate_for(engine, &cat, vendor.resident).await;
+                (subtotal * rate).round_dp(2)
+            }
+            Err(_) => Decimal::ZERO,
         }
     } else {
         Decimal::ZERO
@@ -99,8 +100,8 @@ pub async fn create_bill(
     for line in &lines {
         sqlx::query(
             r#"INSERT INTO bill_lines
-               (id, bill_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, bill_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(id)
@@ -113,6 +114,7 @@ pub async fn create_bill(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -165,9 +167,11 @@ pub async fn approve_bill(engine: &ErpEngine, entity_id: Uuid, req: ApproveBillR
             id: req.bill_id,
         })?;
 
-    if bill.status != "pending_approval" {
+    // A bill is approved directly from draft (the UI offers Approve on drafts);
+    // `pending_approval` is also accepted for flows that add a submit step.
+    if bill.status != "draft" && bill.status != "pending_approval" {
         return Err(ErpError::ValidationFailed {
-            message: format!("Bill {} is not pending approval (status: {})", bill.number, bill.status),
+            message: format!("Bill {} cannot be approved (status: {})", bill.number, bill.status),
         });
     }
 
@@ -256,13 +260,14 @@ pub async fn update_bill_draft(
 
     // Auto-compute WHT based on vendor category
     let wht_amount = if let Some(ref wht_cat_str) = vendor.wht_category {
-        let wht_category: Option<crate::types::WhtCategory> =
-            serde_json::from_str(&format!("\"{}\"", wht_cat_str)).ok();
-        if let Some(cat) = wht_category {
-            let rate = cat.rate_for(vendor.resident);
-            (subtotal * rate).round_dp(2)
-        } else {
-            Decimal::ZERO
+        // Stored as JSON, e.g. "Rent" — parse directly (no extra quoting), then
+        // read the rate from the wht_rates table (single source of truth).
+        match serde_json::from_str::<crate::types::WhtCategory>(wht_cat_str) {
+            Ok(cat) => {
+                let rate = crate::services::wht::wht_rate_for(engine, &cat, vendor.resident).await;
+                (subtotal * rate).round_dp(2)
+            }
+            Err(_) => Decimal::ZERO,
         }
     } else {
         Decimal::ZERO

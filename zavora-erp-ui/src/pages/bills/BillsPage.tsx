@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts } from '../../api/client';
+import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
@@ -21,6 +21,8 @@ export default function BillsPage() {
     queryKey: ['bills'],
     queryFn: () => getBills().then(r => r.data),
   });
+  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
+  const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bills'] });
   const approveMut = useMutation({ mutationFn: (id: string) => approveBill(id), onSuccess: invalidate });
@@ -41,7 +43,7 @@ export default function BillsPage() {
   const columns: Column<Bill>[] = [
     { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span> },
     { key: 'number', header: 'Bill #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
-    { key: 'vendor_id', header: 'Vendor', render: (r) => <span className="text-gray-900">{r.vendor_id?.slice(0, 8)}...</span> },
+    { key: 'vendor_id', header: 'Vendor', render: (r) => <span className="text-gray-900">{vendorName(r.vendor_id)}</span> },
     { key: 'issue_date', header: 'Date', render: (r) => formatDate(r.issue_date) },
     { key: 'due_date', header: 'Due', render: (r) => formatDate(r.due_date) },
     { key: 'gross_total', header: 'Amount', render: (r) => <span className="font-medium">{formatCurrency(r.gross_total)}</span>, className: 'text-right' },
@@ -123,13 +125,14 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
   const queryClient = useQueryClient();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => r.data) });
 
   const isEdit = !!editId;
 
   const today = new Date().toISOString().split('T')[0];
 
   function emptyLine() {
-    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '7900' };
+    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '7900', dimensions: {} as Record<string, string> };
   }
 
   const [form, setForm] = useState({
@@ -162,6 +165,7 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
         unit_price: l.unit_price || 0,
         tax_rate: l.vat_treatment === 'Standard16' ? 16 : l.vat_treatment === 'ZeroRated' ? 0 : 0,
         account_code: l.account_code || '7900',
+        dimensions: l.dimensions || {},
       }));
       setForm({
         vendor_id: bill.vendor_id || '',
@@ -250,6 +254,7 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
         unit_price: l.unit_price,
         account_code: l.account_code || defaultAccount,
         vat_treatment: l.tax_rate === 16 ? 'Standard16' : l.tax_rate === 0 ? 'ZeroRated' : 'Exempt',
+        dimensions: l.dimensions && Object.keys(l.dimensions).length ? l.dimensions : undefined,
       })),
     });
   };
@@ -355,6 +360,17 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
                 </div>
                 <div className="col-span-3">
                   <input className="input text-sm py-1.5" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} required />
+                  {dimensionTypes.map((dt: any) => (
+                    <select
+                      key={dt.code}
+                      className="input text-xs py-1 mt-1"
+                      value={(line.dimensions ?? {})[dt.code] ?? ''}
+                      onChange={(e) => updateLine(i, 'dimensions', { ...(line.dimensions ?? {}), [dt.code]: e.target.value })}
+                    >
+                      <option value="">{dt.name}…</option>
+                      {(dt.values ?? []).map((v: any) => <option key={v.code} value={v.code}>{v.name}</option>)}
+                    </select>
+                  ))}
                 </div>
                 <div className="col-span-1">
                   <input className="input text-sm py-1.5 text-center" type="number" min="1" step="0.01" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', +e.target.value)} />

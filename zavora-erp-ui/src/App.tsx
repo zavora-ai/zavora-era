@@ -28,6 +28,7 @@ import DimensionsPage from './pages/dimensions/DimensionsPage';
 import CustomReportsPage from './pages/reports/CustomReportsPage';
 import ReportSchedulesPage from './pages/reports/ReportSchedulesPage';
 import ConsolidationPage from './pages/consolidation/ConsolidationPage';
+import WhtRatesPage from './pages/settings/WhtRatesPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import ReportPage from './pages/reports/ReportPage';
@@ -111,6 +112,7 @@ export default function App() {
             <Route path="periods" element={<PeriodsPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="dimensions" element={<DimensionsPage />} />
+            <Route path="wht-rates" element={<WhtRatesPage />} />
             <Route path="consolidation" element={<ConsolidationPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="reports/custom" element={<CustomReportsPage />} />

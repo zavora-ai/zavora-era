@@ -60,6 +60,7 @@ pub struct InvoiceLineRow {
     pub line_total: Decimal,
     pub vat_amount: Decimal,
     #[serde(default)]
+    #[sqlx(default)]
     pub dimensions: serde_json::Value,
 }
 
