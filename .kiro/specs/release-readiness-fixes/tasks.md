@@ -221,7 +221,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - On confirm: call POST endpoint, show success toast
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 13. Final checkpoint - Full verification
+- [x] 13. Final checkpoint - Full verification
   - Ensure all tests pass, ask the user if questions arise.
   - Run `cargo build --workspace` and `npx tsc -b` to verify no compile errors
   - Run `cargo test --workspace` to verify all backend tests pass
