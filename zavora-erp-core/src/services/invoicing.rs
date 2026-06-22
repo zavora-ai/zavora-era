@@ -112,9 +112,9 @@ pub async fn create_invoice(
     // Insert invoice lines
     for line in &lines {
         sqlx::query(
-            r#"INSERT INTO invoice_lines 
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+            r#"INSERT INTO invoice_lines
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(id)
@@ -127,6 +127,7 @@ pub async fn create_invoice(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -237,6 +238,7 @@ pub async fn create_credit_note(
                     .unwrap_or(crate::types::VatTreatment::Standard16),
                 line_total: l.line_total,
                 vat_amount: l.vat_amount,
+                dimensions: serde_json::from_value(l.dimensions.clone()).unwrap_or_default(),
             })
             .collect()
     } else {
@@ -308,8 +310,8 @@ pub async fn create_credit_note(
     for line in &cn_lines {
         sqlx::query(
             r#"INSERT INTO invoice_lines
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(cn_id)
@@ -322,6 +324,7 @@ pub async fn create_credit_note(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -475,6 +478,7 @@ pub async fn create_credit_note(
     let entry_req = CreateJournalEntryRequest {
         date: cn_date,
         source: JournalSource::CreditNote,
+        source_id: Some(cn_id),
         reference: cn_number.clone(),
         description: format!("Credit note {} against invoice {}", cn_number, original.number),
         lines: journal_lines,
@@ -618,6 +622,7 @@ pub async fn create_estimate(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -692,6 +697,7 @@ pub async fn convert_estimate_to_invoice(
             discount_percent: Some(l.discount_percent),
             account_code: Some(l.account_code.clone()),
             vat_treatment: serde_json::from_str(&l.vat_treatment).ok(),
+            dimensions: serde_json::from_value(l.dimensions.clone()).ok(),
         })
         .collect();
 
@@ -765,6 +771,7 @@ pub(crate) async fn resolve_invoice_line(
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     } else {
         // Manual line — all fields required
@@ -782,6 +789,7 @@ pub(crate) async fn resolve_invoice_line(
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     }
 }
@@ -931,8 +939,8 @@ pub async fn update_invoice_draft(
     for line in &lines {
         sqlx::query(
             r#"INSERT INTO invoice_lines
-               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+               (id, invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(line.id)
         .bind(invoice_id)
@@ -945,6 +953,7 @@ pub async fn update_invoice_draft(
         .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
         .bind(line.line_total)
         .bind(line.vat_amount)
+        .bind(serde_json::to_value(&line.dimensions).unwrap_or_default())
         .execute(&mut *tx)
         .await?;
     }
@@ -1159,7 +1168,7 @@ pub async fn post_invoice(
             currency: invoice.currency.clone(),
             fx_rate: Some(invoice.fx_rate),
             description: Some(line.description.clone()),
-            dimensions: None,
+            dimensions: serde_json::from_value(line.dimensions.clone()).ok(),
         });
 
         // CR VAT Output (if applicable)
@@ -1251,6 +1260,7 @@ pub async fn post_invoice(
     let entry_req = CreateJournalEntryRequest {
         date: invoice.issue_date,
         source: JournalSource::Invoice,
+        source_id: Some(invoice.id),
         reference: invoice.number.clone(),
         description: format!("Invoice {} posted", invoice.number),
         lines: journal_lines,
@@ -1279,6 +1289,101 @@ pub async fn post_invoice(
     Ok(entry.id)
 }
 
+
+/// Write off an uncollectable invoice (or part of it) to a bad-debt expense
+/// account: DR <expense account> / CR Accounts Receivable for the written-off
+/// amount, reducing the invoice's outstanding balance. Marks the invoice
+/// `written_off` once nothing remains. The expense account is caller-supplied
+/// (no hardcoded bad-debt account); AR comes from the posting config.
+///
+/// VAT bad-debt relief is not applied here (the full outstanding gross is
+/// expensed); reclaiming output VAT is a separate, conditional step.
+pub async fn write_off_invoice(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+    expense_account: String,
+    amount: Option<Decimal>,
+    reason: Option<String>,
+    actor: AgentOrUserId,
+) -> ErpResult<Uuid> {
+    let mut tx = engine.pool().begin().await?;
+
+    let invoice = sqlx::query_as::<_, InvoiceRow>("SELECT * FROM invoices WHERE id = $1 AND entity_id = $2")
+        .bind(invoice_id)
+        .bind(entity_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if invoice.status == "draft" || invoice.status == "voided" || invoice.status == "written_off" {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Invoice {} cannot be written off (status: {})", invoice.number, invoice.status),
+        });
+    }
+    if invoice.balance_due <= Decimal::ZERO {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Invoice {} has nothing outstanding to write off", invoice.number),
+        });
+    }
+    let amount = amount.unwrap_or(invoice.balance_due);
+    if amount <= Decimal::ZERO || amount > invoice.balance_due {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Write-off amount must be between 0 and the outstanding {}", invoice.balance_due),
+        });
+    }
+
+    let ar_account = engine.posting_for(entity_id).await?.accounts_receivable.clone();
+    let today = Utc::now().date_naive();
+    let lines = vec![
+        CreateJournalLineRequest {
+            account_code: expense_account,
+            debit: Some(amount),
+            credit: None,
+            currency: invoice.currency.clone(),
+            fx_rate: Some(invoice.fx_rate),
+            description: Some(format!("Bad debt write-off {}", invoice.number)),
+            dimensions: None,
+        },
+        CreateJournalLineRequest {
+            account_code: ar_account,
+            debit: None,
+            credit: Some(amount),
+            currency: invoice.currency.clone(),
+            fx_rate: Some(invoice.fx_rate),
+            description: Some(format!("Write-off {} - AR", invoice.number)),
+            dimensions: None,
+        },
+    ];
+
+    let entry_req = CreateJournalEntryRequest {
+        date: today,
+        source: JournalSource::Manual,
+        source_id: Some(invoice.id),
+        reference: format!("WRITEOFF-{}", invoice.number),
+        description: reason
+            .filter(|r| !r.trim().is_empty())
+            .map(|r| format!("Bad debt write-off {}: {}", invoice.number, r))
+            .unwrap_or_else(|| format!("Bad debt write-off {}", invoice.number)),
+        lines,
+        post_immediately: true,
+    };
+
+    let period = crate::services::periods::period_for_date(engine, entity_id, today).await?;
+    let entry = crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, actor).await?;
+
+    let new_balance = invoice.balance_due - amount;
+    let new_status = if new_balance <= Decimal::ZERO { "written_off" } else { &invoice.status };
+    sqlx::query("UPDATE invoices SET amount_paid = amount_paid + $1, balance_due = balance_due - $1, status = $2 WHERE id = $3")
+        .bind(amount)
+        .bind(new_status)
+        .bind(invoice_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(entry.id)
+}
 
 /// Resolve a bill line from a request — auto-fills from product catalog (purchase side).
 pub async fn resolve_bill_line(
@@ -1318,6 +1423,7 @@ pub async fn resolve_bill_line(
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     } else {
         let default_account = match vendor.default_expense_account.clone() {
@@ -1336,6 +1442,7 @@ pub async fn resolve_bill_line(
             vat_treatment: req.vat_treatment.clone().unwrap_or(crate::types::VatTreatment::Standard16),
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
+            dimensions: req.dimensions.clone().unwrap_or_default(),
         })
     }
 }

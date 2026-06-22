@@ -7,7 +7,8 @@ import { hasRole, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, ArrowRight, Send, Check, X } from 'lucide-react';
+import { Plus, ArrowRight, Send, Check, X, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function EstimatesPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -58,6 +59,14 @@ export default function EstimatesPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center gap-1">
+          <Link
+            to={`/documents/estimate/${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="btn-secondary text-xs py-1 px-2"
+            title="Preview document"
+          >
+            <Eye className="w-3 h-3" />
+          </Link>
           {hasRole(ROLES_SEND) && r.status === 'draft' && (
             <button
               onClick={(e) => { e.stopPropagation(); sendMutation.mutate(r.id); }}

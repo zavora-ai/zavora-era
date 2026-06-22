@@ -37,7 +37,7 @@ pub async fn get_one(
     .fetch_optional(state.engine.pool()).await;
 
     let lines = sqlx::query_as::<_, zavora_erp_core::invoicing::InvoiceLineRow>(
-        "SELECT id, bill_id AS invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount FROM bill_lines WHERE bill_id = $1",
+        "SELECT id, bill_id AS invoice_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dimensions FROM bill_lines WHERE bill_id = $1",
     )
     .bind(id)
     .fetch_all(state.engine.pool()).await.unwrap_or_default();
@@ -101,31 +101,52 @@ pub async fn post_bill(
                     message: format!("Bill must be approved before posting (status: {})", b.status),
                 }));
             }
-            // Build journal lines
+            // GL determination from the entity's posting config (not hardcoded).
+            let posting = state.engine.posting_for(ctx.entity_id).await.map_err(err_response)?;
             let base_ccy = state.engine.config().base_currency.clone();
-            let mut lines = vec![
-                zavora_erp_core::ledger::journal::CreateJournalLineRequest {
-                    account_code: "7900".to_string(), // default expense
+            use zavora_erp_core::ledger::journal::CreateJournalLineRequest as JLine;
+            let zero = rust_decimal::Decimal::ZERO;
+
+            // Expense lines: one DR per bill line on its own account, carrying the
+            // line's analytical dimensions. Falls back to a single default-expense
+            // line if the bill has no captured lines.
+            let bill_lines = sqlx::query_as::<_, (String, rust_decimal::Decimal, serde_json::Value)>(
+                "SELECT account_code, line_total, dimensions FROM bill_lines WHERE bill_id = $1 ORDER BY id",
+            )
+            .bind(id)
+            .fetch_all(state.engine.pool())
+            .await
+            .unwrap_or_default();
+
+            let mut lines: Vec<JLine> = Vec::new();
+            if bill_lines.is_empty() {
+                lines.push(JLine {
+                    account_code: posting.default_expense.clone(),
                     debit: Some(b.subtotal),
                     credit: None,
                     currency: base_ccy.clone(),
                     fx_rate: Some(b.fx_rate),
                     description: Some(format!("Bill {}", b.number)),
                     dimensions: None,
-                },
-                zavora_erp_core::ledger::journal::CreateJournalLineRequest {
-                    account_code: "3010".to_string(), // AP
-                    debit: None,
-                    credit: Some(b.gross_total),
-                    currency: base_ccy.clone(),
-                    fx_rate: Some(b.fx_rate),
-                    description: Some(format!("Bill {} - AP", b.number)),
-                    dimensions: None,
-                },
-            ];
-            if b.tax_total > rust_decimal::Decimal::ZERO {
-                lines.push(zavora_erp_core::ledger::journal::CreateJournalLineRequest {
-                    account_code: "1300".to_string(), // VAT Input
+                });
+            } else {
+                for (account_code, line_total, dims) in &bill_lines {
+                    lines.push(JLine {
+                        account_code: account_code.clone(),
+                        debit: Some(*line_total),
+                        credit: None,
+                        currency: base_ccy.clone(),
+                        fx_rate: Some(b.fx_rate),
+                        description: Some(format!("Bill {}", b.number)),
+                        dimensions: serde_json::from_value(dims.clone()).ok(),
+                    });
+                }
+            }
+
+            // DR VAT Input (recoverable input tax).
+            if b.tax_total > zero {
+                lines.push(JLine {
+                    account_code: posting.vat_input.clone(),
                     debit: Some(b.tax_total),
                     credit: None,
                     currency: base_ccy.clone(),
@@ -134,14 +155,27 @@ pub async fn post_bill(
                     dimensions: None,
                 });
             }
-            if b.wht_amount > rust_decimal::Decimal::ZERO {
-                lines.push(zavora_erp_core::ledger::journal::CreateJournalLineRequest {
-                    account_code: "3210".to_string(), // WHT Payable
+
+            // CR Accounts Payable for the net owed to the vendor and CR WHT
+            // Payable for the amount withheld. gross_total is already net of WHT
+            // (subtotal + tax - wht), so AP + WHT == subtotal + tax == debits.
+            lines.push(JLine {
+                account_code: posting.accounts_payable.clone(),
+                debit: None,
+                credit: Some(b.gross_total),
+                currency: base_ccy.clone(),
+                fx_rate: Some(b.fx_rate),
+                description: Some(format!("Bill {} - AP", b.number)),
+                dimensions: None,
+            });
+            if b.wht_amount > zero {
+                lines.push(JLine {
+                    account_code: posting.wht_payable.clone(),
                     debit: None,
                     credit: Some(b.wht_amount),
                     currency: base_ccy.clone(),
                     fx_rate: Some(b.fx_rate),
-                    description: Some("WHT deducted".to_string()),
+                    description: Some("WHT withheld".to_string()),
                     dimensions: None,
                 });
             }
@@ -149,6 +183,7 @@ pub async fn post_bill(
             let entry_req = zavora_erp_core::ledger::journal::CreateJournalEntryRequest {
                 date: b.issue_date,
                 source: zavora_erp_core::ledger::journal::JournalSource::Bill,
+                source_id: Some(b.id),
                 reference: b.number.clone(),
                 description: format!("Bill {} posted", b.number),
                 lines,

@@ -78,6 +78,31 @@ pub async fn post_invoice(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct WriteOffRequest {
+    pub expense_account: String,
+    #[serde(default)]
+    pub amount: Option<rust_decimal::Decimal>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// POST /invoices/{id}/write-off — write an uncollectable invoice (or part) off
+/// to a bad-debt expense account.
+pub async fn write_off(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<WriteOffRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_POST_JOURNAL, &ctx, "write off invoice").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
+    match svc::write_off_invoice(&state.engine, ctx.entity_id, id, req.expense_account, req.amount, req.reason, actor).await {
+        Ok(je_id) => Ok(Json(serde_json::json!({ "journal_entry_id": je_id }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 /// POST /invoices/{id}/send — mark a posted invoice as sent (records sent_at).
 /// Delivery is decoupled from posting; this stamps that the invoice was sent,
 /// including off-system (printed/emailed manually).

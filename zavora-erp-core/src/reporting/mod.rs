@@ -30,6 +30,10 @@ pub enum ReportType {
     ExpenseByVendor,
     InventoryValuation,
     FixedAssetRegister,
+    BudgetVsActual,
+    DimensionalAnalysis,
+    EquityChanges,
+    CashFlowDirect,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -52,6 +56,9 @@ pub struct ReportParameters {
     pub bank_account_id: Option<Uuid>,
     pub statement_id: Option<Uuid>,
     pub period_id: Option<Uuid>,
+    /// Dimension type code to group by (Dimensional Analysis report).
+    #[serde(default)]
+    pub dimension_type: Option<String>,
 }
 
 /// Report data — the generated report content.
@@ -85,6 +92,10 @@ pub enum ReportContent {
     InventoryValuation(InventoryValuationReport),
     FixedAssetRegister(FixedAssetRegisterReport),
     BankReconSummary(BankReconSummaryReport),
+    BudgetVsActual(BudgetVsActualReport),
+    DimensionalAnalysis(DimensionalAnalysisReport),
+    EquityChanges(EquityChangesReport),
+    CashFlowDirect(CashFlowDirectReport),
     Generic(serde_json::Value),
 }
 
@@ -272,9 +283,13 @@ pub struct GlDetailReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlDetailLine {
     pub date: NaiveDate,
+    pub entry_id: Uuid,
     pub journal_number: String,
     pub description: String,
     pub reference: String,
+    pub source: String,
+    /// Id of the originating document (invoice/bill/credit note), when any.
+    pub source_id: Option<Uuid>,
     pub debit: Decimal,
     pub credit: Decimal,
     pub balance: Decimal,
@@ -563,6 +578,101 @@ pub struct BankReconLine {
     /// True when the difference is fully explained by the unmatched items
     /// (|difference − unreconciled_amount| < 0.01).
     pub is_reconciled: bool,
+}
+
+/// Budget vs Actual — for each P&L account, actual ledger movement in the period
+/// against the budgeted figure, with variance and variance %. Amounts are in the
+/// account's natural sign (revenue positive when earned, expense positive when
+/// incurred). Variance = actual − budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetVsActualReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<BudgetVsActualLine>,
+    pub total_actual: Decimal,
+    pub total_budget: Decimal,
+    pub total_variance: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetVsActualLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub account_type: String,
+    pub actual: Decimal,
+    pub budget: Decimal,
+    pub variance: Decimal,
+    /// variance / budget * 100; None when budget is zero.
+    pub variance_pct: Option<Decimal>,
+}
+
+/// Dimensional analysis — ledger movement grouped by the values of one
+/// dimension type (e.g. by Cost Centre) for a period. Lines with no value for
+/// that type are grouped under "(unassigned)".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionalAnalysisReport {
+    pub dimension_type: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<DimensionalLine>,
+    pub total_debit: Decimal,
+    pub total_credit: Decimal,
+    pub total_net: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionalLine {
+    pub value_code: String,
+    pub value_name: String,
+    pub debit: Decimal,
+    pub credit: Decimal,
+    /// debit − credit.
+    pub net: Decimal,
+}
+
+/// Statement of Changes in Equity — opening balance, profit for the period, and
+/// per-account equity movements (capital introduced, drawings), to closing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquityChangesReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<EquityChangeLine>,
+    pub opening_total: Decimal,
+    /// Net profit for the period (not yet booked to equity accounts).
+    pub profit_for_period: Decimal,
+    pub closing_total: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquityChangeLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub opening: Decimal,
+    pub movement: Decimal,
+    pub closing: Decimal,
+}
+
+/// Direct-method cash flow — actual cash receipts and payments in the period,
+/// grouped by the contra account (what the cash was for). Cash accounts are the
+/// GL accounts behind the entity's bank accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashFlowDirectReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub receipts: Vec<CashFlowDirectLine>,
+    pub payments: Vec<CashFlowDirectLine>,
+    pub total_receipts: Decimal,
+    pub total_payments: Decimal,
+    pub net_change: Decimal,
+    pub opening_cash: Decimal,
+    pub closing_cash: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashFlowDirectLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub amount: Decimal,
 }
 
 /// Export output from report generation.

@@ -86,6 +86,101 @@ pub async fn receive_inventory_in_tx(
     Ok(movement_id)
 }
 
+/// Request for a stock-take adjustment.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdjustInventoryRequest {
+    pub item_id: Uuid,
+    /// The physical count; on-hand is set to this.
+    pub counted_quantity: Decimal,
+    /// GL account for the value variance (caller-supplied; not hardcoded).
+    pub adjustment_account: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub date: Option<chrono::NaiveDate>,
+}
+
+/// Stock-take adjustment: set on-hand to the counted quantity and post the value
+/// variance (variance × unit cost) between the item's inventory GL account and a
+/// caller-supplied adjustment account — a gain credits the adjustment account, a
+/// loss debits it. Records an 'adjustment' stock movement.
+pub async fn adjust_inventory(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    req: AdjustInventoryRequest,
+    actor: AgentOrUserId,
+) -> ErpResult<Uuid> {
+    use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+
+    let mut tx = engine.pool().begin().await?;
+    let item = sqlx::query_as::<_, InventoryItemRow>("SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2")
+        .bind(req.item_id)
+        .bind(entity_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ErpError::NotFound { entity_type: "InventoryItem".to_string(), id: req.item_id })?;
+
+    let today = req.date.unwrap_or_else(|| Utc::now().date_naive());
+    let variance = req.counted_quantity - item.on_hand;
+    if variance == Decimal::ZERO {
+        return Err(ErpError::ValidationFailed { message: format!("Counted quantity matches on-hand for {}", item.sku) });
+    }
+    let value = (variance * item.unit_cost).round_dp(2);
+
+    sqlx::query("UPDATE inventory_items SET on_hand = $1, available = available + $2, total_value = $1 * unit_cost WHERE id = $3 AND entity_id = $4")
+        .bind(req.counted_quantity)
+        .bind(variance)
+        .bind(req.item_id)
+        .bind(entity_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"INSERT INTO stock_movements (id, entity_id, item_id, movement_type, date, quantity, unit_cost, total_cost, notes, created_by, created_at)
+           VALUES ($1, $2, $3, 'adjustment', $4, $5, $6, $7, $8, $9, $10)"#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(entity_id)
+    .bind(req.item_id)
+    .bind(today)
+    .bind(variance)
+    .bind(item.unit_cost)
+    .bind(value)
+    .bind(req.reason.clone())
+    .bind(serde_json::to_value(&actor).unwrap_or_default())
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await?;
+
+    let abs_value = value.abs();
+    if abs_value >= Decimal::new(1, 2) {
+        let base_ccy = engine.config().base_currency.clone();
+        let (dr_acct, cr_acct) = if variance > Decimal::ZERO {
+            (item.gl_inventory.clone(), req.adjustment_account.clone())
+        } else {
+            (req.adjustment_account.clone(), item.gl_inventory.clone())
+        };
+        let lines = vec![
+            CreateJournalLineRequest { account_code: dr_acct, debit: Some(abs_value), credit: None, currency: base_ccy.clone(), fx_rate: Some(Decimal::ONE), description: Some(format!("Stock adjustment {}", item.sku)), dimensions: None },
+            CreateJournalLineRequest { account_code: cr_acct, debit: None, credit: Some(abs_value), currency: base_ccy.clone(), fx_rate: Some(Decimal::ONE), description: Some(format!("Stock adjustment {}", item.sku)), dimensions: None },
+        ];
+        let entry_req = CreateJournalEntryRequest {
+            date: today,
+            source: JournalSource::InventoryAdjustment,
+            source_id: Some(req.item_id),
+            reference: format!("STOCKADJ-{}", item.sku),
+            description: req.reason.clone().unwrap_or_else(|| format!("Stock adjustment {}", item.sku)),
+            lines,
+            post_immediately: true,
+        };
+        let period = crate::services::periods::period_for_date(engine, entity_id, today).await?;
+        crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, actor).await?;
+    }
+
+    tx.commit().await?;
+    Ok(req.item_id)
+}
+
 /// Issue inventory (sale/consumption).
 ///
 /// Returns an `IssueInventoryResult` containing the movement ID and the cost

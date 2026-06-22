@@ -379,6 +379,7 @@ async fn build_closing_entry(
     Ok(CreateJournalEntryRequest {
         date: last_period.end_date,
         source: JournalSource::YearEndClose,
+        source_id: None,
         reference: format!("YEC-{}", req.fiscal_year),
         description: format!("Year-end closing entry for fiscal year {}", req.fiscal_year),
         lines,
@@ -481,6 +482,7 @@ async fn build_opening_entry(
     Ok(CreateJournalEntryRequest {
         date: first_period.start_date,
         source: JournalSource::OpeningBalance,
+        source_id: None,
         reference: format!("OB-{}", req.fiscal_year + 1),
         description: format!(
             "Opening balances for fiscal year {} (carried forward from FY{})",

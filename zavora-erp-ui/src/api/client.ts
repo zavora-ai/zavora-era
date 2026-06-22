@@ -111,6 +111,42 @@ export const updateAccount = (code: string, data: any) => api.put(`/accounts/${c
 
 // === Periods ===
 export const getPeriods = () => api.get('/periods');
+export const getBudgets = () => api.get('/budgets');
+export const setBudget = (data: { period_id: string; account_code: string; amount: number }) =>
+  api.put('/budgets', data);
+export const getCustomReports = () => api.get('/custom-reports');
+export const getCustomReport = (id: string) => api.get(`/custom-reports/${id}`);
+export const saveCustomReport = (data: { id?: string; name: string; definition: any }) =>
+  api.post('/custom-reports', data);
+export const deleteCustomReport = (id: string) => api.delete(`/custom-reports/${id}`);
+export const runCustomReport = (id: string, from: string, to: string) =>
+  api.get(`/custom-reports/${id}/run`, { params: { from, to } });
+export const getReportSchedules = () => api.get('/report-schedules');
+export const saveReportSchedule = (data: { id?: string; name: string; report_type: string; cadence: string; recipients: string; is_active?: boolean }) =>
+  api.post('/report-schedules', data);
+export const deleteReportSchedule = (id: string) => api.delete(`/report-schedules/${id}`);
+export const getConsolidationEntities = () => api.get('/consolidation/entities');
+export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
+  api.post('/consolidation/trial-balance', data);
+export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>
+  api.post('/opening-balances', data);
+export const getRecurringJournals = () => api.get('/recurring-journals');
+export const saveRecurringJournal = (data: any) => api.post('/recurring-journals', data);
+export const deleteRecurringJournal = (id: string) => api.delete(`/recurring-journals/${id}`);
+export const runRecurringJournals = () => api.post('/recurring-journals/run', {});
+export const getTaxFilings = () => api.get('/tax-filings');
+export const fileTaxReturn = (data: { tax_type: string; period_from: string; period_to: string; amount: number }) =>
+  api.post('/tax-filings', data);
+export const remitTaxFiling = (id: string, data: { liability_account: string; bank_account_code: string; payment_date: string }) =>
+  api.post(`/tax-filings/${id}/remit`, data);
+export const getWhtRates = () => api.get('/wht-rates');
+export const updateWhtRate = (data: { category: string; resident_rate: number; non_resident_rate: number }) =>
+  api.put('/wht-rates', data);
+export const getDimensions = () => api.get('/dimensions');
+export const createDimensionType = (data: { code: string; name: string }) =>
+  api.post('/dimension-types', data);
+export const createDimensionValue = (data: { type_code: string; code: string; name: string }) =>
+  api.post('/dimension-values', data);
 export const generatePeriods = (data: { fiscal_year: number; year_start_month: number }) =>
   api.post('/periods', data);
 export const closePeriod = (id: string, data: { close_type: 'Soft' | 'Hard' }) =>
@@ -120,6 +156,7 @@ export const reopenPeriod = (id: string, data: { reason: string }) =>
 
 // === Journal Entries ===
 export const getJournalEntries = () => api.get('/journal-entries');
+export const getJournalEntry = (id: string) => api.get(`/journal-entries/${id}`);
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
 export const reverseJournalEntry = (id: string, data: { reason?: string }) =>
@@ -147,6 +184,8 @@ export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}
 export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
 export const postInvoice = (id: string) => api.post(`/invoices/${id}/post`);
 export const sendInvoice = (id: string, data?: any) => api.post(`/invoices/${id}/send`, data || {});
+export const writeOffInvoice = (id: string, data: { expense_account: string; amount?: number; reason?: string }) =>
+  api.post(`/invoices/${id}/write-off`, data);
 
 // === Estimates ===
 export const getEstimates = () => api.get('/estimates');
@@ -177,6 +216,7 @@ export const createSupplierCreditNote = (data: any) => api.post('/supplier-credi
 
 // === Payments ===
 export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
+export const getPayment = (id: string) => api.get(`/payments/${id}`);
 export const recordPayment = (data: any) => api.post('/payments', data);
 export const applyPayment = (data: { payment_id: string; document_id: string; amount: number }) =>
   api.post('/payments/apply', data);
@@ -201,7 +241,15 @@ export const mergeTransactions = (data: any) => api.post('/transactions/merge', 
 export const excludeTransaction = (id: string, data: any) => api.post(`/transactions/${id}/exclude`, data);
 
 // === Bank ===
+export const adjustInventory = (data: { item_id: string; counted_quantity: number; adjustment_account: string; reason?: string }) =>
+  api.post('/inventory/adjust', data);
 export const getBankAccounts = () => api.get('/bank-accounts');
+export const computeBankRec = (data: { bank_account_id: string; statement_date: string }) =>
+  api.post('/bank/reconciliations/compute', data);
+export const completeBankRec = (data: { bank_account_id: string; statement_date: string; statement_closing_balance: number; cleared_entry_ids: string[] }) =>
+  api.post('/bank/reconciliations/complete', data);
+export const getBankRecs = (bankAccountId?: string) =>
+  api.get('/bank/reconciliations', { params: bankAccountId ? { bank_account_id: bankAccountId } : {} });
 export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
 export const deleteBankAccount = (id: string) => api.delete(`/bank-accounts/${id}`);
 export const importStatement = (data: any) => api.post('/bank/import', data);

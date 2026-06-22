@@ -284,6 +284,25 @@ hr {
 }
 
 /* ============================================
+   DRAFT WATERMARK — Diagonal semi-transparent
+   ============================================ */
+.draft-watermark {
+  position: relative;
+}
+.draft-watermark::before {
+  content: 'DRAFT';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 6rem;
+  font-weight: 900;
+  color: rgba(220, 38, 38, 0.08);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ============================================
    PRINT (Print -> PDF of the active report)
    ============================================ */
 @media print {

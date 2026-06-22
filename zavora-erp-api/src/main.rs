@@ -92,7 +92,20 @@ async fn main() -> anyhow::Result<()> {
             if let Err(e) = zavora_erp_core::services::scheduler::process_invoice_reminders(&scheduler_engine).await {
                 tracing::error!("Reminder scheduler error: {}", e);
             }
+            if let Err(e) = zavora_erp_core::services::scheduler::process_report_schedules(&scheduler_engine).await {
+                tracing::error!("Report schedule error: {}", e);
+            }
+            if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_journals(&scheduler_engine, scheduler_engine.entity_id()).await {
+                tracing::error!("Recurring journal error: {}", e);
+            }
         }
+    });
+
+    // Spawn notification worker (Redis stream consumer)
+    let worker_redis = redis_client.get_multiplexed_async_connection().await?;
+    let worker_pool = state.engine.pool().clone();
+    tokio::spawn(async move {
+        zavora_erp_core::services::notification_worker::run(worker_redis, worker_pool).await;
     });
 
     // Build router — public routes need no authentication.
@@ -132,6 +145,7 @@ async fn main() -> anyhow::Result<()> {
         // Journal entries
         .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
+        .route("/api/v1/journal-entries/{id}", get(routes::journal::get))
         .route("/api/v1/journal-entries/{id}/reverse", post(routes::journal::reverse))
         // Customers
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
@@ -151,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_one).put(routes::invoices::update).delete(routes::invoices::delete))
         .route("/api/v1/invoices/{id}/post", post(routes::invoices::post_invoice))
         .route("/api/v1/invoices/{id}/send", post(routes::invoices::send))
+        .route("/api/v1/invoices/{id}/write-off", post(routes::invoices::write_off))
         .route("/api/v1/invoices/{id}/credit-note", post(routes::invoices::create_credit_note))
         .route("/api/v1/invoices/{id}/etims-transmit", post(routes::invoices::etims_transmit))
         // Estimates
@@ -186,6 +201,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank-accounts/{id}", delete(routes::bank::delete_account))
         .route("/api/v1/bank/import", post(routes::bank::import_statement))
         .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
+        .route("/api/v1/bank/reconciliations", get(routes::reconciliation::list))
+        .route("/api/v1/bank/reconciliations/compute", post(routes::reconciliation::compute))
+        .route("/api/v1/bank/reconciliations/complete", post(routes::reconciliation::complete))
         .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
         // Payroll
         .route("/api/v1/payroll/run", post(routes::payroll::run))
@@ -196,6 +214,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))
         .route("/api/v1/inventory/issue", post(routes::inventory::issue))
+        .route("/api/v1/inventory/adjust", post(routes::inventory::adjust))
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
@@ -216,6 +235,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/agent/report", post(routes::agent::run_report))
         // Settings
         .route("/api/v1/settings", get(routes::settings::get).put(routes::settings::update))
+        .route("/api/v1/budgets", get(routes::budgets::list).put(routes::budgets::set))
+        .route("/api/v1/custom-reports", get(routes::custom_reports::list).post(routes::custom_reports::save))
+        .route("/api/v1/custom-reports/{id}", get(routes::custom_reports::get).delete(routes::custom_reports::delete))
+        .route("/api/v1/custom-reports/{id}/run", get(routes::custom_reports::run))
+        .route("/api/v1/consolidation/entities", get(routes::consolidation::my_entities))
+        .route("/api/v1/consolidation/trial-balance", post(routes::consolidation::trial_balance))
+        .route("/api/v1/report-schedules", get(routes::report_schedules::list).post(routes::report_schedules::save))
+        .route("/api/v1/report-schedules/{id}", axum::routing::delete(routes::report_schedules::delete))
+        .route("/api/v1/wht-rates", get(routes::wht::list).put(routes::wht::update))
+        .route("/api/v1/tax-filings", get(routes::tax_filings::list).post(routes::tax_filings::file))
+        .route("/api/v1/tax-filings/{id}/remit", post(routes::tax_filings::remit))
+        .route("/api/v1/opening-balances", post(routes::onboarding::post_opening_balances))
+        .route("/api/v1/recurring-journals", get(routes::recurring_journals::list).post(routes::recurring_journals::save))
+        .route("/api/v1/recurring-journals/run", post(routes::recurring_journals::run_now))
+        .route("/api/v1/recurring-journals/{id}", axum::routing::delete(routes::recurring_journals::delete))
+        .route("/api/v1/dimensions", get(routes::dimensions::list))
+        .route("/api/v1/dimension-types", post(routes::dimensions::create_type))
+        .route("/api/v1/dimension-values", post(routes::dimensions::create_value))
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         .route("/api/v1/users/{id}", put(routes::users::update))

@@ -1,6 +1,7 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::types::{AccountCode, VatTreatment};
@@ -18,6 +19,9 @@ pub struct InvoiceLine {
     pub vat_treatment: VatTreatment,
     pub line_total: Decimal,
     pub vat_amount: Decimal,
+    /// Analytical dimensions ({ type_code: value_code }) carried to the GL.
+    #[serde(default)]
+    pub dimensions: HashMap<String, String>,
 }
 
 impl InvoiceLine {
@@ -55,6 +59,9 @@ pub struct InvoiceLineRow {
     pub vat_treatment: String,
     pub line_total: Decimal,
     pub vat_amount: Decimal,
+    #[serde(default)]
+    #[sqlx(default)]
+    pub dimensions: serde_json::Value,
 }
 
 /// Request to create an invoice line.
@@ -67,4 +74,6 @@ pub struct CreateInvoiceLineRequest {
     pub discount_percent: Option<Decimal>,
     pub account_code: Option<AccountCode>,
     pub vat_treatment: Option<VatTreatment>,
+    #[serde(default)]
+    pub dimensions: Option<HashMap<String, String>>,
 }

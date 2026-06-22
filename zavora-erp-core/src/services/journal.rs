@@ -293,8 +293,8 @@ pub async fn create_and_post_in_tx(
     // Insert journal entry header
     sqlx::query(
         r#"INSERT INTO journal_entries
-           (id, entity_id, number, date, period_id, source, reference, description, status, created_by, created_at, posted_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
+           (id, entity_id, number, date, period_id, source, source_id, reference, description, status, created_by, created_at, posted_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
     )
     .bind(entry_id)
     .bind(entity_id)
@@ -302,6 +302,7 @@ pub async fn create_and_post_in_tx(
     .bind(req.date)
     .bind(period_id)
     .bind(serde_json::to_string(&req.source).unwrap_or_default())
+    .bind(req.source_id)
     .bind(&req.reference)
     .bind(&req.description)
     .bind("posted")
@@ -570,6 +571,7 @@ pub async fn reverse_journal_entry(
     let entry_req = CreateJournalEntryRequest {
         date,
         source: JournalSource::Manual,
+        source_id: None,
         reference: reversal_reference,
         description: format!(
             "Reversal of {original_number}{}",

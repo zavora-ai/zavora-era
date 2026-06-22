@@ -84,6 +84,7 @@ async fn posted_invoice(
             discount_percent: None,
             account_code: Some("4000".to_string()),
             vat_treatment: Some(VatTreatment::ZeroRated),
+            dimensions: None,
         }],
         template_id: None,
         notes: None,

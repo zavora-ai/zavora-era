@@ -63,18 +63,55 @@ pub async fn create_supplier_credit_note(
         }
     }
 
-    if req.lines.is_empty() {
-        return Err(ErpError::ValidationFailed {
-            message: "A supplier credit note must have at least one line".to_string(),
-        });
-    }
-
-    // Resolve + total lines (each line VAT rounded independently — Req 5.2).
     let mut lines: Vec<InvoiceLine> = Vec::new();
-    for line_req in &req.lines {
-        let mut line = crate::services::invoicing::resolve_invoice_line(engine, entity_id, line_req).await?;
-        line.compute_totals();
-        lines.push(line);
+
+    if req.lines.is_empty() {
+        // Full reversal — copy all lines from the original bill (mirrors the
+        // customer credit note pattern in create_credit_note()).
+        if let Some(bill_id) = req.applies_to_bill {
+            let bill_lines = sqlx::query_as::<_, (Option<Uuid>, String, Decimal, Decimal, Decimal, String, String, Decimal, Decimal)>(
+                r#"SELECT product_id, description, quantity, unit_price, discount_percent,
+                          account_code, vat_treatment, line_total, vat_amount
+                   FROM bill_lines WHERE bill_id = $1"#,
+            )
+            .bind(bill_id)
+            .fetch_all(engine.pool())
+            .await?;
+
+            if bill_lines.is_empty() {
+                return Err(ErpError::ValidationFailed {
+                    message: "Bill has no lines to reverse".to_string(),
+                });
+            }
+
+            for (product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount) in &bill_lines {
+                lines.push(InvoiceLine {
+                    id: Uuid::new_v4(),
+                    product_id: *product_id,
+                    description: description.clone(),
+                    quantity: *quantity,
+                    unit_price: *unit_price,
+                    discount_percent: *discount_percent,
+                    account_code: account_code.clone(),
+                    vat_treatment: serde_json::from_str(vat_treatment)
+                        .unwrap_or(crate::types::VatTreatment::Standard16),
+                    line_total: *line_total,
+                    vat_amount: *vat_amount,
+                    dimensions: Default::default(),
+                });
+            }
+        } else {
+            return Err(ErpError::ValidationFailed {
+                message: "A supplier credit note must have at least one line, or specify applies_to_bill for a full reversal".to_string(),
+            });
+        }
+    } else {
+        // Explicit lines provided — resolve and compute totals.
+        for line_req in &req.lines {
+            let mut line = crate::services::invoicing::resolve_invoice_line(engine, entity_id, line_req).await?;
+            line.compute_totals();
+            lines.push(line);
+        }
     }
     let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
     let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
@@ -175,6 +212,7 @@ pub async fn create_supplier_credit_note(
     let entry_req = CreateJournalEntryRequest {
         date: cn_date,
         source: JournalSource::SupplierCreditNote,
+        source_id: Some(cn_id),
         reference: number.clone(),
         description: format!("Supplier credit note {number}"),
         lines: je_lines,

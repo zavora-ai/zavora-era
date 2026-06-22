@@ -313,6 +313,7 @@ pub async fn post_pay_run(
     let entry_req = crate::ledger::journal::CreateJournalEntryRequest {
         date: pay_run.pay_date,
         source: crate::ledger::journal::JournalSource::Payroll,
+        source_id: Some(pay_run.id),
         reference: format!("PAYROLL-{}", pay_run.pay_date),
         description: format!("Payroll for {}", pay_run.pay_date),
         lines,

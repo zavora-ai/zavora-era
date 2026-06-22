@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE, ROLES_POST_JOURNAL};
 use zavora_erp_core::inventory::*;
 use zavora_erp_core::services::inventory as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -55,6 +55,20 @@ pub async fn issue(
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::issue_inventory(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(result) => Ok(Json(serde_json::json!({ "movement_id": result.movement_id }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /inventory/adjust — stock-take adjustment to a counted quantity.
+pub async fn adjust(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<svc::AdjustInventoryRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_POST_JOURNAL, &ctx, "adjust inventory").map_err(err_response)?;
+    let actor = AgentOrUserId::User(ctx.user_id);
+    match svc::adjust_inventory(&state.engine, ctx.entity_id, req, actor).await {
+        Ok(item_id) => Ok(Json(serde_json::json!({ "item_id": item_id }))),
         Err(e) => Err(err_response(e)),
     }
 }

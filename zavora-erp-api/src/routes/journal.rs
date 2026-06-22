@@ -24,6 +24,37 @@ pub async fn list(
     }
 }
 
+/// GET /journal-entries/{id} — entry header + its balanced lines.
+pub async fn get(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let entry = sqlx::query_as::<_, JournalEntryRow>(
+        "SELECT * FROM journal_entries WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_optional(state.engine.pool())
+    .await;
+    let entry = match entry {
+        Ok(Some(e)) => e,
+        Ok(None) => return Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "JournalEntry".into(), id })),
+        Err(e) => return Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    };
+    let lines = sqlx::query_as::<_, JournalLineRow>(
+        "SELECT * FROM journal_lines WHERE entry_id = $1 ORDER BY functional_debit DESC NULLS LAST, functional_credit DESC NULLS LAST",
+    )
+    .bind(id)
+    .fetch_all(state.engine.pool())
+    .await
+    .unwrap_or_default();
+    Ok(Json(serde_json::json!({
+        "entry": serde_json::to_value(&entry).unwrap_or_default(),
+        "lines": serde_json::to_value(&lines).unwrap_or_default(),
+    })))
+}
+
 pub async fn create(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
-  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus
+  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,6 +22,7 @@ const navigation = [
   { divider: true, label: 'MONEY' },
   { name: 'Payments', href: '/payments', icon: CreditCard },
   { name: 'Banking', href: '/banking', icon: Landmark },
+  { name: 'Reconciliation', href: '/reconciliation', icon: CheckCircle },
   { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
   { divider: true, label: 'ACCOUNTING' },
   { name: 'Products', href: '/products', icon: Package },
@@ -31,12 +32,20 @@ const navigation = [
   { name: 'Payroll', href: '/payroll', icon: Wallet },
   { name: 'Accounts', href: '/accounts', icon: BookOpen },
   { name: 'Journal Entries', href: '/journal-entries', icon: BookMarked },
+  { name: 'Recurring Journals', href: '/recurring-journals', icon: RefreshCw },
   { name: 'Periods', href: '/periods', icon: CalendarClock },
+  { name: 'Opening Balances', href: '/opening-balances', icon: Scale },
+  { name: 'Import Data', href: '/import', icon: Upload },
+  { name: 'Budgets', href: '/budgets', icon: Target },
+  { name: 'Dimensions', href: '/dimensions', icon: Layers },
+  { name: 'Consolidation', href: '/consolidation', icon: Network },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { divider: true, label: '' },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Users & Roles', href: '/users', icon: UserCog },
   { name: 'FX Rates', href: '/fx-rates', icon: RefreshCw },
+  { name: 'WHT Rates', href: '/wht-rates', icon: Percent },
+  { name: 'Tax Filing', href: '/tax-filings', icon: FileCheck },
   { name: 'Audit Trail', href: '/audit', icon: History },
 ];
 
