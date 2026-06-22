@@ -26,7 +26,13 @@ export default function AssetsPage() {
 
   const depreciationMutation = useMutation({
     mutationFn: () => runDepreciation(),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['assets'] }); },
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      const n = res?.data?.depreciated ?? 0;
+      alert(n > 0 ? `Posted depreciation for ${n} asset${n === 1 ? '' : 's'}.` : 'No assets were due for depreciation.');
+    },
+    onError: (e: any) => alert(e?.response?.data?.error || 'Depreciation run failed.'),
   });
 
   const columns: Column<FixedAsset>[] = [

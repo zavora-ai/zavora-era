@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Query, State}, Json};
 use std::sync::Arc;
 
 use crate::AppState;
@@ -7,6 +7,13 @@ use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
 use zavora_erp_core::assets::*;
 use zavora_erp_core::services::assets as svc;
 use zavora_erp_core::AgentOrUserId;
+
+/// Optional targeting for a depreciation run; defaults to the period covering today.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct DepreciationParams {
+    pub date: Option<chrono::NaiveDate>,
+    pub period_id: Option<uuid::Uuid>,
+}
 
 pub async fn list(
     ctx: AuthContext,
@@ -37,11 +44,29 @@ pub async fn create(
     }
 }
 
+/// POST /assets/depreciation/run — post one month of depreciation for every active
+/// asset into the period covering today (or the supplied `date`/`period_id`).
 pub async fn run_depreciation(
     ctx: AuthContext,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<DepreciationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "run depreciation") { return Err(err_response(e)); }
-    // TODO: implement depreciation run across all active assets
-    Ok(Json(serde_json::json!({ "status": "todo", "message": "Depreciation run not yet implemented" })))
+    require_role(ROLES_CREATE, &ctx, "run depreciation").map_err(err_response)?;
+
+    let period_id = match params.period_id {
+        Some(pid) => pid,
+        None => {
+            let date = params.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+            zavora_erp_core::services::periods::period_for_date(&state.engine, ctx.entity_id, date)
+                .await
+                .map_err(err_response)?
+                .id
+        }
+    };
+
+    let actor = AgentOrUserId::User(ctx.user_id);
+    match svc::run_depreciation(&state.engine, ctx.entity_id, period_id, &actor).await {
+        Ok(ids) => Ok(Json(serde_json::json!({ "depreciated": ids.len(), "asset_ids": ids }))),
+        Err(e) => Err(err_response(e)),
+    }
 }
