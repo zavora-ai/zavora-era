@@ -6,6 +6,8 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { Plus, ArrowRight, Send, Check, X, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -15,10 +17,13 @@ export default function EstimatesPage() {
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
-  const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
-    queryKey: ['estimates'],
-    queryFn: () => getEstimates().then(r => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['estimates', offset, limit],
+    queryFn: () => getEstimates({ limit, offset }).then(r => r.data),
   });
+  const estimates: Estimate[] = resp?.data ?? [];
+  const estimatesTotal: number = resp?.total_count ?? 0;
 
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
@@ -138,6 +143,7 @@ export default function EstimatesPage() {
       </div>
 
       <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No estimates yet. Create your first estimate to send quotes to customers." />
+      <PaginationControls page={page} limit={limit} total={estimatesTotal} onPage={setPage} />
 
       {showCreate && <CreateEstimateModal onClose={() => setShowCreate(false)} />}
     </div>

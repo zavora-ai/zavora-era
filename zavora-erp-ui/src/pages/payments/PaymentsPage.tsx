@@ -6,6 +6,8 @@ import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { Plus, ArrowRightLeft } from 'lucide-react';
 
@@ -62,10 +64,13 @@ export default function PaymentsPage() {
 // ─── All Payments Tab ──────────────────────────────────────────────────────────
 
 function AllPaymentsTab() {
-  const { data: payments = [], isLoading } = useQuery<Payment[]>({
-    queryKey: ['payments'],
-    queryFn: () => getPayments().then((r) => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['payments', offset, limit],
+    queryFn: () => getPayments({ limit, offset }).then((r) => r.data),
   });
+  const payments: Payment[] = resp?.data ?? [];
+  const total: number = resp?.total_count ?? 0;
 
   const columns: Column<Payment>[] = [
     { key: 'number', header: 'Number', render: (r) => <span className="font-medium">{r.number}</span> },
@@ -97,7 +102,12 @@ function AllPaymentsTab() {
     { key: 'status', header: 'Status', render: (r) => <span className="badge-success">{r.status}</span> },
   ];
 
-  return <DataTable columns={columns} data={payments} loading={isLoading} emptyMessage="No payments recorded." />;
+  return (
+    <>
+      <DataTable columns={columns} data={payments} loading={isLoading} emptyMessage="No payments recorded." />
+      <PaginationControls page={page} limit={limit} total={total} onPage={setPage} />
+    </>
+  );
 }
 
 // ─── Unapplied Payments Tab ────────────────────────────────────────────────────

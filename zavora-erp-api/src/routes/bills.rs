@@ -12,15 +12,18 @@ use zavora_erp_core::AgentOrUserId;
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE entity_id = $1")
+        .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, BillRow>(
-        "SELECT * FROM bills WHERE entity_id = $1 ORDER BY created_at DESC",
+        "SELECT * FROM bills WHERE entity_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
-    .bind(ctx.entity_id)
+    .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }

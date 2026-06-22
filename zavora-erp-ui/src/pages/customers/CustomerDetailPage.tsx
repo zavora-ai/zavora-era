@@ -22,12 +22,12 @@ export default function CustomerDetailPage() {
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ['invoices'],
-    queryFn: () => getInvoices().then(r => r.data),
+    queryFn: () => getInvoices({ limit: 500 }).then(r => r.data.data ?? r.data),
   });
 
   const { data: payments = [] } = useQuery<Payment[]>({
     queryKey: ['payments'],
-    queryFn: () => getPayments().then(r => r.data),
+    queryFn: () => getPayments({ limit: 500 }).then(r => r.data.data ?? r.data),
   });
 
   if (isLoading) {

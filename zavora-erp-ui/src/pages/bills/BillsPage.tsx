@@ -6,6 +6,8 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
 import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
@@ -18,10 +20,13 @@ export default function BillsPage() {
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
-  const { data: bills = [], isLoading } = useQuery<Bill[]>({
-    queryKey: ['bills'],
-    queryFn: () => getBills().then(r => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['bills', offset, limit],
+    queryFn: () => getBills({ limit, offset }).then(r => r.data),
   });
+  const bills: Bill[] = resp?.data ?? [];
+  const billsTotal: number = resp?.total_count ?? 0;
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
   const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
@@ -116,6 +121,7 @@ export default function BillsPage() {
       </div>
 
       <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No bills yet. Create your first bill to track payables." />
+      <PaginationControls page={page} limit={limit} total={billsTotal} onPage={setPage} />
 
       {showCreate && <CreateBillModal onClose={() => setShowCreate(false)} />}
       {editId && <CreateBillModal editId={editId} onClose={() => setEditId(null)} />}

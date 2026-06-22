@@ -12,6 +12,7 @@ pub mod consolidation;
 pub mod custom_reports;
 pub mod dimensions;
 pub mod onboarding;
+pub mod pagination;
 pub mod reconciliation;
 pub mod recurring_journals;
 pub mod tax_filings;

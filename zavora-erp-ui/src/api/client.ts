@@ -155,7 +155,8 @@ export const reopenPeriod = (id: string, data: { reason: string }) =>
   api.post(`/periods/${id}/reopen`, data);
 
 // === Journal Entries ===
-export const getJournalEntries = () => api.get('/journal-entries');
+export type PageParams = { limit?: number; offset?: number };
+export const getJournalEntries = (params?: PageParams) => api.get('/journal-entries', { params });
 export const getJournalEntry = (id: string) => api.get(`/journal-entries/${id}`);
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
@@ -178,7 +179,7 @@ export const getProducts = () => api.get('/products');
 export const createProduct = (data: any) => api.post('/products', data);
 
 // === Invoices ===
-export const getInvoices = () => api.get('/invoices');
+export const getInvoices = (params?: PageParams) => api.get('/invoices', { params });
 export const createInvoice = (data: any) => api.post('/invoices', data);
 export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}`, data);
 export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
@@ -188,7 +189,7 @@ export const writeOffInvoice = (id: string, data: { expense_account: string; amo
   api.post(`/invoices/${id}/write-off`, data);
 
 // === Estimates ===
-export const getEstimates = () => api.get('/estimates');
+export const getEstimates = (params?: PageParams) => api.get('/estimates', { params });
 export const createEstimate = (data: any) => api.post('/estimates', data);
 export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
 export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
@@ -201,7 +202,7 @@ export const getRecurringInvoices = () => api.get('/recurring-invoices');
 export const createRecurringInvoice = (data: any) => api.post('/recurring-invoices', data);
 
 // === Bills ===
-export const getBills = () => api.get('/bills');
+export const getBills = (params?: PageParams) => api.get('/bills', { params });
 export const getBill = (id: string) => api.get(`/bills/${id}`);
 export const createBill = (data: any) => api.post('/bills', data);
 export const updateBill = (id: string, data: any) => api.put(`/bills/${id}`, data);
@@ -215,7 +216,7 @@ export const getSupplierCreditNote = (id: string) => api.get(`/supplier-credit-n
 export const createSupplierCreditNote = (data: any) => api.post('/supplier-credit-notes', data);
 
 // === Payments ===
-export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
+export const getPayments = (params?: { status?: string } & PageParams) => api.get('/payments', { params });
 export const getPayment = (id: string) => api.get(`/payments/${id}`);
 export const recordPayment = (data: any) => api.post('/payments', data);
 export const applyPayment = (data: { payment_id: string; document_id: string; amount: number }) =>
