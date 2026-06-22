@@ -128,6 +128,8 @@ export const deleteReportSchedule = (id: string) => api.delete(`/report-schedule
 export const getConsolidationEntities = () => api.get('/consolidation/entities');
 export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
   api.post('/consolidation/trial-balance', data);
+export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>
+  api.post('/opening-balances', data);
 export const getWhtRates = () => api.get('/wht-rates');
 export const updateWhtRate = (data: { category: string; resident_rate: number; non_resident_rate: number }) =>
   api.put('/wht-rates', data);
