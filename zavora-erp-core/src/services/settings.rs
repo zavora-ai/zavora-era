@@ -40,12 +40,16 @@ pub async fn update_settings(
     if let Some(posting) = &patch.posting {
         config.posting = posting.clone();
     }
+    if let Some(sequences) = &patch.sequences {
+        config.sequences = sequences.clone();
+    }
 
     // Persist to database — update individual JSONB columns
     let branding_json = serde_json::to_value(&config.branding)?;
     let tax_config_json = serde_json::to_value(&config.tax_config)?;
     let payment_config_json = serde_json::to_value(&config.payment_config)?;
     let posting_json = serde_json::to_value(&config.posting)?;
+    let sequences_json = serde_json::to_value(&config.sequences)?;
     let fiscal_year_end_str = serde_json::to_string(&config.fiscal_year_end)?;
     let updated_by_id = match updated_by {
         AgentOrUserId::User(id) => Some(*id),
@@ -60,9 +64,10 @@ pub async fn update_settings(
                tax_config = $4,
                payment_config = $5,
                posting_setup = $6,
-               updated_at = $7,
-               updated_by = $8
-           WHERE entity_id = $9"#,
+               sequences = $7,
+               updated_at = $8,
+               updated_by = $9
+           WHERE entity_id = $10"#,
     )
     .bind(&config.base_currency)
     .bind(&fiscal_year_end_str)
@@ -70,6 +75,7 @@ pub async fn update_settings(
     .bind(&tax_config_json)
     .bind(&payment_config_json)
     .bind(&posting_json)
+    .bind(&sequences_json)
     .bind(now)
     .bind(updated_by_id)
     .bind(entity_id)
