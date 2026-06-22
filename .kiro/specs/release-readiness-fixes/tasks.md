@@ -166,8 +166,8 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Wire vendor list row clicks to navigate to detail page
     - _Requirements: 7.1, 7.2, 7.3, 7.5_
 
-- [ ] 10. Implement Notification Inbox
-  - [ ] 10.1 Add notification API routes (list, mark-read, mark-all-read, unread-count)
+- [x] 10. Implement Notification Inbox
+  - [x] 10.1 Add notification API routes (list, mark-read, mark-all-read, unread-count)
     - Create `zavora-erp-api/src/routes/notifications.rs` with:
       - `GET /api/v1/notifications` — list with optional `unread_only` filter, paginated
       - `PATCH /api/v1/notifications/{id}/read` — mark single as read (idempotent)
@@ -176,7 +176,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Register routes in main router
     - _Requirements: 8.6_
 
-  - [ ] 10.2 Create NotificationInbox frontend component
+  - [x] 10.2 Create NotificationInbox frontend component
     - Create `zavora-erp-ui/src/components/layout/NotificationInbox.tsx`
     - Bell icon with unread count badge (polling every 30s via `refetchInterval`)
     - Dropdown drawer on click: notification list sorted by most recent

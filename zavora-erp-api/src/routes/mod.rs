@@ -11,6 +11,7 @@ pub mod budgets;
 pub mod consolidation;
 pub mod custom_reports;
 pub mod dimensions;
+pub mod notifications;
 pub mod onboarding;
 pub mod pagination;
 pub mod reconciliation;

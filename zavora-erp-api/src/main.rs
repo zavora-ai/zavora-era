@@ -178,6 +178,11 @@ async fn main() -> anyhow::Result<()> {
         // Recurring Invoices
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
         .route("/api/v1/recurring-invoices/{id}", axum::routing::put(routes::invoices::update_recurring).delete(routes::invoices::delete_recurring))
+        // Notifications (in-app inbox)
+        .route("/api/v1/notifications", get(routes::notifications::list))
+        .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
+        .route("/api/v1/notifications/mark-all-read", post(routes::notifications::mark_all_read))
+        .route("/api/v1/notifications/{id}/read", axum::routing::patch(routes::notifications::mark_read))
         // Bills
         .route("/api/v1/bills", get(routes::bills::list).post(routes::bills::create))
         .route("/api/v1/bills/{id}", get(routes::bills::get_one).put(routes::bills::update).delete(routes::bills::delete))

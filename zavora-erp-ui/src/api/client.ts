@@ -314,5 +314,11 @@ export const getCustomerStatement = (id: string) => api.get(`/customers/${id}/st
 export const getVendor = (id: string) => api.get(`/vendors/${id}`);
 export const updateVendor = (id: string, data: any) => api.put(`/vendors/${id}`, data);
 
+// === Notifications (in-app inbox) ===
+export const getNotifications = (params?: { unread_only?: boolean } & PageParams) => api.get('/notifications', { params });
+export const getUnreadCount = () => api.get('/notifications/unread-count');
+export const markNotificationRead = (id: string) => api.patch(`/notifications/${id}/read`);
+export const markAllNotificationsRead = () => api.post('/notifications/mark-all-read', {});
+
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });

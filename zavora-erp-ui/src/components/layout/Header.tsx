@@ -1,5 +1,6 @@
-import { Bell, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import UserMenu from './UserMenu';
+import NotificationInbox from './NotificationInbox';
 
 export default function Header() {
   return (
@@ -21,10 +22,7 @@ export default function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-1.5">
-        <button className="relative p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-          <Bell className="w-[18px] h-[18px]" />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full ring-2 ring-white" />
-        </button>
+        <NotificationInbox />
         <div className="w-px h-6 bg-gray-100 mx-1" />
         <UserMenu />
       </div>
