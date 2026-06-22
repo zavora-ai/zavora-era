@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
-  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle
+  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -45,6 +45,7 @@ const navigation = [
   { name: 'Users & Roles', href: '/users', icon: UserCog },
   { name: 'FX Rates', href: '/fx-rates', icon: RefreshCw },
   { name: 'WHT Rates', href: '/wht-rates', icon: Percent },
+  { name: 'Tax Filing', href: '/tax-filings', icon: FileCheck },
   { name: 'Audit Trail', href: '/audit', icon: History },
 ];
 

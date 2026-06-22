@@ -237,6 +237,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/report-schedules", get(routes::report_schedules::list).post(routes::report_schedules::save))
         .route("/api/v1/report-schedules/{id}", axum::routing::delete(routes::report_schedules::delete))
         .route("/api/v1/wht-rates", get(routes::wht::list).put(routes::wht::update))
+        .route("/api/v1/tax-filings", get(routes::tax_filings::list).post(routes::tax_filings::file))
+        .route("/api/v1/tax-filings/{id}/remit", post(routes::tax_filings::remit))
         .route("/api/v1/opening-balances", post(routes::onboarding::post_opening_balances))
         .route("/api/v1/recurring-journals", get(routes::recurring_journals::list).post(routes::recurring_journals::save))
         .route("/api/v1/recurring-journals/run", post(routes::recurring_journals::run_now))

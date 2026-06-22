@@ -30,6 +30,7 @@ import CustomReportsPage from './pages/reports/CustomReportsPage';
 import ReportSchedulesPage from './pages/reports/ReportSchedulesPage';
 import ConsolidationPage from './pages/consolidation/ConsolidationPage';
 import WhtRatesPage from './pages/settings/WhtRatesPage';
+import TaxFilingsPage from './pages/settings/TaxFilingsPage';
 import OpeningBalancesPage from './pages/settings/OpeningBalancesPage';
 import ImportPage from './pages/settings/ImportPage';
 import ReconciliationPage from './pages/banking/ReconciliationPage';
@@ -119,6 +120,7 @@ export default function App() {
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="dimensions" element={<DimensionsPage />} />
             <Route path="wht-rates" element={<WhtRatesPage />} />
+            <Route path="tax-filings" element={<TaxFilingsPage />} />
             <Route path="opening-balances" element={<OpeningBalancesPage />} />
             <Route path="import" element={<ImportPage />} />
             <Route path="consolidation" element={<ConsolidationPage />} />

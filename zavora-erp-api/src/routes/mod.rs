@@ -14,6 +14,7 @@ pub mod dimensions;
 pub mod onboarding;
 pub mod reconciliation;
 pub mod recurring_journals;
+pub mod tax_filings;
 pub mod wht;
 pub mod report_schedules;
 pub mod supplier_credit_notes;

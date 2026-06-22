@@ -134,6 +134,11 @@ export const getRecurringJournals = () => api.get('/recurring-journals');
 export const saveRecurringJournal = (data: any) => api.post('/recurring-journals', data);
 export const deleteRecurringJournal = (id: string) => api.delete(`/recurring-journals/${id}`);
 export const runRecurringJournals = () => api.post('/recurring-journals/run', {});
+export const getTaxFilings = () => api.get('/tax-filings');
+export const fileTaxReturn = (data: { tax_type: string; period_from: string; period_to: string; amount: number }) =>
+  api.post('/tax-filings', data);
+export const remitTaxFiling = (id: string, data: { liability_account: string; bank_account_code: string; payment_date: string }) =>
+  api.post(`/tax-filings/${id}/remit`, data);
 export const getWhtRates = () => api.get('/wht-rates');
 export const updateWhtRate = (data: { category: string; resident_rate: number; non_resident_rate: number }) =>
   api.put('/wht-rates', data);
