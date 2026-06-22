@@ -19,7 +19,12 @@ export default function FxRatesPage() {
 
   const revalMutation = useMutation({
     mutationFn: () => runFxRevaluation(),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fx-rates'] }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fx-rates'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      alert('FX revaluation posted, with an auto-reversal in the next period.');
+    },
+    onError: (e: any) => alert(e?.response?.data?.error || 'FX revaluation failed.'),
   });
 
   const columns: Column<ExchangeRateEntry>[] = [
