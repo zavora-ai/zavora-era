@@ -119,14 +119,14 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Use `proptest` to generate valid/invalid CreateRecurringInvoiceRequest variants
     - **Validates: Requirements 5.1, 5.2, 5.6**
 
-- [ ] 8. Implement Estimate Draft Edit and Delete
-  - [ ] 8.1 Add update and delete service functions for draft estimates
+- [x] 8. Implement Estimate Draft Edit and Delete
+  - [x] 8.1 Add update and delete service functions for draft estimates
     - In `zavora-erp-core/src/services/invoicing.rs`, implement:
       - `update_estimate_draft`: check status = 'draft' (409 if not), validate, persist changes to header + line items
       - `delete_estimate_draft`: check status = 'draft' (409 if not), delete estimate and its lines
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-  - [ ] 8.2 Add PUT and DELETE routes for estimates
+  - [x] 8.2 Add PUT and DELETE routes for estimates
     - Register `PUT /api/v1/estimates/{id}` → `update` handler in `zavora-erp-api/src/routes/estimates.rs`
     - Register `DELETE /api/v1/estimates/{id}` → `delete` handler
     - Map `ErpError::Conflict` to HTTP 409

@@ -191,6 +191,8 @@ export const writeOffInvoice = (id: string, data: { expense_account: string; amo
 // === Estimates ===
 export const getEstimates = (params?: PageParams) => api.get('/estimates', { params });
 export const createEstimate = (data: any) => api.post('/estimates', data);
+export const updateEstimate = (id: string, data: any) => api.put(`/estimates/${id}`, data);
+export const deleteEstimate = (id: string) => api.delete(`/estimates/${id}`);
 export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
 export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
 export const sendEstimate = (id: string) => api.post(`/estimates/${id}/send`, {});

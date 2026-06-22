@@ -632,6 +632,137 @@ pub async fn create_estimate(
     Ok(id)
 }
 
+/// Update a draft estimate's header and lines in place.
+///
+/// The caller is responsible for enforcing that the estimate is in `draft`
+/// status (so the right HTTP status can be returned); this re-validates that
+/// guard defensively and replaces the line set atomically.
+pub async fn update_estimate_draft(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    id: Uuid,
+    req: CreateEstimateRequest,
+) -> ErpResult<()> {
+    let today = Utc::now().date_naive();
+
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM estimates WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+    let status = status.ok_or_else(|| ErpError::NotFound { entity_type: "Estimate".to_string(), id })?;
+    if status != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Only draft estimates can be edited (current status: {status})"),
+        });
+    }
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Customer".to_string(), id: req.customer_id })?;
+
+    let currency = req.currency.unwrap_or(customer.currency.clone());
+    let issue_date = req.issue_date.unwrap_or(today);
+    let expiry_date = req.expiry_date.unwrap_or(issue_date + chrono::Duration::days(30));
+
+    let mut lines = Vec::new();
+    for line_req in &req.lines {
+        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        line.compute_totals();
+        lines.push(line);
+    }
+    let subtotal: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let tax_total: Decimal = lines.iter().map(|l| l.vat_amount).sum();
+    let gross_total = crate::money::round_money(subtotal + tax_total);
+
+    let mut tx = engine.pool().begin().await?;
+
+    sqlx::query(
+        r#"UPDATE estimates SET
+              customer_id = $1, issue_date = $2, expiry_date = $3, currency = $4,
+              subtotal = $5, tax_total = $6, gross_total = $7, notes = $8
+           WHERE id = $9 AND entity_id = $10"#,
+    )
+    .bind(req.customer_id)
+    .bind(issue_date)
+    .bind(expiry_date)
+    .bind(&currency)
+    .bind(subtotal)
+    .bind(tax_total)
+    .bind(gross_total)
+    .bind(&req.notes)
+    .bind(id)
+    .bind(entity_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM estimate_lines WHERE estimate_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    for line in &lines {
+        sqlx::query(
+            r#"INSERT INTO estimate_lines
+               (id, estimate_id, product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        )
+        .bind(line.id)
+        .bind(id)
+        .bind(line.product_id)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.discount_percent)
+        .bind(&line.account_code)
+        .bind(serde_json::to_string(&line.vat_treatment).unwrap_or_default())
+        .bind(line.line_total)
+        .bind(line.vat_amount)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Delete a draft estimate and its lines.
+pub async fn delete_estimate_draft(engine: &ErpEngine, entity_id: Uuid, id: Uuid) -> ErpResult<()> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM estimates WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+    let status = status.ok_or_else(|| ErpError::NotFound { entity_type: "Estimate".to_string(), id })?;
+    if status != "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: format!("Only draft estimates can be deleted (current status: {status})"),
+        });
+    }
+
+    let mut tx = engine.pool().begin().await?;
+    sqlx::query("DELETE FROM estimate_lines WHERE estimate_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM estimates WHERE id = $1 AND entity_id = $2")
+        .bind(id)
+        .bind(entity_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Convert an accepted estimate into an invoice.
 ///
 /// Copies all lines from the estimate, creates a new invoice, and marks
