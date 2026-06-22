@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -77,6 +77,134 @@ pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
         };
         sqlx::query("UPDATE report_schedules SET last_run_at = $1, next_run_at = $2 WHERE id = $3")
             .bind(now).bind(next).bind(s.id)
+            .execute(engine.pool())
+            .await?;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RecurringJournalRow {
+    id: Uuid,
+    name: String,
+    cadence: String,
+    lines: serde_json::Value,
+    auto_reverse: bool,
+    next_run_date: chrono::NaiveDate,
+}
+
+#[derive(serde::Deserialize)]
+struct RecurringJournalLine {
+    account_code: String,
+    #[serde(default)]
+    debit: Option<Decimal>,
+    #[serde(default)]
+    credit: Option<Decimal>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+/// Post any recurring journals due for this entity. For an accrual template
+/// (`auto_reverse`), also posts a mirror reversal on the first day of the next
+/// month. Advances next_run_date by the cadence. Returns the number posted.
+pub async fn process_recurring_journals(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<u32> {
+    use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+
+    let today = Utc::now().date_naive();
+    let base_ccy = engine.config().base_currency.clone();
+    let due = sqlx::query_as::<_, RecurringJournalRow>(
+        "SELECT id, name, cadence, lines, auto_reverse, next_run_date FROM recurring_journals
+         WHERE entity_id = $1 AND is_active = true AND next_run_date <= $2",
+    )
+    .bind(entity_id)
+    .bind(today)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut count = 0u32;
+    for t in due {
+        let tmpl: Vec<RecurringJournalLine> = serde_json::from_value(t.lines).unwrap_or_default();
+        let build = |reverse: bool| -> Vec<CreateJournalLineRequest> {
+            tmpl.iter()
+                .filter_map(|l| {
+                    let dr = l.debit.unwrap_or(Decimal::ZERO);
+                    let cr = l.credit.unwrap_or(Decimal::ZERO);
+                    if dr.is_zero() && cr.is_zero() {
+                        return None;
+                    }
+                    // On reversal, swap debit and credit.
+                    let (dr, cr) = if reverse { (cr, dr) } else { (dr, cr) };
+                    Some(CreateJournalLineRequest {
+                        account_code: l.account_code.clone(),
+                        debit: if dr > Decimal::ZERO { Some(dr) } else { None },
+                        credit: if cr > Decimal::ZERO { Some(cr) } else { None },
+                        currency: base_ccy.clone(),
+                        fx_rate: Some(Decimal::ONE),
+                        description: l.description.clone(),
+                        dimensions: None,
+                    })
+                })
+                .collect()
+        };
+
+        let lines = build(false);
+        let total_dr: Decimal = lines.iter().filter_map(|l| l.debit).sum();
+        let total_cr: Decimal = lines.iter().filter_map(|l| l.credit).sum();
+        if lines.len() < 2 || (total_dr - total_cr).abs() >= Decimal::new(1, 2) {
+            tracing::warn!("Recurring journal {} skipped: unbalanced or too few lines", t.id);
+            continue;
+        }
+
+        // Post the main entry on the run date.
+        if let Ok(period) = crate::services::periods::period_for_date(engine, entity_id, t.next_run_date).await {
+            let req = CreateJournalEntryRequest {
+                date: t.next_run_date,
+                source: JournalSource::Manual,
+                source_id: Some(t.id),
+                reference: format!("REC-{}", t.name),
+                description: t.name.clone(),
+                lines,
+                post_immediately: true,
+            };
+            let actor = crate::AgentOrUserId::Agent("scheduler".to_string());
+            if let Err(e) = crate::services::journal::create_and_post(engine, entity_id, req, period.id, actor).await {
+                tracing::error!("Recurring journal {} post failed: {}", t.id, e);
+                continue;
+            }
+
+            // Accrual reversal on the 1st of the following month.
+            if t.auto_reverse {
+                if let Some(rev_date) = t.next_run_date.with_day(1).and_then(|d| d.checked_add_months(chrono::Months::new(1))) {
+                    if let Ok(rev_period) = crate::services::periods::period_for_date(engine, entity_id, rev_date).await {
+                        let rev_req = CreateJournalEntryRequest {
+                            date: rev_date,
+                            source: JournalSource::Manual,
+                            source_id: Some(t.id),
+                            reference: format!("REC-REV-{}", t.name),
+                            description: format!("{} (accrual reversal)", t.name),
+                            lines: build(true),
+                            post_immediately: true,
+                        };
+                        let actor = crate::AgentOrUserId::Agent("scheduler".to_string());
+                        let _ = crate::services::journal::create_and_post(engine, entity_id, rev_req, rev_period.id, actor).await;
+                    }
+                }
+            }
+        } else {
+            tracing::warn!("Recurring journal {}: no period for {}", t.id, t.next_run_date);
+            continue;
+        }
+
+        let next = match t.cadence.as_str() {
+            "weekly" => t.next_run_date + chrono::Duration::days(7),
+            "quarterly" => t.next_run_date.checked_add_months(chrono::Months::new(3)).unwrap_or(t.next_run_date),
+            _ => t.next_run_date.checked_add_months(chrono::Months::new(1)).unwrap_or(t.next_run_date),
+        };
+        sqlx::query("UPDATE recurring_journals SET next_run_date = $1, last_run_at = NOW() WHERE id = $2")
+            .bind(next)
+            .bind(t.id)
             .execute(engine.pool())
             .await?;
         count += 1;

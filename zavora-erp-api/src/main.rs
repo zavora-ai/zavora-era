@@ -95,6 +95,9 @@ async fn main() -> anyhow::Result<()> {
             if let Err(e) = zavora_erp_core::services::scheduler::process_report_schedules(&scheduler_engine).await {
                 tracing::error!("Report schedule error: {}", e);
             }
+            if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_journals(&scheduler_engine, scheduler_engine.entity_id()).await {
+                tracing::error!("Recurring journal error: {}", e);
+            }
         }
     });
 
@@ -231,6 +234,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/report-schedules/{id}", axum::routing::delete(routes::report_schedules::delete))
         .route("/api/v1/wht-rates", get(routes::wht::list).put(routes::wht::update))
         .route("/api/v1/opening-balances", post(routes::onboarding::post_opening_balances))
+        .route("/api/v1/recurring-journals", get(routes::recurring_journals::list).post(routes::recurring_journals::save))
+        .route("/api/v1/recurring-journals/run", post(routes::recurring_journals::run_now))
+        .route("/api/v1/recurring-journals/{id}", axum::routing::delete(routes::recurring_journals::delete))
         .route("/api/v1/dimensions", get(routes::dimensions::list))
         .route("/api/v1/dimension-types", post(routes::dimensions::create_type))
         .route("/api/v1/dimension-values", post(routes::dimensions::create_value))

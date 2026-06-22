@@ -31,6 +31,7 @@ const navigation = [
   { name: 'Payroll', href: '/payroll', icon: Wallet },
   { name: 'Accounts', href: '/accounts', icon: BookOpen },
   { name: 'Journal Entries', href: '/journal-entries', icon: BookMarked },
+  { name: 'Recurring Journals', href: '/recurring-journals', icon: RefreshCw },
   { name: 'Periods', href: '/periods', icon: CalendarClock },
   { name: 'Opening Balances', href: '/opening-balances', icon: Scale },
   { name: 'Import Data', href: '/import', icon: Upload },

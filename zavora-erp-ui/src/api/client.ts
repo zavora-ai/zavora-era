@@ -130,6 +130,10 @@ export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at:
   api.post('/consolidation/trial-balance', data);
 export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>
   api.post('/opening-balances', data);
+export const getRecurringJournals = () => api.get('/recurring-journals');
+export const saveRecurringJournal = (data: any) => api.post('/recurring-journals', data);
+export const deleteRecurringJournal = (id: string) => api.delete(`/recurring-journals/${id}`);
+export const runRecurringJournals = () => api.post('/recurring-journals/run', {});
 export const getWhtRates = () => api.get('/wht-rates');
 export const updateWhtRate = (data: { category: string; resident_rate: number; non_resident_rate: number }) =>
   api.put('/wht-rates', data);

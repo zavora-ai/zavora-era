@@ -23,6 +23,7 @@ import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
 import JournalEntryDetailPage from './pages/accounts/JournalEntryDetailPage';
+import RecurringJournalsPage from './pages/accounts/RecurringJournalsPage';
 import BudgetsPage from './pages/budgets/BudgetsPage';
 import DimensionsPage from './pages/dimensions/DimensionsPage';
 import CustomReportsPage from './pages/reports/CustomReportsPage';
@@ -111,6 +112,7 @@ export default function App() {
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="journal-entries" element={<JournalEntriesPage />} />
             <Route path="journal-entries/:id" element={<JournalEntryDetailPage />} />
+            <Route path="recurring-journals" element={<RecurringJournalsPage />} />
             <Route path="periods" element={<PeriodsPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="dimensions" element={<DimensionsPage />} />
