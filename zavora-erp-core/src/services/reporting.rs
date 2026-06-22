@@ -116,6 +116,14 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = dimensional_analysis(engine, entity_id, req.parameters).await?;
             ReportContent::DimensionalAnalysis(report)
         }
+        ReportType::EquityChanges => {
+            let report = equity_changes(engine, entity_id, req.parameters).await?;
+            ReportContent::EquityChanges(report)
+        }
+        ReportType::CashFlowDirect => {
+            let report = cash_flow_direct(engine, entity_id, req.parameters).await?;
+            ReportContent::CashFlowDirect(report)
+        }
         _ => {
             ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
         }
@@ -150,6 +158,8 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::FixedAssetRegister => "Fixed-Asset Register",
         ReportType::BudgetVsActual => "Budget vs Actual",
         ReportType::DimensionalAnalysis => "Dimensional Analysis",
+        ReportType::EquityChanges => "Statement of Changes in Equity",
+        ReportType::CashFlowDirect => "Cash Flow Statement (Direct)",
         ReportType::CustomerPaymentHistory => "Customer Payment History",
         ReportType::BankReconSummary => "Bank Reconciliation Summary",
         ReportType::PayrollSummary => "Payroll Summary",
@@ -1127,6 +1137,28 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
                 output.extend_from_slice(row.as_bytes());
             }
             output.extend_from_slice(format!("Total,,{},{},{}\n", r.total_debit, r.total_credit, r.total_net).as_bytes());
+        }
+        ReportContent::EquityChanges(r) => {
+            output.extend_from_slice(b"Account,Opening,Movement,Closing\n");
+            for l in &r.lines {
+                output.extend_from_slice(format!("{},{},{},{}\n", csv_escape(&l.account_name), l.opening, l.movement, l.closing).as_bytes());
+            }
+            output.extend_from_slice(format!("Profit for the period,,{},\n", r.profit_for_period).as_bytes());
+            output.extend_from_slice(format!("Closing equity,{},,{}\n", r.opening_total, r.closing_total).as_bytes());
+        }
+        ReportContent::CashFlowDirect(r) => {
+            output.extend_from_slice(b"Section,Account,Amount\n");
+            for l in &r.receipts {
+                output.extend_from_slice(format!("Receipt,{},{}\n", csv_escape(&l.account_name), l.amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total receipts,{}\n", r.total_receipts).as_bytes());
+            for l in &r.payments {
+                output.extend_from_slice(format!("Payment,{},{}\n", csv_escape(&l.account_name), l.amount).as_bytes());
+            }
+            output.extend_from_slice(format!(",Total payments,{}\n", r.total_payments).as_bytes());
+            output.extend_from_slice(format!(",Net change,{}\n", r.net_change).as_bytes());
+            output.extend_from_slice(format!(",Opening cash,{}\n", r.opening_cash).as_bytes());
+            output.extend_from_slice(format!(",Closing cash,{}\n", r.closing_cash).as_bytes());
         }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
@@ -2233,6 +2265,141 @@ async fn dimensional_analysis(
         total_credit: lines.iter().map(|l| l.credit).sum(),
         total_net: lines.iter().map(|l| l.net).sum(),
         lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct EquityChangeRow {
+    account_code: String,
+    account_name: String,
+    opening: Decimal,
+    closing: Decimal,
+}
+
+/// Statement of Changes in Equity.
+async fn equity_changes(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<EquityChangesReport> {
+    let (period_from, period_to) = resolve_period(&params);
+    let opening_cutoff = period_from.pred_opt().unwrap_or(period_from);
+
+    // Equity accounts are credit-natured: balance = credit - debit.
+    let rows = sqlx::query_as::<_, EquityChangeRow>(
+        "SELECT a.code AS account_code, a.name AS account_name,
+                COALESCE(SUM(CASE WHEN jl.entry_date <= $2 THEN COALESCE(jl.functional_credit,0) - COALESCE(jl.functional_debit,0) ELSE 0 END), 0) AS opening,
+                COALESCE(SUM(CASE WHEN jl.entry_date <= $3 THEN COALESCE(jl.functional_credit,0) - COALESCE(jl.functional_debit,0) ELSE 0 END), 0) AS closing
+         FROM accounts a
+         LEFT JOIN journal_lines jl ON jl.account_code = a.code AND jl.entity_id = $1
+         WHERE a.entity_id = $1 AND a.account_type IN ('Equity', 'ContraEquity')
+         GROUP BY a.code, a.name
+         ORDER BY a.code",
+    )
+    .bind(entity_id).bind(opening_cutoff).bind(period_to)
+    .fetch_all(engine.pool()).await?;
+
+    // Net profit for the period = credit - debit over all P&L accounts.
+    let profit_for_period: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(COALESCE(jl.functional_credit,0) - COALESCE(jl.functional_debit,0)), 0)
+         FROM journal_lines jl JOIN accounts a ON a.code = jl.account_code AND a.entity_id = $1
+         WHERE jl.entity_id = $1 AND jl.entry_date BETWEEN $2 AND $3
+           AND a.account_type IN ('Revenue','ContraRevenue','Expense','ContraExpense')",
+    )
+    .bind(entity_id).bind(period_from).bind(period_to)
+    .fetch_one(engine.pool()).await.unwrap_or(Decimal::ZERO);
+
+    let lines: Vec<EquityChangeLine> = rows.into_iter()
+        .filter(|r| r.opening != Decimal::ZERO || r.closing != Decimal::ZERO)
+        .map(|r| EquityChangeLine { account_code: r.account_code, account_name: r.account_name, opening: r.opening, movement: r.closing - r.opening, closing: r.closing })
+        .collect();
+    let opening_total: Decimal = lines.iter().map(|l| l.opening).sum();
+    let booked_closing: Decimal = lines.iter().map(|l| l.closing).sum();
+
+    Ok(EquityChangesReport {
+        period_from,
+        period_to,
+        opening_total,
+        profit_for_period,
+        closing_total: booked_closing + profit_for_period,
+        lines,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CashFlowContraRow {
+    account_code: String,
+    account_name: String,
+    net: Decimal,
+}
+
+/// Direct-method cash flow: cash receipts/payments grouped by contra account.
+/// Cash accounts are the GL accounts behind the entity's bank accounts.
+async fn cash_flow_direct(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<CashFlowDirectReport> {
+    let (period_from, period_to) = resolve_period(&params);
+    let opening_cutoff = period_from.pred_opt().unwrap_or(period_from);
+
+    let cash_accounts: Vec<String> = sqlx::query_scalar("SELECT gl_account FROM bank_accounts WHERE entity_id = $1")
+        .bind(entity_id).fetch_all(engine.pool()).await.unwrap_or_default();
+
+    if cash_accounts.is_empty() {
+        return Ok(CashFlowDirectReport { period_from, period_to, receipts: vec![], payments: vec![], total_receipts: Decimal::ZERO, total_payments: Decimal::ZERO, net_change: Decimal::ZERO, opening_cash: Decimal::ZERO, closing_cash: Decimal::ZERO });
+    }
+
+    let cash_balance = |cutoff: NaiveDate| {
+        let cash = cash_accounts.clone();
+        async move {
+            sqlx::query_scalar::<_, Decimal>(
+                "SELECT COALESCE(SUM(COALESCE(functional_debit,0) - COALESCE(functional_credit,0)), 0)
+                 FROM journal_lines WHERE entity_id = $1 AND account_code = ANY($2) AND entry_date <= $3",
+            )
+            .bind(entity_id).bind(&cash).bind(cutoff)
+            .fetch_one(engine.pool()).await.unwrap_or(Decimal::ZERO)
+        }
+    };
+    let opening_cash = cash_balance(opening_cutoff).await;
+    let closing_cash = cash_balance(period_to).await;
+
+    // Contra movements: non-cash lines in cash-touching entries within the period.
+    let contra = sqlx::query_as::<_, CashFlowContraRow>(
+        "SELECT a.code AS account_code, a.name AS account_name,
+                COALESCE(SUM(COALESCE(jl.functional_credit,0) - COALESCE(jl.functional_debit,0)), 0) AS net
+         FROM journal_lines jl JOIN accounts a ON a.code = jl.account_code AND a.entity_id = $1
+         WHERE jl.entity_id = $1 AND jl.entry_date BETWEEN $2 AND $3
+           AND jl.account_code <> ALL($4)
+           AND jl.entry_id IN (SELECT entry_id FROM journal_lines WHERE entity_id = $1 AND account_code = ANY($4))
+         GROUP BY a.code, a.name
+         ORDER BY a.code",
+    )
+    .bind(entity_id).bind(period_from).bind(period_to).bind(&cash_accounts)
+    .fetch_all(engine.pool()).await.unwrap_or_default();
+
+    let mut receipts = Vec::new();
+    let mut payments = Vec::new();
+    for r in contra {
+        if r.net > Decimal::ZERO {
+            receipts.push(CashFlowDirectLine { account_code: r.account_code, account_name: r.account_name, amount: r.net });
+        } else if r.net < Decimal::ZERO {
+            payments.push(CashFlowDirectLine { account_code: r.account_code, account_name: r.account_name, amount: -r.net });
+        }
+    }
+    let total_receipts: Decimal = receipts.iter().map(|l| l.amount).sum();
+    let total_payments: Decimal = payments.iter().map(|l| l.amount).sum();
+
+    Ok(CashFlowDirectReport {
+        period_from,
+        period_to,
+        net_change: total_receipts - total_payments,
+        opening_cash,
+        closing_cash,
+        total_receipts,
+        total_payments,
+        receipts,
+        payments,
     })
 }
 

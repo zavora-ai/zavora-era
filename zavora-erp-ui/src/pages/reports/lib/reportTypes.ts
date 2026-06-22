@@ -40,6 +40,8 @@ export const reportTypes: ReportMeta[] = [
   { key: 'BalanceSheet', name: 'Balance Sheet', desc: 'Assets, liabilities, and equity', controls: ['asAt'], comparable: true, category: 'Financial' },
   { key: 'ProfitAndLoss', name: 'Profit & Loss', desc: 'Revenue and expenses for a period', controls: ['period'], comparable: true, category: 'Financial' },
   { key: 'CashFlow', name: 'Cash Flow Statement', desc: 'Cash movements (indirect method)', controls: ['period'], category: 'Financial' },
+  { key: 'CashFlowDirect', name: 'Cash Flow (Direct)', desc: 'Cash receipts & payments by source', controls: ['period'], category: 'Financial' },
+  { key: 'EquityChanges', name: 'Changes in Equity', desc: 'Opening equity, profit, movements, closing', controls: ['period'], category: 'Financial' },
   { key: 'GlDetail', name: 'General Ledger', desc: 'Transaction detail by account', controls: ['period', 'account'], category: 'Financial' },
   { key: 'ArAgeing', name: 'AR Ageing', desc: 'Customer balances by age bucket', controls: ['asAt'], category: 'Receivables/Payables' },
   { key: 'ApAgeing', name: 'AP Ageing', desc: 'Vendor balances by age bucket', controls: ['asAt'], category: 'Receivables/Payables' },
@@ -91,6 +93,8 @@ const KEY_TO_SLUG: Record<string, string> = {
   BankReconSummary: 'bank-reconciliation',
   BudgetVsActual: 'budget-vs-actual',
   DimensionalAnalysis: 'dimensional-analysis',
+  CashFlowDirect: 'cash-flow-direct',
+  EquityChanges: 'changes-in-equity',
 };
 
 const SLUG_TO_KEY: Record<string, string> = Object.fromEntries(

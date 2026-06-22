@@ -32,6 +32,8 @@ pub enum ReportType {
     FixedAssetRegister,
     BudgetVsActual,
     DimensionalAnalysis,
+    EquityChanges,
+    CashFlowDirect,
     CustomerPaymentHistory,
     BankReconSummary,
     PayrollSummary,
@@ -92,6 +94,8 @@ pub enum ReportContent {
     BankReconSummary(BankReconSummaryReport),
     BudgetVsActual(BudgetVsActualReport),
     DimensionalAnalysis(DimensionalAnalysisReport),
+    EquityChanges(EquityChangesReport),
+    CashFlowDirect(CashFlowDirectReport),
     Generic(serde_json::Value),
 }
 
@@ -624,6 +628,51 @@ pub struct DimensionalLine {
     pub credit: Decimal,
     /// debit − credit.
     pub net: Decimal,
+}
+
+/// Statement of Changes in Equity — opening balance, profit for the period, and
+/// per-account equity movements (capital introduced, drawings), to closing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquityChangesReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<EquityChangeLine>,
+    pub opening_total: Decimal,
+    /// Net profit for the period (not yet booked to equity accounts).
+    pub profit_for_period: Decimal,
+    pub closing_total: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EquityChangeLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub opening: Decimal,
+    pub movement: Decimal,
+    pub closing: Decimal,
+}
+
+/// Direct-method cash flow — actual cash receipts and payments in the period,
+/// grouped by the contra account (what the cash was for). Cash accounts are the
+/// GL accounts behind the entity's bank accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashFlowDirectReport {
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub receipts: Vec<CashFlowDirectLine>,
+    pub payments: Vec<CashFlowDirectLine>,
+    pub total_receipts: Decimal,
+    pub total_payments: Decimal,
+    pub net_change: Decimal,
+    pub opening_cash: Decimal,
+    pub closing_cash: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashFlowDirectLine {
+    pub account_code: String,
+    pub account_name: String,
+    pub amount: Decimal,
 }
 
 /// Export output from report generation.
