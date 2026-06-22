@@ -144,8 +144,8 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Add `updateEstimate` and `deleteEstimate` functions to `api/client.ts`
     - _Requirements: 6.5, 6.6_
 
-- [ ] 9. Implement Vendor Detail Page
-  - [ ] 9.1 Add enriched GET /api/v1/vendors/{id} endpoint with summary stats
+- [x] 9. Implement Vendor Detail Page
+  - [x] 9.1 Add enriched GET /api/v1/vendors/{id} endpoint with summary stats
     - Compute total_billed (sum of bill gross_totals), total_paid (sum of vendor payments), outstanding_balance (unpaid bills - unapplied credit notes)
     - Include bill_count, payment_count, credit_note_count
     - Return `VendorDetail` response shape
@@ -156,7 +156,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Use `proptest` to generate sets of bills and credit notes, verify balance = sum(unpaid bills) - sum(posted CN totals)
     - **Validates: Requirements 7.3**
 
-  - [ ] 9.3 Create VendorDetailPage frontend component
+  - [x] 9.3 Create VendorDetailPage frontend component
     - Create `zavora-erp-ui/src/pages/vendors/VendorDetailPage.tsx`
     - Info header card: name, contact, KRA PIN, payment terms
     - Balance summary card with total_billed, total_paid, outstanding

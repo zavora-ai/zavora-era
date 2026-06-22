@@ -15,6 +15,7 @@ import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
 import VendorsPage from './pages/vendors/VendorsPage';
+import VendorDetailPage from './pages/vendors/VendorDetailPage';
 import ProductsPage from './pages/products/ProductsPage';
 import BankingPage from './pages/banking/BankingPage';
 import TransactionsPage from './pages/banking/TransactionsPage';
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="customers" element={<CustomersPage />} />
             <Route path="customers/:id" element={<CustomerDetailPage />} />
             <Route path="vendors" element={<VendorsPage />} />
+            <Route path="vendors/:id" element={<VendorDetailPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="banking" element={<BankingPage />} />
             <Route path="reconciliation" element={<ReconciliationPage />} />
