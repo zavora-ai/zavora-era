@@ -36,7 +36,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Invalidate bill detail query on success to refresh credit note history
     - _Requirements: 2.4_
 
-- [ ] 3. Checkpoint - Verify BLOCKING fixes
+- [x] 3. Checkpoint - Verify BLOCKING fixes
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 4. Add Pagination Infrastructure
@@ -74,7 +74,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Affected pages: invoices, bills, customers, vendors, payments, estimates, journal entries, products, accounts
     - _Requirements: 3.5, 3.6_
 
-- [ ] 5. Checkpoint - Verify pagination
+- [x] 5. Checkpoint - Verify pagination
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 6. Build Shared Frontend Components (Loading/Error States)
