@@ -207,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))
         .route("/api/v1/inventory/issue", post(routes::inventory::issue))
+        .route("/api/v1/inventory/adjust", post(routes::inventory::adjust))
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))

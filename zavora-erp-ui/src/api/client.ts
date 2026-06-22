@@ -236,6 +236,8 @@ export const mergeTransactions = (data: any) => api.post('/transactions/merge', 
 export const excludeTransaction = (id: string, data: any) => api.post(`/transactions/${id}/exclude`, data);
 
 // === Bank ===
+export const adjustInventory = (data: { item_id: string; counted_quantity: number; adjustment_account: string; reason?: string }) =>
+  api.post('/inventory/adjust', data);
 export const getBankAccounts = () => api.get('/bank-accounts');
 export const computeBankRec = (data: { bank_account_id: string; statement_date: string }) =>
   api.post('/bank/reconciliations/compute', data);

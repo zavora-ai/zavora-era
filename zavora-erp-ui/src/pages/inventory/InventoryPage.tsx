@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInventory, createInventoryItem, receiveInventory, issueInventory } from '../../api/client';
+import { getInventory, createInventoryItem, receiveInventory, issueInventory, adjustInventory, getAccounts } from '../../api/client';
 import type { InventoryItem } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, PackagePlus, PackageMinus, AlertTriangle } from 'lucide-react';
+import { Plus, PackagePlus, PackageMinus, AlertTriangle, ClipboardCheck } from 'lucide-react';
 
 export default function InventoryPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
   const [showIssue, setShowIssue] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
 
   const { data: items = [], isLoading } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
@@ -85,6 +86,9 @@ export default function InventoryPage() {
             <button onClick={() => setShowIssue(true)} className="btn-danger">
               <PackageMinus className="w-4 h-4" /> Issue Stock
             </button>
+            <button onClick={() => setShowAdjust(true)} className="btn-secondary">
+              <ClipboardCheck className="w-4 h-4" /> Stock Take
+            </button>
             <button onClick={() => setShowCreate(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> Add Item
             </button>
@@ -100,6 +104,7 @@ export default function InventoryPage() {
       {showCreate && <CreateItemModal onClose={() => setShowCreate(false)} />}
       {showReceive && <ReceiveStockModal items={items} onClose={() => setShowReceive(false)} />}
       {showIssue && <IssueStockModal items={items} onClose={() => setShowIssue(false)} />}
+      {showAdjust && <AdjustStockModal items={items} onClose={() => setShowAdjust(false)} />}
     </div>
   );
 }
@@ -317,6 +322,60 @@ function IssueStockModal({ items, onClose }: { items: InventoryItem[]; onClose: 
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function AdjustStockModal({ items, onClose }: { items: InventoryItem[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const adjAccounts = accounts.filter((a) => a.account_type === 'Expense' || a.account_type === 'Revenue');
+  const [itemId, setItemId] = useState('');
+  const [counted, setCounted] = useState('');
+  const [account, setAccount] = useState('');
+  const [reason, setReason] = useState('');
+
+  const item = items.find((i) => i.id === itemId);
+  const variance = item ? Number(counted || 0) - Number(item.on_hand) : 0;
+
+  const mut = useMutation({
+    mutationFn: () => adjustInventory({ item_id: itemId, counted_quantity: Number(counted), adjustment_account: account, reason: reason || undefined }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); onClose(); },
+  });
+
+  return (
+    <Modal open title="Stock take adjustment" onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="label">Item</label>
+          <select className="input w-full" value={itemId} onChange={(e) => { setItemId(e.target.value); setCounted(''); }}>
+            <option value="">Select item…</option>
+            {items.map((i) => <option key={i.id} value={i.id}>{i.sku} — {i.description}</option>)}
+          </select>
+        </div>
+        {item && (
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div><p className="label">System on-hand</p><p className="font-medium">{formatNumber(item.on_hand)}</p></div>
+            <div><p className="label">Counted</p><input type="number" step="0.01" className="input w-full" value={counted} onChange={(e) => setCounted(e.target.value)} /></div>
+            <div><p className="label">Variance</p><p className={`font-medium ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-700' : ''}`}>{formatNumber(variance)}</p></div>
+          </div>
+        )}
+        <div>
+          <label className="label">Adjustment account (gain/loss)</label>
+          <select className="input w-full" value={account} onChange={(e) => setAccount(e.target.value)}>
+            <option value="">Select account…</option>
+            {adjAccounts.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+          </select>
+        </div>
+        <div><label className="label">Reason</label><input className="input w-full" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Annual stock count" /></div>
+        {mut.isError && <p className="text-sm text-red-600">{(mut.error as any)?.response?.data?.error ?? 'Failed'}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" disabled={!itemId || counted === '' || !account || variance === 0 || mut.isPending} onClick={() => mut.mutate()}>
+            {mut.isPending ? 'Adjusting…' : 'Post adjustment'}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }
