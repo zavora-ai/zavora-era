@@ -4,14 +4,41 @@ import type { DashboardSummary } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import StatCard from '../../components/shared/StatCard';
 import PageHeader from '../../components/shared/PageHeader';
+import { SkeletonCard } from '../../components/shared/Skeleton';
+import ErrorRetry from '../../components/shared/ErrorRetry';
+import WidgetErrorBoundary from '../../components/shared/WidgetErrorBoundary';
 import { TrendingUp, TrendingDown, Wallet, AlertCircle, FileText, Receipt } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function DashboardPage() {
-  const { data } = useQuery<DashboardSummary>({
+  const { data, isLoading, isError, refetch } = useQuery<DashboardSummary>({
     queryKey: ['dashboard'],
     queryFn: () => getDashboard().then(r => r.data),
   });
+
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="card p-6 lg:col-span-2 animate-pulse"><div className="h-[280px] bg-gray-100 rounded" /></div>
+          <div className="card p-6 animate-pulse"><div className="h-[280px] bg-gray-100 rounded" /></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <ErrorRetry message="Couldn't load your dashboard." onRetry={() => refetch()} />
+      </div>
+    );
+  }
 
   // Demo data fallback
   const summary: DashboardSummary = data || {
@@ -95,6 +122,7 @@ export default function DashboardPage() {
       {/* Charts + Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Revenue vs Expenses Chart */}
+        <WidgetErrorBoundary label="The chart" >
         <div className="card p-6 lg:col-span-2">
           <h3 className="text-sm font-medium text-gray-500 mb-4">Revenue vs Expenses (6 months)</h3>
           <ResponsiveContainer width="100%" height={280}>
@@ -109,8 +137,10 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </WidgetErrorBoundary>
 
         {/* Quick Actions */}
+        <WidgetErrorBoundary label="Needs Attention">
         <div className="card p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-4">Needs Attention</h3>
           <div className="space-y-3">
@@ -143,6 +173,7 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+        </WidgetErrorBoundary>
       </div>
 
       {/* Outstanding Invoices */}

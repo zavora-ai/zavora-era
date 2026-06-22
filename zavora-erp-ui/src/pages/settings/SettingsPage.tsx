@@ -4,11 +4,13 @@ import { getSettings, updateSettings } from '../../api/client';
 import type { ErpConfig } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
 import PostingAccountsTab from './PostingAccountsTab';
+import { SkeletonLines } from '../../components/shared/Skeleton';
+import ErrorRetry from '../../components/shared/ErrorRetry';
 import { Save, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const { data: config, isLoading } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
+  const { data: config, isLoading, isError, refetch } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
 
   const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting'>('company');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -91,10 +93,9 @@ export default function SettingsPage() {
       </div>
 
       {isLoading ? (
-        <div className="card p-12 text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Loading settings...</p>
-        </div>
+        <div className="card p-6"><SkeletonLines lines={6} /></div>
+      ) : isError ? (
+        <ErrorRetry message="Couldn't load your settings." onRetry={() => refetch()} />
       ) : (
       <div className="card p-6">
         {tab === 'company' && (

@@ -77,20 +77,20 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
 - [ ] 5. Checkpoint - Verify pagination
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Build Shared Frontend Components (Loading/Error States)
-  - [ ] 6.1 Create Skeleton, ErrorRetry, and WidgetErrorBoundary shared components
+- [x] 6. Build Shared Frontend Components (Loading/Error States)
+  - [x] 6.1 Create Skeleton, ErrorRetry, and WidgetErrorBoundary shared components
     - Create `zavora-erp-ui/src/components/shared/Skeleton.tsx` with `SkeletonCard` and `SkeletonTable` components (Tailwind animate-pulse)
     - Create `zavora-erp-ui/src/components/shared/ErrorRetry.tsx` with error icon, message, and retry button
     - Create `zavora-erp-ui/src/components/shared/WidgetErrorBoundary.tsx` as React class error boundary wrapping children with ErrorRetry fallback
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ] 6.2 Add loading and error states to DashboardPage
+  - [x] 6.2 Add loading and error states to DashboardPage
     - Show `SkeletonCard` placeholders while dashboard summary is loading
     - Wrap each widget/chart section in `WidgetErrorBoundary`
     - Show `ErrorRetry` with refetch callback when the main query fails
     - _Requirements: 4.1, 4.3, 4.5_
 
-  - [ ] 6.3 Add loading and error states to SettingsPage
+  - [x] 6.3 Add loading and error states to SettingsPage
     - Show skeleton loaders in place of form fields while settings query is loading
     - Show `ErrorRetry` when settings fetch fails, preserving any user edits already entered
     - _Requirements: 4.2, 4.4_
