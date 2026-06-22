@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions } from '../../api/client';
+import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions, createSupplierCreditNote } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
+import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
-import { Plus, CheckCircle, Pencil, Trash2, Eye } from 'lucide-react';
+import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [scnBill, setScnBill] = useState<Bill | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
@@ -79,6 +80,11 @@ export default function BillsPage() {
               Post
             </button>
           )}
+          {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (
+            <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
+              <ReceiptText className="w-3 h-3" /> Credit Note
+            </button>
+          )}
         </div>
       )
     },
@@ -113,6 +119,7 @@ export default function BillsPage() {
 
       {showCreate && <CreateBillModal onClose={() => setShowCreate(false)} />}
       {editId && <CreateBillModal editId={editId} onClose={() => setEditId(null)} />}
+      {scnBill && <SupplierCreditNoteModal bill={scnBill} onClose={() => setScnBill(null)} />}
     </div>
   );
 }
@@ -440,6 +447,62 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" className="btn-primary" disabled={mutation.isPending || !form.vendor_id}>
             {mutation.isPending ? 'Saving...' : isEdit ? 'Update Bill' : 'Create Bill'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SupplierCreditNoteModal({ bill, onClose }: { bill: Bill; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => createSupplierCreditNote(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bills'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-credit-notes'] });
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim()) return;
+    // Full reversal: create a supplier credit note referencing this bill with the
+    // same gross_total. The backend resolves lines if empty (full reversal), or the
+    // user can navigate to /supplier-credit-notes for partial line entry.
+    mutation.mutate({
+      vendor_id: bill.vendor_id,
+      applies_to_bill: bill.id,
+      reason: reason.trim(),
+      lines: [], // empty = full reversal of the bill
+    });
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Credit Note against ${bill.number}`} subtitle="Reverses this bill in the ledger (DR AP / CR Expense / CR VAT)" size="sm">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-sm">
+          <ReceiptText className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>This creates a supplier credit note that fully reverses bill {bill.number} ({formatCurrency(bill.gross_total)}). For a partial credit, use the Supplier Credits page.</span>
+        </div>
+        <div>
+          <label className="label">Reason *</label>
+          <textarea
+            className="input"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Goods returned, pricing error, duplicate bill"
+            required
+          />
+        </div>
+        <div className="flex items-center justify-end pt-4 border-t gap-3">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" className="btn-primary" disabled={mutation.isPending || !reason.trim()}>
+            {mutation.isPending ? 'Creating...' : 'Issue Credit Note'}
           </button>
         </div>
       </form>

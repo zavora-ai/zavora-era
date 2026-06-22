@@ -3,7 +3,11 @@ use crate::error::ErpResult;
 use crate::notifications::*;
 use uuid::Uuid;
 
-/// Queue a notification for delivery via Redis stream.
+/// Queue a notification for delivery via the global Redis stream.
+///
+/// Messages are written to `erp:notifications` (a single global stream) with
+/// `entity_id` included in the payload so the background worker can fan out
+/// per-tenant without requiring per-entity streams.
 pub async fn send_notification(
     engine: &ErpEngine,
     entity_id: Uuid,
@@ -11,11 +15,12 @@ pub async fn send_notification(
 ) -> ErpResult<()> {
     let mut redis_conn = engine.redis_conn().await;
     let payload = serde_json::to_string(&req)?;
-    let stream_key = format!("erp:notifications:{}", entity_id);
 
     redis::cmd("XADD")
-        .arg(&stream_key)
+        .arg("erp:notifications")
         .arg("*")
+        .arg("entity_id")
+        .arg(entity_id.to_string())
         .arg("data")
         .arg(&payload)
         .query_async::<()>(&mut redis_conn)

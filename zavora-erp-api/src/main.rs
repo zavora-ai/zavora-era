@@ -101,6 +101,13 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Spawn notification worker (Redis stream consumer)
+    let worker_redis = redis_client.get_multiplexed_async_connection().await?;
+    let worker_pool = state.engine.pool().clone();
+    tokio::spawn(async move {
+        zavora_erp_core::services::notification_worker::run(worker_redis, worker_pool).await;
+    });
+
     // Build router — public routes need no authentication.
     // NOTE: `#[allow(deprecated)]` covers the legacy `/api/v1/auth/register`
     // bootstrap route below. `register` is deprecated in favour of the
