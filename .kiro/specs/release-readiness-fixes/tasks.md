@@ -205,8 +205,8 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Use `fast-check` to test `isNewTenant()` pure function with arbitrary count combinations
     - **Validates: Requirements 9.1, 9.4**
 
-- [ ] 12. Implement Customer Statement Send Action
-  - [ ] 12.1 Add POST /api/v1/customers/{id}/send-statement endpoint
+- [x] 12. Implement Customer Statement Send Action
+  - [x] 12.1 Add POST /api/v1/customers/{id}/send-statement endpoint
     - Validate customer exists and has contact for selected channel
     - Reuse existing statement generation logic
     - Enqueue notification via `send_notification` service (Notification_Worker)
@@ -214,7 +214,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Return 422 if customer has no contact for selected channel
     - _Requirements: 10.3, 10.5_
 
-  - [ ] 12.2 Create SendStatementDialog frontend component
+  - [x] 12.2 Create SendStatementDialog frontend component
     - Add "Send Statement" button alongside print/export options on customer statement page
     - Dialog shows: channel selector (Email/WhatsApp/SMS), customer contact preview
     - Disable channel options when customer lacks that contact, show prompt to update contact details

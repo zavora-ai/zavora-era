@@ -309,6 +309,7 @@ export const createEmployeeApi = (data: any) => api.post('/employees', data);
 export const getCustomer = (id: string) => api.get(`/customers/${id}`);
 export const updateCustomer = (id: string, data: any) => api.put(`/customers/${id}`, data);
 export const getCustomerStatement = (id: string) => api.get(`/customers/${id}/statement`);
+export const sendCustomerStatement = (id: string, channel: string) => api.post(`/customers/${id}/send-statement`, { channel });
 
 // === Vendors (additional) ===
 export const getVendor = (id: string) => api.get(`/vendors/${id}`);

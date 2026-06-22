@@ -151,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
         .route("/api/v1/customers/{id}", get(routes::parties::get_customer).put(routes::parties::update_customer))
         .route("/api/v1/customers/{id}/statement", get(routes::parties::customer_statement))
+        .route("/api/v1/customers/{id}/send-statement", post(routes::parties::send_statement))
         // Vendors
         .route("/api/v1/vendors", get(routes::parties::list_vendors).post(routes::parties::create_vendor))
         .route("/api/v1/vendors/{id}", get(routes::parties::get_vendor).put(routes::parties::update_vendor))

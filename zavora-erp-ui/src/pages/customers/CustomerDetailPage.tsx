@@ -1,18 +1,21 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getCustomer, getCustomerStatement, getInvoices, getPayments } from '../../api/client';
+import { getCustomer, getInvoices, getPayments } from '../../api/client';
 import type { Customer, Invoice, Payment } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import SendStatementDialog from './SendStatementDialog';
 import {
-  ArrowLeft, Download, Mail, Phone, CreditCard,
+  ArrowLeft, Send, Mail, Phone, CreditCard,
   FileText, User, Building2
 } from 'lucide-react';
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [showSend, setShowSend] = useState(false);
 
   const { data: customer, isLoading } = useQuery<Customer>({
     queryKey: ['customer', id],
@@ -48,15 +51,6 @@ export default function CustomerDetailPage() {
   const outstandingBalance = customerInvoices.reduce((sum, inv) => sum + inv.balance_due, 0);
   const overdueInvoices = customerInvoices.filter(inv => inv.status === 'overdue');
 
-  const handleDownloadStatement = async () => {
-    try {
-      await getCustomerStatement(id!);
-      // In production this would trigger a download
-    } catch {
-      // Silently handle
-    }
-  };
-
   const invoiceColumns: Column<Invoice>[] = [
     { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status.replace('_', ' ')}</span> },
     { key: 'number', header: 'Invoice #', render: (r) => (
@@ -90,8 +84,8 @@ export default function CustomerDetailPage() {
             <button onClick={() => navigate('/customers')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
-            <button onClick={handleDownloadStatement} className="btn-secondary">
-              <Download className="w-4 h-4" /> Statement
+            <button onClick={() => setShowSend(true)} className="btn-secondary">
+              <Send className="w-4 h-4" /> Send Statement
             </button>
             <button onClick={() => navigate('/invoices')} className="btn-primary">
               <FileText className="w-4 h-4" /> New Invoice
@@ -196,6 +190,8 @@ export default function CustomerDetailPage() {
           emptyMessage="No payments recorded for this customer"
         />
       </div>
+
+      {showSend && <SendStatementDialog customer={customer} onClose={() => setShowSend(false)} />}
     </div>
   );
 }
