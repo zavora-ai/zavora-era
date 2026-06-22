@@ -7,6 +7,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import { SkeletonCard } from '../../components/shared/Skeleton';
 import ErrorRetry from '../../components/shared/ErrorRetry';
 import WidgetErrorBoundary from '../../components/shared/WidgetErrorBoundary';
+import DashboardOnboarding, { isNewTenant } from './DashboardOnboarding';
 import { TrendingUp, TrendingDown, Wallet, AlertCircle, FileText, Receipt } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -36,6 +37,17 @@ export default function DashboardPage() {
       <div>
         <PageHeader title="Dashboard" subtitle="Financial overview" />
         <ErrorRetry message="Couldn't load your dashboard." onRetry={() => refetch()} />
+      </div>
+    );
+  }
+
+  // Brand-new tenant with no activity yet: show the guided onboarding checklist
+  // instead of empty charts / demo numbers.
+  if (isNewTenant(data)) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <DashboardOnboarding />
       </div>
     );
   }

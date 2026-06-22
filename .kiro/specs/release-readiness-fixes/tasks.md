@@ -186,14 +186,14 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Integrate into `Header.tsx` replacing existing static bell
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
-- [ ] 11. Implement Dashboard Empty State for New Tenants
-  - [ ] 11.1 Extend dashboard summary API to include entity counts
+- [x] 11. Implement Dashboard Empty State for New Tenants
+  - [x] 11.1 Extend dashboard summary API to include entity counts
     - Add `invoice_count`, `bill_count`, `payment_count` fields to `DashboardSummary` response
     - Compute via COUNT queries on invoices, bills, payments tables for the entity
     - Update `zavora-erp-api/src/routes/dashboard.rs`
     - _Requirements: 9.5_
 
-  - [ ] 11.2 Create DashboardOnboarding component and conditional render
+  - [x] 11.2 Create DashboardOnboarding component and conditional render
     - Create `zavora-erp-ui/src/pages/dashboard/DashboardOnboarding.tsx`
     - Extract `isNewTenant(summary)` utility function (invoice_count === 0 && bill_count === 0 && payment_count === 0)
     - Show welcome message + guided checklist: "Set up your company" → /settings, "Create your first customer" → /customers, "Send your first invoice" → /invoices, "Record a payment" → /payments, "Add a vendor" → /vendors
