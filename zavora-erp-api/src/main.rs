@@ -195,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/supplier-credit-notes/{id}", get(routes::supplier_credit_notes::get_one))
         // Payments
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
+        .route("/api/v1/payments/{id}", get(routes::payments::get_one))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
         // Transactions (categorisation queue)
