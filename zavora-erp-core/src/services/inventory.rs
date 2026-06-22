@@ -25,6 +25,62 @@ pub struct IssueInventoryResult {
 
 type PgTx<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
+/// Create an inventory item master record. Opening quantity/cost are zero;
+/// stock arrives via receive/adjust. SKU is unique per entity.
+pub async fn create_item(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    req: CreateInventoryItemRequest,
+) -> ErpResult<Uuid> {
+    let sku = req.sku.trim();
+    if sku.is_empty() {
+        return Err(ErpError::ValidationFailed { message: "SKU is required.".to_string() });
+    }
+    if req.description.trim().is_empty() {
+        return Err(ErpError::ValidationFailed { message: "Description is required.".to_string() });
+    }
+
+    // Reject duplicate SKU up-front for a clean error (also enforced by the unique index).
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM inventory_items WHERE entity_id = $1 AND sku = $2)",
+    )
+    .bind(entity_id)
+    .bind(sku)
+    .fetch_one(engine.pool())
+    .await?;
+    if exists {
+        return Err(ErpError::Duplicate {
+            message: format!("An inventory item with SKU '{sku}' already exists."),
+        });
+    }
+
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO inventory_items
+            (id, entity_id, product_id, sku, description, uom, costing_method,
+             gl_inventory, gl_cogs, on_hand, committed, available, unit_cost, total_value,
+             reorder_point, reorder_quantity, warehouse_id, is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 0, 0, 0, 0, $10, $11, $12, true, $13)"#,
+    )
+    .bind(id)
+    .bind(entity_id)
+    .bind(req.product_id)
+    .bind(req.sku.trim())
+    .bind(req.description.trim())
+    .bind(req.uom.unwrap_or_else(|| "Each".to_string()))
+    .bind(req.costing_method.unwrap_or_else(|| "WeightedAvgCost".to_string()))
+    .bind(req.gl_inventory.unwrap_or_else(|| "1300".to_string()))
+    .bind(req.gl_cogs.unwrap_or_else(|| "6000".to_string()))
+    .bind(req.reorder_point)
+    .bind(req.reorder_quantity)
+    .bind(req.warehouse_id)
+    .bind(Utc::now())
+    .execute(engine.pool())
+    .await?;
+
+    Ok(id)
+}
+
 /// Receive inventory (purchase receipt).
 pub async fn receive_inventory(
     engine: &ErpEngine,
