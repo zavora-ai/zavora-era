@@ -237,6 +237,12 @@ export const excludeTransaction = (id: string, data: any) => api.post(`/transact
 
 // === Bank ===
 export const getBankAccounts = () => api.get('/bank-accounts');
+export const computeBankRec = (data: { bank_account_id: string; statement_date: string }) =>
+  api.post('/bank/reconciliations/compute', data);
+export const completeBankRec = (data: { bank_account_id: string; statement_date: string; statement_closing_balance: number; cleared_entry_ids: string[] }) =>
+  api.post('/bank/reconciliations/complete', data);
+export const getBankRecs = (bankAccountId?: string) =>
+  api.get('/bank/reconciliations', { params: bankAccountId ? { bank_account_id: bankAccountId } : {} });
 export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
 export const deleteBankAccount = (id: string) => api.delete(`/bank-accounts/${id}`);
 export const importStatement = (data: any) => api.post('/bank/import', data);

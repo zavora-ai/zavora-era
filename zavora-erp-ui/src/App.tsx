@@ -32,6 +32,7 @@ import ConsolidationPage from './pages/consolidation/ConsolidationPage';
 import WhtRatesPage from './pages/settings/WhtRatesPage';
 import OpeningBalancesPage from './pages/settings/OpeningBalancesPage';
 import ImportPage from './pages/settings/ImportPage';
+import ReconciliationPage from './pages/banking/ReconciliationPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import ReportPage from './pages/reports/ReportPage';
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="vendors" element={<VendorsPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="banking" element={<BankingPage />} />
+            <Route path="reconciliation" element={<ReconciliationPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
             <Route path="employees" element={<EmployeesPage />} />

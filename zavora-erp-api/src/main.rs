@@ -194,6 +194,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank-accounts/{id}", delete(routes::bank::delete_account))
         .route("/api/v1/bank/import", post(routes::bank::import_statement))
         .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
+        .route("/api/v1/bank/reconciliations", get(routes::reconciliation::list))
+        .route("/api/v1/bank/reconciliations/compute", post(routes::reconciliation::compute))
+        .route("/api/v1/bank/reconciliations/complete", post(routes::reconciliation::complete))
         .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
         // Payroll
         .route("/api/v1/payroll/run", post(routes::payroll::run))
