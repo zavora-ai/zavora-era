@@ -114,7 +114,7 @@ pub async fn get_queue(engine: &ErpEngine, query: TransactionQueueQuery) -> ErpR
            LIMIT $3 OFFSET $4"#,
     )
     .bind(query.entity_id)
-    .bind(query.status.map(|s| serde_json::to_string(&s).unwrap_or_default()))
+    .bind(query.status.as_ref().map(|s| s.as_db_str()))
     .bind(limit)
     .bind(offset)
     .fetch_all(engine.pool())

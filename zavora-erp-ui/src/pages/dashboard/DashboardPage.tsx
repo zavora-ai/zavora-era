@@ -52,43 +52,8 @@ export default function DashboardPage() {
     );
   }
 
-  // Demo data fallback
-  const summary: DashboardSummary = data || {
-    as_at: new Date().toISOString(),
-    total_receivable: 2450000,
-    overdue_receivable: 680000,
-    overdue_invoice_count: 5,
-    total_payable: 1230000,
-    overdue_payable: 320000,
-    overdue_bill_count: 3,
-    cash_and_bank: 4850000,
-    net_income_mtd: 890000,
-    net_income_prior: 750000,
-    revenue_6m: [
-      { year: 2026, month: 1, amount: 1200000 },
-      { year: 2026, month: 2, amount: 1350000 },
-      { year: 2026, month: 3, amount: 980000 },
-      { year: 2026, month: 4, amount: 1500000 },
-      { year: 2026, month: 5, amount: 1680000 },
-      { year: 2026, month: 6, amount: 1420000 },
-    ],
-    expenses_6m: [
-      { year: 2026, month: 1, amount: 850000 },
-      { year: 2026, month: 2, amount: 920000 },
-      { year: 2026, month: 3, amount: 780000 },
-      { year: 2026, month: 4, amount: 1050000 },
-      { year: 2026, month: 5, amount: 1100000 },
-      { year: 2026, month: 6, amount: 950000 },
-    ],
-    recent_transactions: [],
-    outstanding_invoices: [
-      { id: '1', number: 'INV-2026-042', customer_name: 'Safaricom PLC', amount: 580000, balance_due: 580000, due_date: '2026-06-01', is_overdue: true },
-      { id: '2', number: 'INV-2026-043', customer_name: 'Kenya Power', amount: 320000, balance_due: 160000, due_date: '2026-06-15', is_overdue: false },
-      { id: '3', number: 'INV-2026-044', customer_name: 'Equity Bank', amount: 450000, balance_due: 450000, due_date: '2026-06-20', is_overdue: false },
-    ],
-    pending_approvals: 4,
-    uncategorised_txns: 12,
-  };
+  // After the loading/error/new-tenant guards above, data is present.
+  const summary = data!;
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const chartData = summary.revenue_6m.map((r, i) => ({
