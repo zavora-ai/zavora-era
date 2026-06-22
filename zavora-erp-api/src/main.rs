@@ -177,6 +177,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/estimates/{id}/decline", post(routes::estimates::decline))
         // Recurring Invoices
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
+        .route("/api/v1/recurring-invoices/{id}", axum::routing::put(routes::invoices::update_recurring).delete(routes::invoices::delete_recurring))
         // Bills
         .route("/api/v1/bills", get(routes::bills::list).post(routes::bills::create))
         .route("/api/v1/bills/{id}", get(routes::bills::get_one).put(routes::bills::update).delete(routes::bills::delete))

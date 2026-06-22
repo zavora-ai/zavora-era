@@ -200,6 +200,8 @@ export const declineEstimate = (id: string) => api.post(`/estimates/${id}/declin
 // === Recurring Invoices ===
 export const getRecurringInvoices = () => api.get('/recurring-invoices');
 export const createRecurringInvoice = (data: any) => api.post('/recurring-invoices', data);
+export const updateRecurringInvoice = (id: string, data: any) => api.put(`/recurring-invoices/${id}`, data);
+export const deleteRecurringInvoice = (id: string) => api.delete(`/recurring-invoices/${id}`);
 
 // === Bills ===
 export const getBills = (params?: PageParams) => api.get('/bills', { params });

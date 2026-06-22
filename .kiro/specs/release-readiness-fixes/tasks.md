@@ -95,8 +95,8 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Show `ErrorRetry` when settings fetch fails, preserving any user edits already entered
     - _Requirements: 4.2, 4.4_
 
-- [ ] 7. Implement Recurring Invoices Backend
-  - [ ] 7.1 Implement CRUD service functions for recurring invoices
+- [x] 7. Implement Recurring Invoices Backend
+  - [x] 7.1 Implement CRUD service functions for recurring invoices
     - In `zavora-erp-core/src/services/invoicing.rs` (or new `recurring_invoices.rs`), implement:
       - `create_recurring_invoice`: validate customer belongs to entity, frequency valid, end_date >= start_date, lines non-empty; persist to `recurring_invoices` table; set next_run = start_date
       - `update_recurring_invoice`: partial update with same validation
@@ -105,7 +105,7 @@ This plan addresses 10 pre-release issues in priority order: BLOCKING issues fir
     - Return HTTP 422 with descriptive message for validation failures
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
 
-  - [ ] 7.2 Add recurring invoice API routes
+  - [x] 7.2 Add recurring invoice API routes
     - Register `POST /api/v1/recurring-invoices` → `create_recurring`
     - Register `GET /api/v1/recurring-invoices` → `list_recurring`
     - Register `PUT /api/v1/recurring-invoices/{id}` → `update_recurring`

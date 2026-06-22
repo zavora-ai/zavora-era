@@ -248,7 +248,7 @@ pub async fn list_recurring(
 
 pub async fn create_recurring(
     ctx: AuthContext,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateRecurringInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     require_role(ROLES_CREATE, &ctx, "create recurring invoice").map_err(|e| {
@@ -258,5 +258,164 @@ pub async fn create_recurring(
         };
         (status, Json(serde_json::json!({ "error": msg })))
     })?;
-    Ok(Json(serde_json::json!({ "status": "created", "customer_id": req.customer_id })))
+
+    let bad_request = |msg: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
+
+    // Validate the template carries at least one line so the scheduler can produce a real invoice.
+    if req.template.lines.is_empty() {
+        return Err(bad_request("Recurring template must have at least one line item.".to_string()));
+    }
+    if let Some(end) = req.end_date {
+        if end < req.start_date {
+            return Err(bad_request("End date cannot be before the start date.".to_string()));
+        }
+    }
+
+    // Validate the customer belongs to this entity before persisting the schedule.
+    let customer_ok: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND entity_id = $2)",
+    )
+    .bind(req.customer_id)
+    .bind(ctx.entity_id)
+    .fetch_one(state.engine.pool())
+    .await
+    .unwrap_or(false);
+    if !customer_ok {
+        return Err(bad_request("Customer not found for this organisation.".to_string()));
+    }
+
+    // Store frequency as its canonical enum string (e.g. "Monthly") so the scheduler round-trips it.
+    let frequency = serde_json::to_value(&req.frequency)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "Monthly".to_string());
+
+    // Persist the template with the customer_id pinned so scheduled runs target the right customer.
+    let mut template = req.template.clone();
+    template.customer_id = req.customer_id;
+    let template_json = serde_json::to_value(&template).map_err(|e| {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+    })?;
+
+    // First run is the start date.
+    let next_run = req.start_date;
+
+    let row = sqlx::query_as::<_, RecurringInvoiceRow>(
+        "INSERT INTO recurring_invoices
+            (entity_id, customer_id, template, frequency, start_date, end_date, next_run, auto_send, auto_charge)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *",
+    )
+    .bind(ctx.entity_id)
+    .bind(req.customer_id)
+    .bind(template_json)
+    .bind(&frequency)
+    .bind(req.start_date)
+    .bind(req.end_date)
+    .bind(next_run)
+    .bind(req.auto_send.unwrap_or(false))
+    .bind(req.auto_charge.unwrap_or(false))
+    .fetch_one(state.engine.pool())
+    .await
+    .map_err(|e| {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+    })?;
+
+    Ok(Json(serde_json::to_value(row).unwrap_or_default()))
+}
+
+/// PUT /recurring-invoices/{id} — replace the editable fields of a schedule.
+pub async fn update_recurring(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreateRecurringInvoiceRequest>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    require_role(ROLES_CREATE, &ctx, "update recurring invoice").map_err(|e| {
+        let (status, msg) = match &e {
+            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
+            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        };
+        (status, Json(serde_json::json!({ "error": msg })))
+    })?;
+
+    let unprocessable = |msg: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
+
+    if req.template.lines.is_empty() {
+        return Err(unprocessable("Recurring template must have at least one line item.".to_string()));
+    }
+    if let Some(end) = req.end_date {
+        if end < req.start_date {
+            return Err(unprocessable("End date cannot be before the start date.".to_string()));
+        }
+    }
+
+    let frequency = serde_json::to_value(&req.frequency)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "Monthly".to_string());
+
+    let mut template = req.template.clone();
+    template.customer_id = req.customer_id;
+    let template_json = serde_json::to_value(&template).map_err(|e| {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+    })?;
+
+    // Preserve the schedule's place in the run cycle: only reset next_run if it has not yet run.
+    let row = sqlx::query_as::<_, RecurringInvoiceRow>(
+        "UPDATE recurring_invoices SET
+            customer_id = $1, template = $2, frequency = $3, start_date = $4, end_date = $5,
+            auto_send = $6, auto_charge = $7,
+            next_run = CASE WHEN run_count = 0 THEN $4 ELSE next_run END
+         WHERE id = $8 AND entity_id = $9
+         RETURNING *",
+    )
+    .bind(req.customer_id)
+    .bind(template_json)
+    .bind(&frequency)
+    .bind(req.start_date)
+    .bind(req.end_date)
+    .bind(req.auto_send.unwrap_or(false))
+    .bind(req.auto_charge.unwrap_or(false))
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+    })?;
+
+    match row {
+        Some(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        None => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Recurring invoice not found." })))),
+    }
+}
+
+/// DELETE /recurring-invoices/{id} — remove a schedule.
+pub async fn delete_recurring(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    require_role(ROLES_CREATE, &ctx, "delete recurring invoice").map_err(|e| {
+        let (status, msg) = match &e {
+            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
+            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        };
+        (status, Json(serde_json::json!({ "error": msg })))
+    })?;
+
+    let result = sqlx::query("DELETE FROM recurring_invoices WHERE id = $1 AND entity_id = $2")
+        .bind(id)
+        .bind(ctx.entity_id)
+        .execute(state.engine.pool())
+        .await
+        .map_err(|e| {
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+        })?;
+
+    if result.rows_affected() == 0 {
+        return Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Recurring invoice not found." }))));
+    }
+    Ok(Json(serde_json::json!({ "status": "deleted", "id": id })))
 }
