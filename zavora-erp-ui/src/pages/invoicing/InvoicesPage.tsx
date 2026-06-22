@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, getCustomers, getProducts, getDimensions } from '../../api/client';
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
@@ -23,6 +23,10 @@ export default function InvoicesPage() {
     queryKey: ['invoices'],
     queryFn: () => getInvoices().then(r => r.data),
   });
+
+  const { data: customers = [] } = useQuery<any[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
+  const customerName = (id?: string) => customers.find((c) => c.id === id)?.name ?? `${id?.slice(0, 8)}…`;
+  const [writeOffInv, setWriteOffInv] = useState<any | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
   const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate });
@@ -50,7 +54,7 @@ export default function InvoicesPage() {
       </div>
     ) },
     { key: 'number', header: 'Invoice #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
-    { key: 'customer_id', header: 'Customer', render: (r) => <span className="text-gray-900">{r.customer_id?.slice(0, 8)}...</span> },
+    { key: 'customer_id', header: 'Customer', render: (r) => <span className="text-gray-900">{customerName(r.customer_id)}</span> },
     { key: 'issue_date', header: 'Issued', render: (r) => formatDate(r.issue_date) },
     { key: 'due_date', header: 'Due Date', render: (r) => <span className={r.status === 'overdue' ? 'text-red-600 font-medium' : ''}>{formatDate(r.due_date)}</span> },
     { key: 'gross_total', header: 'Total', render: (r) => <span className="font-medium">{formatCurrency(r.gross_total)}</span>, className: 'text-right' },
@@ -77,6 +81,11 @@ export default function InvoicesPage() {
           {isPostedLike(r.status) && !(r as any).sent_at && hasRole(ROLES_SEND) && (
             <button onClick={() => sendMutation.mutate(r.id)} disabled={sendMutation.isPending} className="btn-secondary text-xs py-1 px-2" title="Mark as sent to customer">
               <Send className="w-3 h-3" /> Mark sent
+            </button>
+          )}
+          {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && hasRole(ROLES_POST) && (
+            <button onClick={() => setWriteOffInv(r)} className="btn-secondary text-xs py-1 px-2 text-amber-700" title="Write off as bad debt">
+              Write off
             </button>
           )}
         </div>
@@ -113,6 +122,7 @@ export default function InvoicesPage() {
 
       {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
       {editId && <CreateInvoiceModal editId={editId} onClose={() => setEditId(null)} />}
+      {writeOffInv && <WriteOffModal invoice={writeOffInv} onClose={() => setWriteOffInv(null)} onDone={() => { invalidate(); setWriteOffInv(null); }} />}
     </div>
   );
 }
@@ -120,6 +130,50 @@ export default function InvoicesPage() {
 // ============================================================
 // Full-featured Invoice Creation / Edit — Wave Apps parity
 // ============================================================
+function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: () => void; onDone: () => void }) {
+  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const expenseAccounts = accounts.filter((a) => a.account_type === 'Expense');
+  const [account, setAccount] = useState('');
+  const [amount, setAmount] = useState(String(invoice.balance_due));
+  const [reason, setReason] = useState('');
+
+  const mut = useMutation({
+    mutationFn: () => writeOffInvoice(invoice.id, { expense_account: account, amount: Number(amount), reason: reason || undefined }),
+    onSuccess: onDone,
+  });
+
+  return (
+    <Modal open title={`Write off ${invoice.number}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-gray-600">Writes the outstanding balance off to a bad-debt expense account (DR expense / CR receivables).</p>
+        <div>
+          <label className="label">Bad-debt expense account</label>
+          <select className="input w-full" value={account} onChange={(e) => setAccount(e.target.value)}>
+            <option value="">Select account…</option>
+            {expenseAccounts.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Amount</label>
+          <input type="number" step="0.01" className="input w-full" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <p className="text-xs text-gray-400 mt-0.5">Outstanding: {formatCurrency(invoice.balance_due)}</p>
+        </div>
+        <div>
+          <label className="label">Reason (optional)</label>
+          <input className="input w-full" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Customer insolvent" />
+        </div>
+        {mut.isError && <p className="text-sm text-red-600">{(mut.error as any)?.response?.data?.error ?? 'Failed'}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" disabled={!account || !(Number(amount) > 0) || mut.isPending} onClick={() => mut.mutate()}>
+            {mut.isPending ? 'Writing off…' : 'Write off'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });

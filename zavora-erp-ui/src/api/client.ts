@@ -175,6 +175,8 @@ export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}
 export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
 export const postInvoice = (id: string) => api.post(`/invoices/${id}/post`);
 export const sendInvoice = (id: string, data?: any) => api.post(`/invoices/${id}/send`, data || {});
+export const writeOffInvoice = (id: string, data: { expense_account: string; amount?: number; reason?: string }) =>
+  api.post(`/invoices/${id}/write-off`, data);
 
 // === Estimates ===
 export const getEstimates = () => api.get('/estimates');
