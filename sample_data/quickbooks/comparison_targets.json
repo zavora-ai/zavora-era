@@ -1,0 +1,18 @@
+{
+ "period": "Jan 1 - Jun 23, 2026 (this year to date); BS as of Jun 23, 2026",
+ "pnl": {
+  "total_income": 10200.77,
+  "total_cogs": 405.0,
+  "gross_profit": 9795.77,
+  "total_expenses": 5237.31,
+  "net_operating_income": 4558.46,
+  "total_other_expenses": 2916.0,
+  "net_income": 1642.46
+ },
+ "balance_sheet": {
+  "total_assets": 23436.29,
+  "total_liabilities": 31131.33,
+  "total_equity": -7695.04,
+  "total_liab_and_equity": 23436.29
+ }
+}
