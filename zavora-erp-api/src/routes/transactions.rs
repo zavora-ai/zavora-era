@@ -24,7 +24,7 @@ pub async fn list(
     let query = TransactionQueueQuery {
         entity_id: ctx.entity_id,
         bank_account_id: q.bank_account_id,
-        status: None, // TODO: parse status string
+        status: q.status.as_deref().and_then(CategoryStatus::from_db_str),
         date_from: None,
         date_to: None,
         search: None,

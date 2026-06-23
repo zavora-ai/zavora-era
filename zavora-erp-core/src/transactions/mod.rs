@@ -16,6 +16,31 @@ pub enum CategoryStatus {
     Excluded,
 }
 
+impl CategoryStatus {
+    /// The lowercase string stored in `imported_transactions.category_status`.
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            Self::Uncategorised => "uncategorised",
+            Self::Suggested => "suggested",
+            Self::Categorised => "categorised",
+            Self::Posted => "posted",
+            Self::Excluded => "excluded",
+        }
+    }
+
+    /// Parse the lowercase DB/query string (case-insensitive) into a status.
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "uncategorised" | "uncategorized" => Some(Self::Uncategorised),
+            "suggested" => Some(Self::Suggested),
+            "categorised" | "categorized" => Some(Self::Categorised),
+            "posted" => Some(Self::Posted),
+            "excluded" => Some(Self::Excluded),
+            _ => None,
+        }
+    }
+}
+
 /// AI-generated account suggestion for categorisation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountSuggestion {

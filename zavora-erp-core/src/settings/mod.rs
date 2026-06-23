@@ -154,6 +154,7 @@ pub struct SettingsPatch {
     pub tax_config: Option<TaxConfig>,
     pub payment_config: Option<PaymentConfig>,
     pub posting: Option<PostingSetup>,
+    pub sequences: Option<DocumentSequences>,
 }
 
 /// Patch for a single sequence type.

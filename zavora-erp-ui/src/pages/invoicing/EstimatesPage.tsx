@@ -1,24 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEstimates, createEstimate, convertEstimate, sendEstimate, acceptEstimate, declineEstimate, getCustomers, getProducts } from '../../api/client';
+import { getEstimates, createEstimate, updateEstimate, deleteEstimate, getEstimate, convertEstimate, sendEstimate, acceptEstimate, declineEstimate, getCustomers, getProducts } from '../../api/client';
 import type { Estimate, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_SEND } from '../../utils/roles';
+import { hasRole, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
-import { Plus, ArrowRight, Send, Check, X, Eye } from 'lucide-react';
+import { Plus, ArrowRight, Send, Check, X, Eye, Pencil, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function EstimatesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
-  const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
-    queryKey: ['estimates'],
-    queryFn: () => getEstimates().then(r => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['estimates', offset, limit],
+    queryFn: () => getEstimates({ limit, offset }).then(r => r.data),
   });
+  const estimates: Estimate[] = resp?.data ?? [];
+  const estimatesTotal: number = resp?.total_count ?? 0;
 
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
@@ -34,6 +40,10 @@ export default function EstimatesPage() {
   });
   const declineMutation = useMutation({
     mutationFn: (id: string) => declineEstimate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteEstimate(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
   });
 
@@ -67,6 +77,15 @@ export default function EstimatesPage() {
           >
             <Eye className="w-3 h-3" />
           </Link>
+          {hasRole(ROLES_CREATE) && r.status === 'draft' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditId(r.id); }}
+              className="btn-secondary text-xs py-1 px-2"
+              title="Edit draft"
+            >
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+          )}
           {hasRole(ROLES_SEND) && r.status === 'draft' && (
             <button
               onClick={(e) => { e.stopPropagation(); sendMutation.mutate(r.id); }}
@@ -107,6 +126,21 @@ export default function EstimatesPage() {
               <ArrowRight className="w-3 h-3" /> Convert
             </button>
           )}
+          {hasRole(ROLES_CREATE) && r.status === 'draft' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Delete draft estimate ${r.number}? This cannot be undone.`)) {
+                  deleteMutation.mutate(r.id);
+                }
+              }}
+              className="btn-secondary text-xs py-1 px-2 text-red-600 border-red-200 hover:bg-red-50"
+              title="Delete draft"
+              disabled={deleteMutation.isPending}
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
         </div>
       )
     },
@@ -138,8 +172,10 @@ export default function EstimatesPage() {
       </div>
 
       <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No estimates yet. Create your first estimate to send quotes to customers." />
+      <PaginationControls page={page} limit={limit} total={estimatesTotal} onPage={setPage} />
 
       {showCreate && <CreateEstimateModal onClose={() => setShowCreate(false)} />}
+      {editId && <CreateEstimateModal editId={editId} onClose={() => setEditId(null)} />}
     </div>
   );
 }
@@ -147,10 +183,25 @@ export default function EstimatesPage() {
 // ============================================================
 // Full-featured Estimate Creation
 // ============================================================
-function CreateEstimateModal({ onClose }: { onClose: () => void }) {
+function treatmentToRate(t?: string): number {
+  if (!t) return 16;
+  const s = t.replace(/"/g, '');
+  if (s.includes('16')) return 16;
+  if (s.includes('8')) return 8;
+  return 0;
+}
+
+function CreateEstimateModal({ onClose, editId }: { onClose: () => void; editId?: string }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+
+  // In edit mode, load the existing estimate + its lines to prefill the form.
+  const { data: existing } = useQuery({
+    queryKey: ['estimate', editId],
+    queryFn: () => getEstimate(editId!).then(r => r.data),
+    enabled: !!editId,
+  });
 
   const today = new Date().toISOString().split('T')[0];
   const defaultExpiry = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
@@ -163,16 +214,42 @@ function CreateEstimateModal({ onClose }: { onClose: () => void }) {
     notes: '',
     currency: 'KES',
   });
+  const [error, setError] = useState<string | null>(null);
 
   function emptyLine() {
     return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '4000' };
   }
 
+  // Hydrate the form once the existing estimate loads (edit mode).
+  useEffect(() => {
+    if (!existing) return;
+    const est = existing.estimate ?? existing;
+    const lines = (existing.lines ?? []).map((l: any) => ({
+      product_id: l.product_id ?? '',
+      description: l.description ?? '',
+      quantity: Number(l.quantity ?? 1),
+      unit_price: Number(l.unit_price ?? 0),
+      tax_rate: treatmentToRate(l.vat_treatment),
+      account_code: l.account_code ?? '4000',
+    }));
+    setForm({
+      customer_id: est.customer_id ?? '',
+      issue_date: (est.issue_date ?? today).slice(0, 10),
+      expiry_date: (est.expiry_date ?? defaultExpiry).slice(0, 10),
+      lines: lines.length ? lines : [emptyLine()],
+      notes: est.notes ?? '',
+      currency: est.currency ?? 'KES',
+    });
+  }, [existing]);
+
   const mutation = useMutation({
-    mutationFn: (data: any) => createEstimate(data),
+    mutationFn: (data: any) => (editId ? updateEstimate(editId, data) : createEstimate(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['estimates'] });
       onClose();
+    },
+    onError: (e: any) => {
+      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to save estimate.');
     },
   });
 
@@ -214,6 +291,7 @@ function CreateEstimateModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     mutation.mutate({
       customer_id: form.customer_id,
       issue_date: form.issue_date,
@@ -231,8 +309,13 @@ function CreateEstimateModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Create Estimate" size="xl">
+    <Modal open={true} onClose={onClose} title={editId ? 'Edit Estimate' : 'Create Estimate'} size="xl">
       <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+            <X className="w-4 h-4 shrink-0" /><span>{error}</span>
+          </div>
+        )}
         {/* Header — Customer + Dates */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left — Customer */}
@@ -366,7 +449,7 @@ function CreateEstimateModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-end pt-4 border-t gap-3">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" className="btn-primary" disabled={mutation.isPending || !form.customer_id}>
-            {mutation.isPending ? 'Saving...' : 'Save Estimate'}
+            {mutation.isPending ? 'Saving...' : editId ? 'Save Changes' : 'Save Estimate'}
           </button>
         </div>
       </form>

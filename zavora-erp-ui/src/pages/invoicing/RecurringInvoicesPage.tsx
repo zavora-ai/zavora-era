@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRecurringInvoices, createRecurringInvoice, getCustomers, getProducts } from '../../api/client';
+import { getRecurringInvoices, createRecurringInvoice, deleteRecurringInvoice, getCustomers, getProducts } from '../../api/client';
 import type { Customer, Product } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, RefreshCw, Calendar, Pause, Play } from 'lucide-react';
+import { Plus, RefreshCw, Calendar, Pause, Play, Trash2, AlertCircle } from 'lucide-react';
 
 interface RecurringInvoice {
   id: string;
@@ -26,6 +26,7 @@ interface RecurringInvoice {
 
 export default function RecurringInvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: recurring = [], isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ['recurring-invoices'],
@@ -35,6 +36,11 @@ export default function RecurringInvoicesPage() {
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: () => getCustomers().then(r => r.data),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteRecurringInvoice(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['recurring-invoices'] }),
   });
 
   const getCustomerName = (customerId: string) => {
@@ -81,6 +87,23 @@ export default function RecurringInvoicesPage() {
     {
       key: 'auto_send', header: 'Auto Send',
       render: (r) => r.auto_send ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>,
+    },
+    {
+      key: 'id', header: '',
+      render: (r) => (
+        <button
+          onClick={() => {
+            if (confirm('Delete this recurring schedule? This stops future automatic invoices.')) {
+              deleteMutation.mutate(r.id);
+            }
+          }}
+          className="text-gray-400 hover:text-red-600"
+          title="Delete schedule"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      ),
+      className: 'text-right',
     },
   ];
 
@@ -165,11 +188,15 @@ function CreateRecurringModal({ onClose }: { onClose: () => void }) {
     return { product_id: '', description: '', quantity: 1, unit_price: 0, account_code: '5000', vat_treatment: 'Standard16' };
   }
 
+  const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: (data: any) => createRecurringInvoice(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurring-invoices'] });
       onClose();
+    },
+    onError: (e: any) => {
+      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to create recurring invoice.');
     },
   });
 
@@ -197,6 +224,7 @@ function CreateRecurringModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     mutation.mutate({
       customer_id: form.customer_id,
       frequency: form.frequency,
@@ -220,6 +248,11 @@ function CreateRecurringModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open={true} onClose={onClose} title="Create Recurring Invoice" subtitle="Set up automatic invoice generation" size="xl">
       <form onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span>
+          </div>
+        )}
         {/* Customer & Frequency */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

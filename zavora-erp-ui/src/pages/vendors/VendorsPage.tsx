@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getVendors, createVendor } from '../../api/client';
 import type { Vendor } from '../../types';
@@ -9,6 +10,7 @@ import { Plus, AlertTriangle } from 'lucide-react';
 
 export default function VendorsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const navigate = useNavigate();
   const { data: vendors = [], isLoading } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
 
   const columns: Column<Vendor>[] = [
@@ -27,7 +29,7 @@ export default function VendorsPage() {
         subtitle={`${vendors.length} supplier${vendors.length !== 1 ? 's' : ''} — withholding tax is auto-calculated on bills`}
         actions={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Add a Vendor</button>}
       />
-      <DataTable columns={columns} data={vendors} loading={isLoading} emptyMessage="No vendors yet. Add suppliers to start tracking bills and payments." />
+      <DataTable columns={columns} data={vendors} loading={isLoading} onRowClick={(r) => navigate(`/vendors/${r.id}`)} emptyMessage="No vendors yet. Add suppliers to start tracking bills and payments." />
       {showCreate && <CreateVendorModal onClose={() => setShowCreate(false)} />}
     </div>
   );

@@ -4,52 +4,56 @@ import type { DashboardSummary } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import StatCard from '../../components/shared/StatCard';
 import PageHeader from '../../components/shared/PageHeader';
+import { SkeletonCard } from '../../components/shared/Skeleton';
+import ErrorRetry from '../../components/shared/ErrorRetry';
+import WidgetErrorBoundary from '../../components/shared/WidgetErrorBoundary';
+import DashboardOnboarding, { isNewTenant } from './DashboardOnboarding';
 import { TrendingUp, TrendingDown, Wallet, AlertCircle, FileText, Receipt } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function DashboardPage() {
-  const { data } = useQuery<DashboardSummary>({
+  const { data, isLoading, isError, refetch } = useQuery<DashboardSummary>({
     queryKey: ['dashboard'],
     queryFn: () => getDashboard().then(r => r.data),
   });
 
-  // Demo data fallback
-  const summary: DashboardSummary = data || {
-    as_at: new Date().toISOString(),
-    total_receivable: 2450000,
-    overdue_receivable: 680000,
-    overdue_invoice_count: 5,
-    total_payable: 1230000,
-    overdue_payable: 320000,
-    overdue_bill_count: 3,
-    cash_and_bank: 4850000,
-    net_income_mtd: 890000,
-    net_income_prior: 750000,
-    revenue_6m: [
-      { year: 2026, month: 1, amount: 1200000 },
-      { year: 2026, month: 2, amount: 1350000 },
-      { year: 2026, month: 3, amount: 980000 },
-      { year: 2026, month: 4, amount: 1500000 },
-      { year: 2026, month: 5, amount: 1680000 },
-      { year: 2026, month: 6, amount: 1420000 },
-    ],
-    expenses_6m: [
-      { year: 2026, month: 1, amount: 850000 },
-      { year: 2026, month: 2, amount: 920000 },
-      { year: 2026, month: 3, amount: 780000 },
-      { year: 2026, month: 4, amount: 1050000 },
-      { year: 2026, month: 5, amount: 1100000 },
-      { year: 2026, month: 6, amount: 950000 },
-    ],
-    recent_transactions: [],
-    outstanding_invoices: [
-      { id: '1', number: 'INV-2026-042', customer_name: 'Safaricom PLC', amount: 580000, balance_due: 580000, due_date: '2026-06-01', is_overdue: true },
-      { id: '2', number: 'INV-2026-043', customer_name: 'Kenya Power', amount: 320000, balance_due: 160000, due_date: '2026-06-15', is_overdue: false },
-      { id: '3', number: 'INV-2026-044', customer_name: 'Equity Bank', amount: 450000, balance_due: 450000, due_date: '2026-06-20', is_overdue: false },
-    ],
-    pending_approvals: 4,
-    uncategorised_txns: 12,
-  };
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="card p-6 lg:col-span-2 animate-pulse"><div className="h-[280px] bg-gray-100 rounded" /></div>
+          <div className="card p-6 animate-pulse"><div className="h-[280px] bg-gray-100 rounded" /></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <ErrorRetry message="Couldn't load your dashboard." onRetry={() => refetch()} />
+      </div>
+    );
+  }
+
+  // Brand-new tenant with no activity yet: show the guided onboarding checklist
+  // instead of empty charts / demo numbers.
+  if (isNewTenant(data)) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Financial overview" />
+        <DashboardOnboarding />
+      </div>
+    );
+  }
+
+  // After the loading/error/new-tenant guards above, data is present.
+  const summary = data!;
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const chartData = summary.revenue_6m.map((r, i) => ({
@@ -95,6 +99,7 @@ export default function DashboardPage() {
       {/* Charts + Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Revenue vs Expenses Chart */}
+        <WidgetErrorBoundary label="The chart" >
         <div className="card p-6 lg:col-span-2">
           <h3 className="text-sm font-medium text-gray-500 mb-4">Revenue vs Expenses (6 months)</h3>
           <ResponsiveContainer width="100%" height={280}>
@@ -109,8 +114,10 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </WidgetErrorBoundary>
 
         {/* Quick Actions */}
+        <WidgetErrorBoundary label="Needs Attention">
         <div className="card p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-4">Needs Attention</h3>
           <div className="space-y-3">
@@ -143,6 +150,7 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+        </WidgetErrorBoundary>
       </div>
 
       {/* Outstanding Invoices */}

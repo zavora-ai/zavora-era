@@ -155,7 +155,8 @@ export const reopenPeriod = (id: string, data: { reason: string }) =>
   api.post(`/periods/${id}/reopen`, data);
 
 // === Journal Entries ===
-export const getJournalEntries = () => api.get('/journal-entries');
+export type PageParams = { limit?: number; offset?: number };
+export const getJournalEntries = (params?: PageParams) => api.get('/journal-entries', { params });
 export const getJournalEntry = (id: string) => api.get(`/journal-entries/${id}`);
 export const createJournalEntry = (data: any) => api.post('/journal-entries', data);
 export const validateJournalEntry = (data: any) => api.post('/journal-entries/validate', data);
@@ -178,7 +179,7 @@ export const getProducts = () => api.get('/products');
 export const createProduct = (data: any) => api.post('/products', data);
 
 // === Invoices ===
-export const getInvoices = () => api.get('/invoices');
+export const getInvoices = (params?: PageParams) => api.get('/invoices', { params });
 export const createInvoice = (data: any) => api.post('/invoices', data);
 export const updateInvoice = (id: string, data: any) => api.put(`/invoices/${id}`, data);
 export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
@@ -188,8 +189,10 @@ export const writeOffInvoice = (id: string, data: { expense_account: string; amo
   api.post(`/invoices/${id}/write-off`, data);
 
 // === Estimates ===
-export const getEstimates = () => api.get('/estimates');
+export const getEstimates = (params?: PageParams) => api.get('/estimates', { params });
 export const createEstimate = (data: any) => api.post('/estimates', data);
+export const updateEstimate = (id: string, data: any) => api.put(`/estimates/${id}`, data);
+export const deleteEstimate = (id: string) => api.delete(`/estimates/${id}`);
 export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
 export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
 export const sendEstimate = (id: string) => api.post(`/estimates/${id}/send`, {});
@@ -199,9 +202,11 @@ export const declineEstimate = (id: string) => api.post(`/estimates/${id}/declin
 // === Recurring Invoices ===
 export const getRecurringInvoices = () => api.get('/recurring-invoices');
 export const createRecurringInvoice = (data: any) => api.post('/recurring-invoices', data);
+export const updateRecurringInvoice = (id: string, data: any) => api.put(`/recurring-invoices/${id}`, data);
+export const deleteRecurringInvoice = (id: string) => api.delete(`/recurring-invoices/${id}`);
 
 // === Bills ===
-export const getBills = () => api.get('/bills');
+export const getBills = (params?: PageParams) => api.get('/bills', { params });
 export const getBill = (id: string) => api.get(`/bills/${id}`);
 export const createBill = (data: any) => api.post('/bills', data);
 export const updateBill = (id: string, data: any) => api.put(`/bills/${id}`, data);
@@ -215,7 +220,7 @@ export const getSupplierCreditNote = (id: string) => api.get(`/supplier-credit-n
 export const createSupplierCreditNote = (data: any) => api.post('/supplier-credit-notes', data);
 
 // === Payments ===
-export const getPayments = (params?: { status?: string }) => api.get('/payments', { params });
+export const getPayments = (params?: { status?: string } & PageParams) => api.get('/payments', { params });
 export const getPayment = (id: string) => api.get(`/payments/${id}`);
 export const recordPayment = (data: any) => api.post('/payments', data);
 export const applyPayment = (data: { payment_id: string; document_id: string; amount: number }) =>
@@ -304,10 +309,17 @@ export const createEmployeeApi = (data: any) => api.post('/employees', data);
 export const getCustomer = (id: string) => api.get(`/customers/${id}`);
 export const updateCustomer = (id: string, data: any) => api.put(`/customers/${id}`, data);
 export const getCustomerStatement = (id: string) => api.get(`/customers/${id}/statement`);
+export const sendCustomerStatement = (id: string, channel: string) => api.post(`/customers/${id}/send-statement`, { channel });
 
 // === Vendors (additional) ===
 export const getVendor = (id: string) => api.get(`/vendors/${id}`);
 export const updateVendor = (id: string, data: any) => api.put(`/vendors/${id}`, data);
+
+// === Notifications (in-app inbox) ===
+export const getNotifications = (params?: { unread_only?: boolean } & PageParams) => api.get('/notifications', { params });
+export const getUnreadCount = () => api.get('/notifications/unread-count');
+export const markNotificationRead = (id: string) => api.patch(`/notifications/${id}/read`);
+export const markAllNotificationsRead = () => api.post('/notifications/mark-all-read', {});
 
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });

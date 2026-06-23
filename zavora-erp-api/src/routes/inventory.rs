@@ -26,11 +26,14 @@ pub async fn list(
 
 pub async fn create(
     ctx: AuthContext,
-    State(_state): State<Arc<AppState>>,
-    Json(_req): Json<serde_json::Value>,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateInventoryItemRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "create inventory item") { return Err(err_response(e)); }
-    Ok(Json(serde_json::json!({ "status": "todo" })))
+    require_role(ROLES_CREATE, &ctx, "create inventory item").map_err(err_response)?;
+    match svc::create_item(&state.engine, ctx.entity_id, req).await {
+        Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
+        Err(e) => Err(err_response(e)),
+    }
 }
 
 pub async fn receive(

@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSettings, updateSettings } from '../../api/client';
-import type { ErpConfig } from '../../types';
+import type { ErpConfig, DocumentSequences } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
 import PostingAccountsTab from './PostingAccountsTab';
+import { SkeletonLines } from '../../components/shared/Skeleton';
+import ErrorRetry from '../../components/shared/ErrorRetry';
 import { Save, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const { data: config, isLoading } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
+  const { data: config, isLoading, isError, refetch } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
 
   const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting'>('company');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -17,6 +19,7 @@ export default function SettingsPage() {
   const [company, setCompany] = useState({ company_name: '', kra_pin: '', vat_number: '', primary_color: '#1a56db' });
   const [tax, setTax] = useState({ vat_registered: false, wht_enabled: false, paye_enabled: false });
   const [payments, setPayments] = useState({ mpesa_enabled: false, mpesa_paybill: '', flutterwave_enabled: false, bank_transfer_enabled: false });
+  const [seq, setSeq] = useState<DocumentSequences | null>(null);
 
   // Initialize form state from fetched config
   useEffect(() => {
@@ -38,6 +41,7 @@ export default function SettingsPage() {
       flutterwave_enabled: config.payment_config?.flutterwave_enabled ?? false,
       bank_transfer_enabled: config.payment_config?.bank_transfer_enabled ?? false,
     });
+    if (config.sequences) setSeq(config.sequences);
   }, [config]);
 
   const mutation = useMutation({
@@ -61,6 +65,9 @@ export default function SettingsPage() {
       patch.tax_config = tax;
     } else if (tab === 'payments') {
       patch.payment_config = payments;
+    } else if (tab === 'sequences') {
+      if (!seq) return;
+      patch.sequences = seq;
     }
     mutation.mutate(patch);
   };
@@ -91,10 +98,9 @@ export default function SettingsPage() {
       </div>
 
       {isLoading ? (
-        <div className="card p-12 text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Loading settings...</p>
-        </div>
+        <div className="card p-6"><SkeletonLines lines={6} /></div>
+      ) : isError ? (
+        <ErrorRetry message="Couldn't load your settings." onRetry={() => refetch()} />
       ) : (
       <div className="card p-6">
         {tab === 'company' && (
@@ -143,21 +149,37 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {tab === 'sequences' && (
+        {tab === 'sequences' && seq && (
           <div className="space-y-4 max-w-xl">
             <p className="text-sm text-gray-500 mb-4">Configure document numbering prefixes and starting numbers.</p>
-            {[
-              { label: 'Invoice', prefix: config?.sequences?.invoice_prefix || 'INV', next: config?.sequences?.invoice_next || 1 },
-              { label: 'Estimate', prefix: config?.sequences?.estimate_prefix || 'EST', next: config?.sequences?.estimate_next || 1 },
-              { label: 'Bill', prefix: config?.sequences?.bill_prefix || 'BILL', next: config?.sequences?.bill_next || 1 },
-            ].map((seq) => (
-              <div key={seq.label} className="grid grid-cols-3 gap-3 items-end">
-                <div><label className="label">{seq.label} Prefix</label><input className="input font-mono" defaultValue={seq.prefix} /></div>
-                <div><label className="label">Next Number</label><input type="number" className="input" defaultValue={seq.next} /></div>
-                <div className="text-sm text-gray-500 pb-2">e.g. {seq.prefix}-2026-{String(seq.next).padStart(4, '0')}</div>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 mt-4"><input type="checkbox" defaultChecked={config?.sequences?.year_reset} /><label className="text-sm">Reset numbering on new fiscal year</label></div>
+            {([
+              { label: 'Invoice', pk: 'invoice_prefix', nk: 'invoice_next' },
+              { label: 'Estimate', pk: 'estimate_prefix', nk: 'estimate_next' },
+              { label: 'Credit Note', pk: 'credit_note_prefix', nk: 'credit_note_next' },
+              { label: 'Bill', pk: 'bill_prefix', nk: 'bill_next' },
+              { label: 'Journal', pk: 'journal_prefix', nk: 'journal_next' },
+              { label: 'Payment', pk: 'payment_prefix', nk: 'payment_next' },
+            ] as const).map((row) => {
+              const prefix = (seq as any)[row.pk] as string;
+              const next = (seq as any)[row.nk] as number;
+              return (
+                <div key={row.label} className="grid grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label className="label">{row.label} Prefix</label>
+                    <input className="input font-mono" value={prefix} onChange={(e) => setSeq({ ...seq, [row.pk]: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label">Next Number</label>
+                    <input type="number" min={1} className="input" value={next} onChange={(e) => setSeq({ ...seq, [row.nk]: Math.max(1, parseInt(e.target.value) || 1) })} />
+                  </div>
+                  <div className="text-sm text-gray-500 pb-2">e.g. {prefix}-2026-{String(next).padStart(4, '0')}</div>
+                </div>
+              );
+            })}
+            <div className="flex items-center gap-2 mt-4">
+              <input type="checkbox" checked={seq.year_reset} onChange={(e) => setSeq({ ...seq, year_reset: e.target.checked })} />
+              <label className="text-sm">Reset numbering on new fiscal year</label>
+            </div>
           </div>
         )}
 

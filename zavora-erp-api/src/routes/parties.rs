@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE, ROLES_SEND};
 use zavora_erp_core::parties::*;
 use zavora_erp_core::services::parties as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -164,6 +164,96 @@ pub async fn customer_statement(
     }))
 }
 
+/// POST /customers/{id}/send-statement — queue a statement of account to the
+/// customer over the chosen channel. Body: `{ "channel": "email"|"whatsapp"|"sms" }`.
+pub async fn send_statement(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    use zavora_erp_core::notifications::{NotificationEventType, SendNotificationRequest};
+    use zavora_erp_core::types::Channel;
+
+    require_role(ROLES_SEND, &ctx, "send customer statement").map_err(|e| {
+        let status = match &e {
+            zavora_erp_core::ErpError::PermissionDenied { .. } => axum::http::StatusCode::FORBIDDEN,
+            _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, Json(serde_json::json!({ "error": e.to_string() })))
+    })?;
+
+    let unprocessable = |msg: &str| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
+
+    let channel_str = body.get("channel").and_then(|v| v.as_str()).unwrap_or("email").to_lowercase();
+    let channel = match channel_str.as_str() {
+        "email" => Channel::Email,
+        "whatsapp" => Channel::WhatsApp,
+        "sms" => Channel::Sms,
+        other => return Err(unprocessable(&format!("Unsupported channel: {other}"))),
+    };
+
+    let customer = sqlx::query_as::<_, CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?
+    .ok_or_else(|| (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Customer not found." }))))?;
+
+    // Resolve the recipient for the chosen channel from the customer's contacts.
+    let recipient = match channel {
+        Channel::Email => first_contact(&customer.email, "email"),
+        Channel::WhatsApp | Channel::Sms => first_contact(&customer.phone, "number"),
+        Channel::InApp => None,
+    };
+    let recipient = match recipient {
+        Some(r) if !r.is_empty() => r,
+        _ => return Err(unprocessable(&format!(
+            "Customer has no {} contact on file. Add one before sending.",
+            if matches!(channel, Channel::Email) { "email" } else { "phone" },
+        ))),
+    };
+
+    // Statement totals for the message body.
+    let invoices = sqlx::query_as::<_, zavora_erp_core::invoicing::InvoiceRow>(
+        "SELECT * FROM invoices WHERE customer_id = $1 AND entity_id = $2 ORDER BY issue_date",
+    )
+    .bind(id).bind(ctx.entity_id)
+    .fetch_all(state.engine.pool()).await.unwrap_or_default();
+    let balance_due: rust_decimal::Decimal = invoices.iter().map(|i| i.balance_due).sum();
+
+    let req = SendNotificationRequest {
+        event_type: NotificationEventType::ScheduledReport,
+        channels: vec![channel],
+        recipients: vec![recipient],
+        subject: Some(format!("Statement of Account — {}", customer.name)),
+        body: format!(
+            "Dear {}, please find your statement of account. Outstanding balance: {} {}.",
+            customer.name, customer.currency, balance_due
+        ),
+        related_type: Some("customer".to_string()),
+        related_id: Some(id),
+        schedule_at: None,
+    };
+
+    match zavora_erp_core::services::notifications::send_notification(&state.engine, ctx.entity_id, req).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "queued", "channel": channel_str }))),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))),
+    }
+}
+
+/// Pull the first contact value from a JSONB array of contact objects (`email`/`number` key).
+fn first_contact(value: &serde_json::Value, key: &str) -> Option<String> {
+    let arr = value.as_array()?;
+    // Prefer the primary contact, else the first one.
+    let primary = arr.iter().find(|c| c.get("is_primary").and_then(|v| v.as_bool()).unwrap_or(false));
+    let chosen = primary.or_else(|| arr.first())?;
+    chosen.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
 // === Vendors ===
 
 pub async fn list_vendors(
@@ -182,6 +272,7 @@ pub async fn list_vendors(
     }
 }
 
+/// GET /vendors/{id} — vendor record enriched with AP summary statistics.
 pub async fn get_vendor(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
@@ -192,11 +283,51 @@ pub async fn get_vendor(
     )
     .bind(id).bind(ctx.entity_id)
     .fetch_optional(state.engine.pool()).await;
-    match row {
-        Ok(Some(r)) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
-        Ok(None) => Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Vendor".into(), id })),
-        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+
+    let vendor = match row {
+        Ok(Some(r)) => r,
+        Ok(None) => return Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Vendor".into(), id })),
+        Err(e) => return Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    };
+
+    // Aggregate AP activity. payment_type is stored JSON-encoded (e.g. "vendor_payment"),
+    // so strip the quotes before comparing. Draft/void documents are excluded from money totals.
+    use rust_decimal::Decimal;
+    let agg = sqlx::query_as::<_, (Decimal, i64, Decimal, Decimal, i64, Decimal, i64)>(
+        r#"SELECT
+            (SELECT COALESCE(SUM(gross_total),0) FROM bills WHERE vendor_id=$1 AND entity_id=$2 AND status NOT IN ('draft','cancelled','void')) AS total_billed,
+            (SELECT COUNT(*) FROM bills WHERE vendor_id=$1 AND entity_id=$2) AS bill_count,
+            (SELECT COALESCE(SUM(balance_due),0) FROM bills WHERE vendor_id=$1 AND entity_id=$2 AND status NOT IN ('draft','cancelled','void')) AS outstanding_bills,
+            (SELECT COALESCE(SUM(amount),0) FROM payments WHERE party_id=$1 AND entity_id=$2 AND trim(both '"' from payment_type)='vendor_payment' AND status NOT IN ('cancelled','voided')) AS total_paid,
+            (SELECT COUNT(*) FROM payments WHERE party_id=$1 AND entity_id=$2 AND trim(both '"' from payment_type)='vendor_payment') AS payment_count,
+            (SELECT COALESCE(SUM(gross_total),0) FROM supplier_credit_notes WHERE vendor_id=$1 AND entity_id=$2 AND status NOT IN ('draft','cancelled','void')) AS total_credit_notes,
+            (SELECT COUNT(*) FROM supplier_credit_notes WHERE vendor_id=$1 AND entity_id=$2) AS credit_note_count
+        "#,
+    )
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_one(state.engine.pool())
+    .await;
+
+    let (total_billed, bill_count, outstanding_bills, total_paid, payment_count, total_credit_notes, credit_note_count) =
+        match agg {
+            Ok(t) => t,
+            Err(e) => return Err(err_response(zavora_erp_core::ErpError::Database(e))),
+        };
+
+    let outstanding_balance = outstanding_bills - total_credit_notes;
+
+    let mut out = serde_json::to_value(&vendor).unwrap_or_default();
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("total_billed".into(), serde_json::json!(total_billed));
+        obj.insert("total_paid".into(), serde_json::json!(total_paid));
+        obj.insert("total_credit_notes".into(), serde_json::json!(total_credit_notes));
+        obj.insert("outstanding_balance".into(), serde_json::json!(outstanding_balance));
+        obj.insert("bill_count".into(), serde_json::json!(bill_count));
+        obj.insert("payment_count".into(), serde_json::json!(payment_count));
+        obj.insert("credit_note_count".into(), serde_json::json!(credit_note_count));
     }
+    Ok(Json(out))
 }
 
 pub async fn create_vendor(

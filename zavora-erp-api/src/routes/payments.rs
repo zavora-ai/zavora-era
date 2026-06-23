@@ -1,5 +1,6 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Path, State}, Json};
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::AppState;
 use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE};
@@ -8,18 +9,41 @@ use zavora_erp_core::payments::*;
 use zavora_erp_core::services::payments as svc;
 use zavora_erp_core::AgentOrUserId;
 
+/// GET /payments/{id} — single payment (used by the receipt preview).
+pub async fn get_one(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let row = sqlx::query_as::<_, PaymentRow>(
+        "SELECT * FROM payments WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_optional(state.engine.pool())
+    .await;
+    match row {
+        Ok(Some(r)) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(None) => Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Payment".into(), id })),
+        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    }
+}
+
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments WHERE entity_id = $1")
+        .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, PaymentRow>(
-        "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC",
+        "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
-    .bind(ctx.entity_id)
+    .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }

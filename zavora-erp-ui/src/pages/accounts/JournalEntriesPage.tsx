@@ -6,6 +6,8 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { Plus, BookOpen, AlertCircle, RotateCcw } from 'lucide-react';
 
@@ -14,10 +16,13 @@ export default function JournalEntriesPage() {
   const [reverseTarget, setReverseTarget] = useState<JournalEntry | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const { data: entries = [], isLoading } = useQuery<JournalEntry[]>({
-    queryKey: ['journal-entries'],
-    queryFn: () => getJournalEntries().then(r => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['journal-entries', offset, limit],
+    queryFn: () => getJournalEntries({ limit, offset }).then(r => r.data),
   });
+  const entries: JournalEntry[] = resp?.data ?? [];
+  const total: number = resp?.total_count ?? 0;
 
   const columns: Column<JournalEntry>[] = [
     { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status}</span> },
@@ -65,6 +70,7 @@ export default function JournalEntriesPage() {
         </div>
       )}
       <DataTable columns={columns} data={entries} loading={isLoading} emptyMessage="No journal entries yet. Create a manual entry to record adjustments." />
+      <PaginationControls page={page} limit={limit} total={total} onPage={setPage} />
       {showCreate && <CreateJournalEntryModal onClose={() => setShowCreate(false)} />}
       {reverseTarget && (
         <ReverseJournalEntryModal

@@ -117,6 +117,29 @@ pub struct FifoCostLayer {
     pub unit_cost: Decimal,
 }
 
+/// Request to create an inventory item master record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateInventoryItemRequest {
+    pub sku: String,
+    pub description: String,
+    #[serde(default)]
+    pub uom: Option<String>,
+    #[serde(default)]
+    pub costing_method: Option<String>,
+    #[serde(default)]
+    pub gl_inventory: Option<String>,
+    #[serde(default)]
+    pub gl_cogs: Option<String>,
+    #[serde(default)]
+    pub reorder_point: Option<Decimal>,
+    #[serde(default)]
+    pub reorder_quantity: Option<Decimal>,
+    #[serde(default)]
+    pub product_id: Option<Uuid>,
+    #[serde(default)]
+    pub warehouse_id: Option<Uuid>,
+}
+
 /// Request to receive inventory (purchase receipt).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReceiveInventoryRequest {

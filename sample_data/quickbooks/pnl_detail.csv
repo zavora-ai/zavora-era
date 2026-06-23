@@ -1,0 +1,226 @@
+Craig's Design and Landscaping Services,,,,,,,,,,
+Profit and Loss Detail,,,,,,,,,,
+"January 1-June 23, 2026",,,,,,,,,,
+
+,Transaction date,Transaction type,Num,Name,Location,Class full name,Description,Item split account,Amount,Balance
+Ordinary Income/Expenses,,,,,,,,,,
+Income,,,,,,,,,,
+Design income,,,,,,,,,,
+,05/03/2026,Invoice,1007,John Melton,,,Custom Design,Accounts Receivable (A/R),750.00,750.00
+,05/03/2026,Sales Receipt,1008,Kate Whelan,,,Custom Design,Checking,225.00,975.00
+,05/23/2026,Sales Receipt,1003,Dylan Sollfrank,,,Custom Design,Checking,337.50,"1,312.50"
+,05/26/2026,Invoice,1010,Weiskopf Consulting,,,Custom Design,Accounts Receivable (A/R),375.00,"1,687.50"
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,Custom Design,Accounts Receivable (A/R),300.00,"1,987.50"
+,05/27/2026,Invoice,1033,Geeta Kalapatapu,,,Custom Design,Accounts Receivable (A/R),262.50,"2,250.00"
+Total for Design income,,,,,,,,,"$2,250.00",
+Discounts given,,,,,,,,,,
+,05/14/2026,Invoice,1012,Shara Barnett:Barnett Design,,,Discount,Accounts Receivable (A/R),-30.50,-30.50
+,05/26/2026,Sales Receipt,1011,Pye's Cakes,,,Discount,Undeposited Funds,-8.75,-39.25
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,Discount,Accounts Receivable (A/R),-50.25,-89.50
+Total for Discounts given,,,,,,,,,-$89.50,
+Landscaping Services,,,,,,,,,,
+Total for Landscaping Services,,,,,,,,,"$1,477.50",
+Job Materials,,,,,,,,,,
+Fountains and Garden Lighting,,,,,,,,,,
+,03/13/2026,Invoice,1031,Freeman Sporting Goods:0969 Ocean View Road,,,Rock Fountain,Accounts Receivable (A/R),275.00,275.00
+,03/20/2026,Invoice,1024,Red Rock Diner,,,Garden Rocks,Accounts Receivable (A/R),48.00,323.00
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,,Concrete for fountain installation,Accounts Receivable (A/R),75.00,398.00
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,,Garden Rocks,Accounts Receivable (A/R),72.00,470.00
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,,Rock Fountain,Accounts Receivable (A/R),275.00,745.00
+,05/06/2026,Invoice,1021,Amy's Bird Sanctuary,,,Rock Fountain,Accounts Receivable (A/R),275.00,"1,020.00"
+,05/14/2026,Invoice,1012,Shara Barnett:Barnett Design,,,Rock Fountain,Accounts Receivable (A/R),275.00,"1,295.00"
+,05/25/2026,Invoice,1032,Travis Waldron,,,Garden Rocks,Accounts Receivable (A/R),84.00,"1,379.00"
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,Rock Fountain,Accounts Receivable (A/R),275.00,"1,654.00"
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,Garden Rocks,Accounts Receivable (A/R),180.00,"1,834.00"
+,05/27/2026,Invoice,1033,Geeta Kalapatapu,,,Rock Fountain,Accounts Receivable (A/R),275.00,"2,109.00"
+,05/27/2026,Invoice,1033,Geeta Kalapatapu,,,Fountain Pump,Accounts Receivable (A/R),45.00,"2,154.00"
+,05/27/2026,Invoice,1034,Rondonuwu Fruit and Vegi,,,Garden Lighting,Accounts Receivable (A/R),45.00,"2,199.00"
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,Concrete for fountain installation,Accounts Receivable (A/R),47.50,"2,246.50"
+Total for Fountains and Garden Lighting,,,,,,,,,"$2,246.50",
+Plants and Soil,,,,,,,,,,
+,02/10/2026,Invoice,1030,Freeman Sporting Goods:0969 Ocean View Road,,,Sod,Accounts Receivable (A/R),131.25,131.25
+,05/06/2026,Invoice,1021,Amy's Bird Sanctuary,,,2 cubic ft. bag,Accounts Receivable (A/R),150.00,281.25
+,05/10/2026,Expense,8,Hicks Hardware,,,,Checking,-24.36,256.89
+,05/16/2026,Invoice,1004,Cool Cars,,,Sod,Accounts Receivable (A/R),"1,750.00","2,006.89"
+,05/18/2026,Expense,22,Tania's Nursery,,,,Mastercard,-54.92,"1,951.97"
+,05/25/2026,Invoice,1032,Travis Waldron,,,Sod,Accounts Receivable (A/R),300.00,"2,251.97"
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Sod,Accounts Receivable (A/R),50.00,"2,301.97"
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,2 cubic ft. bag,Accounts Receivable (A/R),50.00,"2,351.97"
+Total for Plants and Soil,,,,,,,,,"$2,351.97",
+Sprinklers and Drip Systems,,,,,,,,,,
+,03/20/2026,Invoice,1024,Red Rock Diner,,,Sprinkler Pipes,Accounts Receivable (A/R),48.00,48.00
+,03/20/2026,Invoice,1024,Red Rock Diner,,,Sprinkler Pipes,Accounts Receivable (A/R),60.00,108.00
+,05/14/2026,Invoice,1012,Shara Barnett:Barnett Design,,,Sprinkler Heads,Accounts Receivable (A/R),30.00,138.00
+Total for Sprinklers and Drip Systems,,,,,,,,,$138.00,
+Total for Job Materials with sub-accounts,,,,,,,,,"$4,736.47",
+Labor,,,,,,,,,,
+Installation,,,,,,,,,,
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,Installation of landscape design,Accounts Receivable (A/R),250.00,250.00
+Total for Installation,,,,,,,,,$250.00,
+Maintenance and Repair,,,,,,,,,,
+,04/10/2026,Invoice,1025,Amy's Bird Sanctuary,,,Maintenance & Repair,Accounts Receivable (A/R),50.00,50.00
+Total for Maintenance and Repair,,,,,,,,,$50.00,
+Total for Labor with sub-accounts,,,,,,,,,$300.00,
+,02/10/2026,Invoice,1002,Bill's Windsurf Shop,,,Weekly Gardening Service,Accounts Receivable (A/R),140.00,140.00
+,02/10/2026,Invoice,1030,Freeman Sporting Goods:0969 Ocean View Road,,,Weekly Gardening Service,Accounts Receivable (A/R),50.00,190.00
+,03/13/2026,Invoice,1031,Freeman Sporting Goods:0969 Ocean View Road,,,Weekly Gardening Service,Accounts Receivable (A/R),90.00,280.00
+,04/09/2026,Invoice,1016,Kookies by Kathy,,,Weekly Gardening Service,Accounts Receivable (A/R),75.00,355.00
+,04/10/2026,Invoice,1025,Amy's Bird Sanctuary,,,Weekly Gardening Service,Accounts Receivable (A/R),120.00,475.00
+,04/10/2026,Invoice,1027,Bill's Windsurf Shop,,,Weekly Gardening Service,Accounts Receivable (A/R),50.00,525.00
+,04/10/2026,Invoice,1028,Freeman Sporting Goods:55 Twin Lane,,,Weekly Gardening Service,Accounts Receivable (A/R),75.00,600.00
+,04/19/2026,Invoice,1006,Freeman Sporting Goods:55 Twin Lane,,,Weekly Gardening Service,Accounts Receivable (A/R),80.00,680.00
+,05/06/2026,Invoice,1022,Jeff's Jalopies,,,Weekly Gardening Service,Accounts Receivable (A/R),75.00,755.00
+,05/12/2026,Invoice,1017,Sushi by Katsuyuki,,,Weekly Gardening Service,Accounts Receivable (A/R),80.00,835.00
+,05/16/2026,Invoice,1013,Travis Waldron,,,Weekly Gardening Service,Accounts Receivable (A/R),75.00,910.00
+,05/19/2026,Invoice,1005,Freeman Sporting Goods:55 Twin Lane,,,Weekly Gardening Service,Accounts Receivable (A/R),50.00,960.00
+,05/19/2026,Invoice,1018,Sushi by Katsuyuki,,,Weekly Gardening Service,Accounts Receivable (A/R),80.00,"1,040.00"
+,05/24/2026,Sales Receipt,1014,Diego Rodriguez,,,Weekly Gardening Service,Undeposited Funds,140.00,"1,180.00"
+,05/25/2026,Invoice,1001,Amy's Bird Sanctuary,,,Weekly Gardening Service,Accounts Receivable (A/R),100.00,"1,280.00"
+,05/26/2026,Invoice,1019,Sushi by Katsuyuki,,,Weekly Gardening Service,Accounts Receivable (A/R),80.00,"1,360.00"
+,05/27/2026,Invoice,1034,Rondonuwu Fruit and Vegi,,,Tree and Shrub Trimming,Accounts Receivable (A/R),30.00,"1,390.00"
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Weekly Gardening Service,Accounts Receivable (A/R),87.50,"1,477.50"
+Total for Landscaping Services with sub-accounts,,,,,,,,,"$6,513.97",
+Pest Control Services,,,,,,,,,,
+,02/10/2026,Invoice,1002,Bill's Windsurf Shop,,,Pest Control Services,Accounts Receivable (A/R),35.00,35.00
+,02/10/2026,Invoice,1030,Freeman Sporting Goods:0969 Ocean View Road,,,Pest Control Services,Accounts Receivable (A/R),35.00,70.00
+,04/10/2026,Invoice,1025,Amy's Bird Sanctuary,,,Pest Control Services,Accounts Receivable (A/R),35.00,105.00
+,04/10/2026,Invoice,1027,Bill's Windsurf Shop,,,Pest Control Services,Accounts Receivable (A/R),35.00,140.00
+,05/11/2026,Credit Memo,1026,Amy's Bird Sanctuary,,,Pest Control Services,Accounts Receivable (A/R),-100.00,40.00
+,05/26/2026,Sales Receipt,1011,Pye's Cakes,,,Pest Control Services,Undeposited Funds,87.50,127.50
+,05/26/2026,Refund,1020,Pye's Cakes,,,Refund - Pest control was ineffective,Checking,-87.50,40.00
+,05/26/2026,Invoice,1023,Red Rock Diner,,,Pest Control Services,Accounts Receivable (A/R),70.00,110.00
+Total for Pest Control Services,,,,,,,,,$110.00,
+Sales of Product Income,,,,,,,,,,
+,05/16/2026,Invoice,1004,Cool Cars,,,Sprinkler Heads,Accounts Receivable (A/R),20.00,20.00
+,05/16/2026,Invoice,1004,Cool Cars,,,Sprinkler Pipes,Accounts Receivable (A/R),24.00,44.00
+,05/28/2026,Invoice,1035,Mark Cho,,,Rock Fountain,Accounts Receivable (A/R),275.00,319.00
+,05/28/2026,Invoice,1035,Mark Cho,,,Sprinkler Pipes,Accounts Receivable (A/R),16.00,335.00
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Rock Fountain,Accounts Receivable (A/R),275.00,610.00
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Fountain Pump,Accounts Receivable (A/R),15.00,625.00
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,Rock Fountain,Accounts Receivable (A/R),275.00,900.00
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,Fountain Pump,Accounts Receivable (A/R),12.75,912.75
+Total for Sales of Product Income,,,,,,,,,$912.75,
+Services,,,,,,,,,,
+,05/16/2026,Invoice,1004,Cool Cars,,,Installation Hours,Accounts Receivable (A/R),400.00,400.00
+,05/25/2026,Invoice,1009,Travis Waldron,,,Lumber,Accounts Receivable (A/R),103.55,503.55
+Total for Services,,,,,,,,,$503.55,
+Total for Income with sub-accounts,,,,,,,,,"$10,200.77",
+Cost of Goods Sold,,,,,,,,,,
+Cost of Goods Sold,,,,,,,,,,
+,05/28/2026,Invoice,1035,Mark Cho,,,Rock Fountain,Accounts Receivable (A/R),125.00,125.00
+,05/28/2026,Invoice,1035,Mark Cho,,,Sprinkler Pipes,Accounts Receivable (A/R),10.00,135.00
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Rock Fountain,Accounts Receivable (A/R),125.00,260.00
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,Fountain Pump,Accounts Receivable (A/R),10.00,270.00
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,Rock Fountain,Accounts Receivable (A/R),125.00,395.00
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,Fountain Pump,Accounts Receivable (A/R),10.00,405.00
+Total for Cost of Goods Sold,,,,,,,,,$405.00,
+Total for Cost of Goods Sold with sub-accounts,,,,,,,,,$405.00,
+Gross Profit,,,,,,,,,"$9,795.77",
+Expenses,,,,,,,,,,
+Advertising,,,,,,,,,,
+,05/26/2026,Expense,,Lee Advertising,,,,Mastercard,74.86,74.86
+Total for Advertising,,,,,,,,,$74.86,
+Automobile,,,,,,,,,,
+,05/19/2026,Cash Expense,,Squeaky Kleen Car Wash,,,,Checking,19.99,19.99
+,05/26/2026,Check,Debit,Squeaky Kleen Car Wash,,,,Checking,19.99,39.98
+,06/02/2026,Credit Card Expense,,Squeaky Kleen Car Wash,,,,Mastercard,19.99,59.97
+,06/09/2026,Credit Card Expense,,Squeaky Kleen Car Wash,,,,Mastercard,19.99,79.96
+,06/22/2026,Credit Card Expense,,,,,,Mastercard,34.00,113.96
+Total for Automobile,,,,,,,,,$113.96,
+Fuel,,,,,,,,,,
+,04/08/2026,Check,4,Chin's Gas and Oil,,,,Checking,54.55,54.55
+,04/23/2026,Check,5,Chin's Gas and Oil,,,,Checking,62.01,116.56
+,05/13/2026,Expense,1,Chin's Gas and Oil,,,,Mastercard,65.00,181.56
+,05/20/2026,Cash Expense,,Chin's Gas and Oil,,,,Checking,52.14,233.70
+,05/27/2026,Cash Expense,,Chin's Gas and Oil,,,,Checking,63.15,296.85
+,05/28/2026,Expense,1,Chin's Gas and Oil,,,,Mastercard,52.56,349.41
+Total for Fuel,,,,,,,,,$349.41,
+Total for Automobile with sub-accounts,,,,,,,,,$463.37,
+Equipment Rental,,,,,,,,,,
+,05/26/2026,Expense,1,Ellis Equipment Rental,,,Equipment rental for 5 days,Mastercard,112.00,112.00
+Total for Equipment Rental,,,,,,,,,$112.00,
+Insurance,,,,,,,,,,
+,05/21/2026,Bill,,Brosnahan Insurance Agency,,,,Accounts Payable (A/P),241.23,241.23
+Total for Insurance,,,,,,,,,$241.23,
+Job Expenses,,,,,,,,,,
+,04/24/2026,Expense,15,Tania's Nursery,,,,Checking,108.09,108.09
+,05/27/2026,Expense,108,Tania's Nursery,,,,Checking,46.98,155.07
+Total for Job Expenses,,,,,,,,,$155.07,
+Job Materials,,,,,,,,,,
+Decks and Patios,,,,,,,,,,
+,05/16/2026,Expense,1,Hicks Hardware,,,,Mastercard,88.09,88.09
+,05/25/2026,Bill,,Norton Lumber and Building Materials,,,Lumber,Accounts Payable (A/P),103.55,191.64
+,06/03/2026,Credit Card Expense,,Hicks Hardware,,,,Mastercard,42.40,234.04
+Total for Decks and Patios,,,,,,,,,$234.04,
+Plants and Soil,,,,,,,,,,
+,03/24/2026,Expense,3,Tania's Nursery,,,,Mastercard,158.08,158.08
+,04/17/2026,Expense,9,Tania's Nursery,,,Morning Glories and Sod,Checking,89.09,247.17
+,05/22/2026,Expense,50,Tania's Nursery,,,,Mastercard,82.45,329.62
+,05/31/2026,Cash Expense,,Tania's Nursery,,,,Checking,23.50,353.12
+Total for Plants and Soil,,,,,,,,,$353.12,
+Sprinklers and Drip Systems,,,,,,,,,,
+,05/22/2026,Expense,13,Hicks Hardware,,,,Checking,215.66,215.66
+Total for Sprinklers and Drip Systems,,,,,,,,,$215.66,
+Total for Job Materials with sub-accounts,,,,,,,,,$802.82,
+Total for Job Expenses with sub-accounts,,,,,,,,,$957.89,
+Legal & Professional Fees,,,,,,,,,,
+Total for Legal & Professional Fees,,,,,,,,,$75.00,
+Accounting,,,,,,,,,,
+,03/17/2026,Expense,12,Robertson & Associates,,,,Checking,250.00,250.00
+,05/14/2026,Bill,,Books by Bessie,,,,Accounts Payable (A/P),75.00,325.00
+,05/28/2026,Bill,,Robertson & Associates,,,,Accounts Payable (A/P),315.00,640.00
+Total for Accounting,,,,,,,,,$640.00,
+Bookkeeper,,,,,,,,,,
+,04/17/2026,Check,12,Books by Bessie,,,,Checking,55.00,55.00
+Total for Bookkeeper,,,,,,,,,$55.00,
+Lawyer,,,,,,,,,,
+,01/24/2026,Bill,,Robertson & Associates,,,,Accounts Payable (A/P),300.00,300.00
+,05/19/2026,Check,,Tony Rondonuwu,,,Consulting,Checking,100.00,400.00
+Total for Lawyer,,,,,,,,,$400.00,
+,05/28/2026,Expense,76,Pam Seitz,,,Counsel,Checking,75.00,75.00
+Total for Legal & Professional Fees with sub-accounts,,,,,,,,,"$1,170.00",
+Maintenance and Repair,,,,,,,,,,
+Total for Maintenance and Repair,,,,,,,,,$185.00,
+Equipment Repairs,,,,,,,,,,
+,05/26/2026,Bill,,Diego's Road Warrior Bodyshop,,,Repairs on the truck,Accounts Payable (A/P),755.00,755.00
+Total for Equipment Repairs,,,,,,,,,$755.00,
+,05/20/2026,Check,70,Chin's Gas and Oil,,,,Checking,185.00,185.00
+Total for Maintenance and Repair with sub-accounts,,,,,,,,,$940.00,
+Meals and Entertainment,,,,,,,,,,
+,05/19/2026,Cash Expense,,Bob's Burger Joint,,,,Checking,5.66,5.66
+,05/24/2026,Cash Expense,,Bob's Burger Joint,,,,Checking,3.86,9.52
+,06/02/2026,Credit Card Expense,,Bob's Burger Joint,,,,Mastercard,18.97,28.49
+Total for Meals and Entertainment,,,,,,,,,$28.49,
+Office Expenses,,,,,,,,,,
+,05/22/2026,Check,2,Mahoney Mugs,,,Office Supplies,Checking,18.08,18.08
+Total for Office Expenses,,,,,,,,,$18.08,
+Rent or Lease,,,,,,,,,,
+,05/12/2026,Bill,,Hall Properties,,,Building Lease,Accounts Payable (A/P),900.00,900.00
+Total for Rent or Lease,,,,,,,,,$900.00,
+Utilities,,,,,,,,,,
+Gas and Electric,,,,,,,,,,
+,04/13/2026,Bill,,PG&E,,,,Accounts Payable (A/P),86.44,86.44
+,05/12/2026,Bill,,PG&E,,,,Accounts Payable (A/P),114.09,200.53
+Total for Gas and Electric,,,,,,,,,$200.53,
+Telephone,,,,,,,,,,
+,04/12/2026,Bill,,Cal Telephone,,,,Accounts Payable (A/P),56.50,56.50
+,05/12/2026,Bill,,Cal Telephone,,,Monthly Phone Bill,Accounts Payable (A/P),74.36,130.86
+Total for Telephone,,,,,,,,,$130.86,
+Total for Utilities with sub-accounts,,,,,,,,,$331.39,
+Total for Expenses with sub-accounts,,,,,,,,,"$5,237.31",
+Net Ordinary Income,,,,,,,,,"$4,558.46",
+Other Income/Expense,,,,,,,,,,
+,Other Income,,,,,,,,$0.00,
+Other Expense,,,,,,,,,,
+Miscellaneous,,,,,,,,,,
+,04/21/2026,Bill,,Hicks Hardware,,,,Accounts Payable (A/P),250.00,250.00
+,05/13/2026,Bill,,Tim Philip Masonry,,,,Accounts Payable (A/P),666.00,916.00
+,05/21/2026,Bill,,Brosnahan Insurance Agency,,,,Accounts Payable (A/P),"2,000.00","2,916.00"
+Total for Miscellaneous,,,,,,,,,"$2,916.00",
+Total for Other Expense with sub-accounts,,,,,,,,,"$2,916.00",
+Net Other Income,,,,,,,,,"-$2,916.00",
+Net Income,,,,,,,,,"$1,642.46",
+
+
+
+"Accrual Basis Tuesday, June 23, 2026 03:59 AM GMTZ",,,,,,,,,,

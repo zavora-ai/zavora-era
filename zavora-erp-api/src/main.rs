@@ -151,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/customers", get(routes::parties::list_customers).post(routes::parties::create_customer))
         .route("/api/v1/customers/{id}", get(routes::parties::get_customer).put(routes::parties::update_customer))
         .route("/api/v1/customers/{id}/statement", get(routes::parties::customer_statement))
+        .route("/api/v1/customers/{id}/send-statement", post(routes::parties::send_statement))
         // Vendors
         .route("/api/v1/vendors", get(routes::parties::list_vendors).post(routes::parties::create_vendor))
         .route("/api/v1/vendors/{id}", get(routes::parties::get_vendor).put(routes::parties::update_vendor))
@@ -170,13 +171,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/invoices/{id}/etims-transmit", post(routes::invoices::etims_transmit))
         // Estimates
         .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
-        .route("/api/v1/estimates/{id}", get(routes::estimates::get_one))
+        .route("/api/v1/estimates/{id}", get(routes::estimates::get_one).put(routes::estimates::update).delete(routes::estimates::delete))
         .route("/api/v1/estimates/{id}/convert", post(routes::estimates::convert))
         .route("/api/v1/estimates/{id}/send", post(routes::estimates::send))
         .route("/api/v1/estimates/{id}/accept", post(routes::estimates::accept))
         .route("/api/v1/estimates/{id}/decline", post(routes::estimates::decline))
         // Recurring Invoices
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
+        .route("/api/v1/recurring-invoices/{id}", axum::routing::put(routes::invoices::update_recurring).delete(routes::invoices::delete_recurring))
+        // Notifications (in-app inbox)
+        .route("/api/v1/notifications", get(routes::notifications::list))
+        .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
+        .route("/api/v1/notifications/mark-all-read", post(routes::notifications::mark_all_read))
+        .route("/api/v1/notifications/{id}/read", axum::routing::patch(routes::notifications::mark_read))
         // Bills
         .route("/api/v1/bills", get(routes::bills::list).post(routes::bills::create))
         .route("/api/v1/bills/{id}", get(routes::bills::get_one).put(routes::bills::update).delete(routes::bills::delete))
@@ -188,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/supplier-credit-notes/{id}", get(routes::supplier_credit_notes::get_one))
         // Payments
         .route("/api/v1/payments", get(routes::payments::list).post(routes::payments::record))
+        .route("/api/v1/payments/{id}", get(routes::payments::get_one))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
         // Transactions (categorisation queue)

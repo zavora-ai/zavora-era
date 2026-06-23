@@ -17,6 +17,10 @@ export interface DashboardSummary {
   outstanding_invoices: InvoiceSummary[];
   pending_approvals: number;
   uncategorised_txns: number;
+  // Entity activity counts (used to detect a brand-new tenant for the empty state).
+  invoice_count?: number;
+  bill_count?: number;
+  payment_count?: number;
 }
 
 export interface MonthlyAmount {
@@ -323,8 +327,14 @@ export interface DocumentSequences {
   invoice_next: number;
   estimate_prefix: string;
   estimate_next: number;
+  credit_note_prefix: string;
+  credit_note_next: number;
   bill_prefix: string;
   bill_next: number;
+  journal_prefix: string;
+  journal_next: number;
+  payment_prefix: string;
+  payment_next: number;
   year_reset: boolean;
 }
 

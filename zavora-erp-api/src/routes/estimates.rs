@@ -10,15 +10,18 @@ use zavora_erp_core::AgentOrUserId;
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM estimates WHERE entity_id = $1")
+        .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, zavora_erp_core::invoicing::EstimateRow>(
-        "SELECT * FROM estimates WHERE entity_id = $1 ORDER BY created_at DESC",
+        "SELECT * FROM estimates WHERE entity_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
-    .bind(ctx.entity_id)
+    .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }
@@ -68,6 +71,79 @@ pub async fn create(
     match zavora_erp_core::services::invoicing::create_estimate(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id, "status": "draft" }))),
         Err(e) => Err(err_response(e)),
+    }
+}
+
+/// PUT /estimates/{id} — edit a draft estimate (header + lines).
+pub async fn update(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<zavora_erp_core::invoicing::CreateEstimateRequest>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    require_role(ROLES_CREATE, &ctx, "edit estimate").map_err(role_err)?;
+    guard_draft(&state, ctx.entity_id, id).await?;
+    match zavora_erp_core::services::invoicing::update_estimate_draft(&state.engine, ctx.entity_id, id, req).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "id": id, "status": "draft" }))),
+        Err(e) => Err(svc_err(e)),
+    }
+}
+
+/// DELETE /estimates/{id} — delete a draft estimate.
+pub async fn delete(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    require_role(ROLES_CREATE, &ctx, "delete estimate").map_err(role_err)?;
+    guard_draft(&state, ctx.entity_id, id).await?;
+    match zavora_erp_core::services::invoicing::delete_estimate_draft(&state.engine, ctx.entity_id, id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted", "id": id }))),
+        Err(e) => Err(svc_err(e)),
+    }
+}
+
+/// Map a permission error to an HTTP response tuple.
+fn role_err(e: zavora_erp_core::ErpError) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+    let status = match &e {
+        zavora_erp_core::ErpError::PermissionDenied { .. } => axum::http::StatusCode::FORBIDDEN,
+        _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (status, Json(serde_json::json!({ "error": e.to_string() })))
+}
+
+/// Map a service error to an HTTP response tuple.
+fn svc_err(e: zavora_erp_core::ErpError) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+    let status = match &e {
+        zavora_erp_core::ErpError::NotFound { .. } => axum::http::StatusCode::NOT_FOUND,
+        zavora_erp_core::ErpError::ValidationFailed { .. } => axum::http::StatusCode::BAD_REQUEST,
+        _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (status, Json(serde_json::json!({ "error": e.to_string() })))
+}
+
+/// Reject edits/deletes on estimates that are not in draft status with a 409.
+async fn guard_draft(
+    state: &Arc<AppState>,
+    entity_id: Uuid,
+    id: Uuid,
+) -> Result<(), (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM estimates WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(entity_id)
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+
+    match status {
+        None => Err((axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Estimate not found." })))),
+        Some(s) if s != "draft" => Err((
+            axum::http::StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": format!("Only draft estimates can be modified (current status: {s}).") })),
+        )),
+        Some(_) => Ok(()),
     }
 }
 

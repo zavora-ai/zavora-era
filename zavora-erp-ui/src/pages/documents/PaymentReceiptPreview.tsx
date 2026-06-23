@@ -42,10 +42,6 @@ export default function PaymentReceiptPreview() {
     return (
       <div className="p-12 text-center text-gray-500">
         <p>Payment receipt not found.</p>
-        <p className="text-xs mt-2 text-gray-400">
-          {/* TODO: The backend may not have a GET /payments/:id endpoint yet. */}
-          If this persists, the payment detail endpoint may not be available.
-        </p>
       </div>
     );
   }

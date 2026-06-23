@@ -35,7 +35,7 @@ export default function InvoiceDetailPage() {
 
   const { data: payments = [] } = useQuery<Payment[]>({
     queryKey: ['payments'],
-    queryFn: () => getPayments().then(r => r.data),
+    queryFn: () => getPayments({ limit: 500 }).then(r => r.data.data ?? r.data),
   });
 
   const { data: auditEvents = [] } = useQuery<AuditEventEntry[]>({

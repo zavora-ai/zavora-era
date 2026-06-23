@@ -6,6 +6,8 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
+import PaginationControls from '../../components/shared/PaginationControls';
+import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
 import { Plus, Send, Pencil, Trash2, ShieldCheck } from 'lucide-react';
@@ -19,10 +21,13 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
-  const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
-    queryKey: ['invoices'],
-    queryFn: () => getInvoices().then(r => r.data),
+  const { page, limit, offset, setPage } = usePagination();
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['invoices', offset, limit],
+    queryFn: () => getInvoices({ limit, offset }).then(r => r.data),
   });
+  const invoices: Invoice[] = resp?.data ?? [];
+  const invoicesTotal: number = resp?.total_count ?? 0;
 
   const { data: customers = [] } = useQuery<any[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
   const customerName = (id?: string) => customers.find((c) => c.id === id)?.name ?? `${id?.slice(0, 8)}…`;
@@ -119,6 +124,7 @@ export default function InvoicesPage() {
       </div>
 
       <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No invoices yet. Create your first invoice to get paid." />
+      <PaginationControls page={page} limit={limit} total={invoicesTotal} onPage={setPage} />
 
       {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
       {editId && <CreateInvoiceModal editId={editId} onClose={() => setEditId(null)} />}

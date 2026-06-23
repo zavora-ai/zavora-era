@@ -122,13 +122,16 @@ function CreateItemModal({ onClose }: { onClose: () => void }) {
     reorder_quantity: '',
   });
 
+  const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: (data: any) => createInventoryItem(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['inventory'] }); onClose(); },
+    onError: (e: any) => setError(e?.response?.data?.error || 'Failed to create item.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     mutation.mutate({
       sku: form.sku,
       description: form.description,
@@ -144,6 +147,9 @@ function CreateItemModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open={true} onClose={onClose} title="Add Inventory Item" size="lg">
       <form onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">SKU *</label>

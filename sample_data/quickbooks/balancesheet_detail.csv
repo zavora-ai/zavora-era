@@ -1,0 +1,258 @@
+Craig's Design and Landscaping Services,,,,,,,,,,
+Balance Sheet Detail,,,,,,,,,,
+"January 1, 2015-December 31, 2026",,,,,,,,,,
+
+,Transaction date,Transaction type,Num,Name,Description,Split account,Debit,Credit,Amount,Balance
+Assets,,,,,,,,,,
+Checking,,,,,,,,,,
+,01/12/2026,Deposit,,,Opening Balance,Opening Balance Equity,"5,000.00",,"5,000.00","5,000.00"
+,02/23/2026,Bill Payment (Check),10,Robertson & Associates,,Accounts Payable (A/P),,300.00,-300.00,"4,700.00"
+,03/03/2026,Payment,1053,Bill's Windsurf Shop,,Accounts Receivable (A/R),175.00,,175.00,"4,875.00"
+,03/17/2026,Expense,12,Robertson & Associates,,Accounting,,250.00,-250.00,"4,625.00"
+,04/08/2026,Check,4,Chin's Gas and Oil,,Fuel,,54.55,-54.55,"4,570.45"
+,04/14/2026,Sales Tax Payment,,,Q1 Payment,,,38.40,-38.40,"4,532.05"
+,04/14/2026,Sales Tax Payment,,,Q1 Payment,,,38.50,-38.50,"4,493.55"
+,04/17/2026,Expense,9,Tania's Nursery,,Plants and Soil,,89.09,-89.09,"4,404.46"
+,04/17/2026,Check,12,Books by Bessie,,Bookkeeper,,55.00,-55.00,"4,349.46"
+,04/23/2026,Check,5,Chin's Gas and Oil,,Fuel,,62.01,-62.01,"4,287.45"
+,04/24/2026,Expense,15,Tania's Nursery,,Job Expenses,,108.09,-108.09,"4,179.36"
+,05/03/2026,Payment,5664,Freeman Sporting Goods:55 Twin Lane,,Accounts Receivable (A/R),86.40,,86.40,"4,265.76"
+,05/03/2026,Sales Receipt,1008,Kate Whelan,,Design income,225.00,,225.00,"4,490.76"
+,05/05/2026,Payment,,Amy's Bird Sanctuary,Amy claims the pest control did not occur,Accounts Receivable (A/R),105.00,,105.00,"4,595.76"
+,05/07/2026,Bill Payment (Check),7,Hicks Hardware,,Accounts Payable (A/P),,250.00,-250.00,"4,345.76"
+,05/10/2026,Expense,8,Hicks Hardware,,Plants and Soil,,24.36,-24.36,"4,321.40"
+,05/19/2026,Check,,Tony Rondonuwu,,Lawyer,,100.00,-100.00,"4,221.40"
+,05/19/2026,Cash Expense,,Bob's Burger Joint,,Meals and Entertainment,,5.66,-5.66,"4,215.74"
+,05/19/2026,Cash Expense,,Squeaky Kleen Car Wash,,Automobile,,19.99,-19.99,"4,195.75"
+,05/20/2026,Cash Expense,,Chin's Gas and Oil,,Fuel,,52.14,-52.14,"4,143.61"
+,05/20/2026,Check,70,Chin's Gas and Oil,,Maintenance and Repair,,185.00,-185.00,"3,958.61"
+,05/21/2026,Payment,1886,Cool Cars,,Accounts Receivable (A/R),694.00,,694.00,"4,652.61"
+,05/21/2026,Bill Payment (Check),11,Hall Properties,,Accounts Payable (A/P),,900.00,-900.00,"3,752.61"
+,05/22/2026,Check,2,Mahoney Mugs,,Office Expenses,,18.08,-18.08,"3,734.53"
+,05/22/2026,Expense,13,Hicks Hardware,,Sprinklers and Drip Systems,,215.66,-215.66,"3,518.87"
+,05/23/2026,Sales Receipt,1003,Dylan Sollfrank,,Design income,337.50,,337.50,"3,856.37"
+,05/24/2026,Cash Expense,,Bob's Burger Joint,,Meals and Entertainment,,3.86,-3.86,"3,852.51"
+,05/25/2026,Bill Payment (Check),1,Brosnahan Insurance Agency,,Accounts Payable (A/P),,"2,000.00","-2,000.00","1,852.51"
+,05/26/2026,Payment,,Freeman Sporting Goods:55 Twin Lane,,Accounts Receivable (A/R),50.00,,50.00,"1,902.51"
+,05/26/2026,Bill Payment (Check),3,Books by Bessie,,Accounts Payable (A/P),,75.00,-75.00,"1,827.51"
+,05/26/2026,Payment,2064,Travis Waldron,,Accounts Receivable (A/R),103.55,,103.55,"1,931.06"
+,05/26/2026,Deposit,,,,,218.75,,218.75,"2,149.81"
+,05/26/2026,Refund,1020,Pye's Cakes,,Pest Control Services,,87.50,-87.50,"2,062.31"
+,05/26/2026,Check,Debit,Squeaky Kleen Car Wash,,Automobile,,19.99,-19.99,"2,042.32"
+,05/27/2026,Bill Payment (Check),6,PG&E,,Accounts Payable (A/P),,114.09,-114.09,"1,928.23"
+,05/27/2026,Bill Payment (Check),45,Tim Philip Masonry,,Accounts Payable (A/P),,666.00,-666.00,"1,262.23"
+,05/27/2026,Expense,108,Tania's Nursery,,Job Expenses,,46.98,-46.98,"1,215.25"
+,05/27/2026,Deposit,,,,,408.00,,408.00,"1,623.25"
+,05/27/2026,Cash Expense,,Chin's Gas and Oil,,Fuel,,63.15,-63.15,"1,560.10"
+,05/28/2026,Check,75,Hicks Hardware,,,,228.75,-228.75,"1,331.35"
+,05/28/2026,Deposit,,,,,868.15,,868.15,"2,199.50"
+,05/28/2026,Expense,76,Pam Seitz,,Legal & Professional Fees,,75.00,-75.00,"2,124.50"
+,05/31/2026,Cash Expense,,Tania's Nursery,,Plants and Soil,,23.50,-23.50,"2,101.00"
+,06/11/2026,Credit Card Credit,,,,Mastercard,,900.00,-900.00,"1,201.00"
+Total for Checking,,,,,,,,,"$1,201.00",
+Savings,,,,,,,,,,
+,05/24/2026,Deposit,,,Opening Balance,Opening Balance Equity,600.00,,600.00,600.00
+,05/28/2026,Deposit,,,Money to savings,Checking,200.00,,200.00,800.00
+Total for Savings,,,,,,,,,$800.00,
+Accounts Receivable (A/R),,,,,,,,,,
+,02/10/2026,Invoice,1002,Bill's Windsurf Shop,,,175.00,,175.00,175.00
+,02/10/2026,Invoice,1030,Freeman Sporting Goods:0969 Ocean View Road,,,226.75,,226.75,401.75
+,03/03/2026,Payment,1053,Bill's Windsurf Shop,,Checking,,175.00,-175.00,226.75
+,03/03/2026,Payment,,Freeman Sporting Goods:0969 Ocean View Road,,Undeposited Funds,,226.75,-226.75,$0.00
+,03/13/2026,Invoice,1031,Freeman Sporting Goods:0969 Ocean View Road,,,387.00,,387.00,387.00
+,03/20/2026,Invoice,1024,Red Rock Diner,,,156.00,,156.00,543.00
+,04/09/2026,Invoice,1016,Kookies by Kathy,,Landscaping Services,75.00,,75.00,618.00
+,04/10/2026,Invoice,1025,Amy's Bird Sanctuary,,,205.00,,205.00,823.00
+,04/10/2026,Invoice,1027,Bill's Windsurf Shop,,,85.00,,85.00,908.00
+,04/10/2026,Invoice,1028,Freeman Sporting Goods:55 Twin Lane,,,81.00,,81.00,989.00
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,,460.40,,460.40,"1,449.40"
+,04/19/2026,Invoice,1006,Freeman Sporting Goods:55 Twin Lane,,,86.40,,86.40,"1,535.80"
+,05/01/2026,Payment,,Dukes Basketball Camp,,Undeposited Funds,,460.40,-460.40,"1,075.40"
+,05/03/2026,Payment,5664,Freeman Sporting Goods:55 Twin Lane,,Checking,,86.40,-86.40,989.00
+,05/03/2026,Invoice,1007,John Melton,,Design income,750.00,,750.00,"1,739.00"
+,05/05/2026,Payment,,Amy's Bird Sanctuary,,Checking,,105.00,-105.00,"1,634.00"
+,05/06/2026,Invoice,1021,Amy's Bird Sanctuary,,,459.00,,459.00,"2,093.00"
+,05/06/2026,Invoice,1022,Jeff's Jalopies,,,81.00,,81.00,"2,174.00"
+,05/11/2026,Credit Memo,1026,Amy's Bird Sanctuary,,Pest Control Services,,100.00,-100.00,"2,074.00"
+,05/11/2026,Payment,,Amy's Bird Sanctuary,,,$0.00,,$0.00,"2,074.00"
+,05/12/2026,Invoice,1017,Sushi by Katsuyuki,,Landscaping Services,80.00,,80.00,"2,154.00"
+,05/14/2026,Invoice,1012,Shara Barnett:Barnett Design,,,274.50,,274.50,"2,428.50"
+,05/16/2026,Invoice,1004,Cool Cars,,,"2,369.52",,"2,369.52","4,798.02"
+,05/16/2026,Invoice,1013,Travis Waldron,,,81.00,,81.00,"4,879.02"
+,05/19/2026,Invoice,1005,Freeman Sporting Goods:55 Twin Lane,,,54.00,,54.00,"4,933.02"
+,05/19/2026,Invoice,1018,Sushi by Katsuyuki,,Landscaping Services,80.00,,80.00,"5,013.02"
+,05/21/2026,Payment,1886,Cool Cars,,Checking,,694.00,-694.00,"4,319.02"
+,05/24/2026,Payment,,Sushi by Katsuyuki,,Undeposited Funds,,80.00,-80.00,"4,239.02"
+,05/25/2026,Invoice,1001,Amy's Bird Sanctuary,"Front yard, hedges, and sidewalks",,108.00,,108.00,"4,347.02"
+,05/25/2026,Invoice,1009,Travis Waldron,,Services,103.55,,103.55,"4,450.57"
+,05/25/2026,Invoice,1032,Travis Waldron,,,414.72,,414.72,"4,865.29"
+,05/26/2026,Payment,6552,Amy's Bird Sanctuary,,Undeposited Funds,,108.00,-108.00,"4,757.29"
+,05/26/2026,Payment,5421,John Melton,,Undeposited Funds,,300.00,-300.00,"4,457.29"
+,05/26/2026,Payment,,Freeman Sporting Goods:55 Twin Lane,,Checking,,50.00,-50.00,"4,407.29"
+,05/26/2026,Invoice,1010,Weiskopf Consulting,,Design income,375.00,,375.00,"4,782.29"
+,05/26/2026,Payment,2064,Travis Waldron,,Checking,,103.55,-103.55,"4,678.74"
+,05/26/2026,Invoice,1015,Paulsen Medical Supplies,,,954.75,,954.75,"5,633.49"
+,05/26/2026,Invoice,1019,Sushi by Katsuyuki,,Landscaping Services,80.00,,80.00,"5,713.49"
+,05/26/2026,Invoice,1023,Red Rock Diner,,Pest Control Services,70.00,,70.00,"5,783.49"
+,05/27/2026,Payment,,Travis Waldron,,Undeposited Funds,,81.00,-81.00,"5,702.49"
+,05/27/2026,Payment,,Amy's Bird Sanctuary,,Undeposited Funds,,220.00,-220.00,"5,482.49"
+,05/27/2026,Invoice,1033,Geeta Kalapatapu,,,629.10,,629.10,"6,111.59"
+,05/27/2026,Invoice,1034,Rondonuwu Fruit and Vegi,,,78.60,,78.60,"6,190.19"
+,05/28/2026,Invoice,1035,Mark Cho,,,314.28,,314.28,"6,504.47"
+,05/28/2026,Payment,,Cool Cars,,Undeposited Funds,,"1,675.52","-1,675.52","4,828.95"
+,05/28/2026,Payment,,Freeman Sporting Goods:0969 Ocean View Road,,Undeposited Funds,,387.00,-387.00,"4,441.95"
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,,,477.50,,477.50,"4,919.45"
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,,362.07,,362.07,"5,281.52"
+Total for Accounts Receivable (A/R),,,,,,,,,"$5,281.52",
+Inventory Asset,,,,,,,,,,
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Pump,Opening Balance Equity,,,,
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Pump,Opening Balance Equity,160.00,,160.00,160.00
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Heads,Opening Balance Equity,,,,160.00
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Heads,Opening Balance Equity,7.50,,7.50,167.50
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Pipes,Opening Balance Equity,,,,167.50
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Pipes,Opening Balance Equity,25.00,,25.00,192.50
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Rock Fountain,Opening Balance Equity,,,,192.50
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Rock Fountain,Opening Balance Equity,375.00,,375.00,567.50
+,05/28/2026,Check,75,Hicks Hardware,Rock Fountain,Checking,125.00,,125.00,692.50
+,05/28/2026,Check,75,Hicks Hardware,Sprinkler Heads,Checking,11.25,,11.25,703.75
+,05/28/2026,Check,75,Hicks Hardware,Sprinkler Pipes,Checking,62.50,,62.50,766.25
+,05/28/2026,Check,75,Hicks Hardware,Fountain Pump,Checking,30.00,,30.00,796.25
+,05/28/2026,Invoice,1035,Mark Cho,Rock Fountain,Accounts Receivable (A/R),,125.00,-125.00,671.25
+,05/28/2026,Invoice,1035,Mark Cho,Sprinkler Pipes,Accounts Receivable (A/R),,10.00,-10.00,661.25
+,05/28/2026,Bill,,Norton Lumber and Building Materials,Fountain Pump,Accounts Payable (A/P),80.00,,80.00,741.25
+,05/28/2026,Bill,,Norton Lumber and Building Materials,Rock Fountain,Accounts Payable (A/P),125.00,,125.00,866.25
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,Rock Fountain,Accounts Receivable (A/R),,125.00,-125.00,741.25
+,05/28/2026,Invoice,1036,Freeman Sporting Goods:0969 Ocean View Road,Fountain Pump,Accounts Receivable (A/R),,10.00,-10.00,731.25
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,Rock Fountain,Accounts Receivable (A/R),,125.00,-125.00,606.25
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,Fountain Pump,Accounts Receivable (A/R),,10.00,-10.00,596.25
+Total for Inventory Asset,,,,,,,,,$596.25,
+Undeposited Funds,,,,,,,,,,
+,03/03/2026,Payment,,Freeman Sporting Goods:0969 Ocean View Road,,Accounts Receivable (A/R),226.75,,226.75,226.75
+,05/01/2026,Payment,,Dukes Basketball Camp,,Accounts Receivable (A/R),460.40,,460.40,687.15
+,05/24/2026,Sales Receipt,1014,Diego Rodriguez,,Landscaping Services,140.00,,140.00,827.15
+,05/24/2026,Payment,,Sushi by Katsuyuki,,Accounts Receivable (A/R),80.00,,80.00,907.15
+,05/26/2026,Payment,6552,Amy's Bird Sanctuary,,Accounts Receivable (A/R),108.00,,108.00,"1,015.15"
+,05/26/2026,Payment,5421,John Melton,,Accounts Receivable (A/R),300.00,,300.00,"1,315.15"
+,05/26/2026,Sales Receipt,1011,Pye's Cakes,,,78.75,,78.75,"1,393.90"
+,05/26/2026,Deposit,,,,Checking,,140.00,-140.00,"1,253.90"
+,05/26/2026,Deposit,,,,Checking,,78.75,-78.75,"1,175.15"
+,05/27/2026,Payment,,Travis Waldron,,Accounts Receivable (A/R),81.00,,81.00,"1,256.15"
+,05/27/2026,Payment,,Amy's Bird Sanctuary,,Accounts Receivable (A/R),220.00,,220.00,"1,476.15"
+,05/27/2026,Deposit,,,,Checking,,108.00,-108.00,"1,368.15"
+,05/27/2026,Deposit,,,,Checking,,300.00,-300.00,"1,068.15"
+,05/28/2026,Payment,,Cool Cars,,Accounts Receivable (A/R),"1,675.52",,"1,675.52","2,743.67"
+,05/28/2026,Deposit,,,,Checking,,226.75,-226.75,"2,516.92"
+,05/28/2026,Deposit,,,,Checking,,460.40,-460.40,"2,056.52"
+,05/28/2026,Deposit,,,,Checking,,80.00,-80.00,"1,976.52"
+,05/28/2026,Deposit,,,,Checking,,81.00,-81.00,"1,895.52"
+,05/28/2026,Deposit,,,,Checking,,220.00,-220.00,"1,675.52"
+,05/28/2026,Payment,,Freeman Sporting Goods:0969 Ocean View Road,,Accounts Receivable (A/R),387.00,,387.00,"2,062.52"
+Total for Undeposited Funds,,,,,,,,,"$2,062.52",
+Truck,,,,,,,,,,
+Original Cost,,,,,,,,,,
+,05/12/2026,Journal Entry,,,Opening Balance,,"13,495.00",,"13,495.00","13,495.00"
+Total for Original Cost,,,,,,,,,"$13,495.00",
+Total for Truck with sub-accounts,,,,,,,,,"$13,495.00",
+Total for Assets with sub-accounts,,,,,,,,,"$23,436.29","$23,436.29"
+Liabilities and Equity,,,,,,,,,,
+Liabilities,,,,,,,,,,
+Accounts Payable (A/P),,,,,,,,,,
+,01/24/2026,Bill,,Robertson & Associates,Lawyer fees related to Startup,Lawyer,,300.00,300.00,300.00
+,02/23/2026,Bill Payment (Check),10,Robertson & Associates,,Checking,300.00,,-300.00,$0.00
+,04/12/2026,Bill,,Cal Telephone,,Telephone,,56.50,56.50,56.50
+,04/13/2026,Bill,,PG&E,,Gas and Electric,,86.44,86.44,142.94
+,04/21/2026,Bill,,Hicks Hardware,Opening Balance,Miscellaneous,,250.00,250.00,392.94
+,05/07/2026,Bill Payment (Check),7,Hicks Hardware,,Checking,250.00,,-250.00,142.94
+,05/12/2026,Bill,,Cal Telephone,,Telephone,,74.36,74.36,217.30
+,05/12/2026,Bill,,Hall Properties,,Rent or Lease,,900.00,900.00,"1,117.30"
+,05/12/2026,Bill,,PG&E,,Gas and Electric,,114.09,114.09,"1,231.39"
+,05/13/2026,Bill,,Tim Philip Masonry,Opening Balance,Miscellaneous,,666.00,666.00,"1,897.39"
+,05/14/2026,Bill,,Books by Bessie,,Accounting,,75.00,75.00,"1,972.39"
+,05/21/2026,Bill,,Brosnahan Insurance Agency,Opening Balance,Miscellaneous,,"2,000.00","2,000.00","3,972.39"
+,05/21/2026,Bill,,Brosnahan Insurance Agency,,Insurance,,241.23,241.23,"4,213.62"
+,05/21/2026,Bill Payment (Check),11,Hall Properties,,Checking,900.00,,-900.00,"3,313.62"
+,05/25/2026,Bill Payment (Check),1,Brosnahan Insurance Agency,,Checking,"2,000.00",,"-2,000.00","1,313.62"
+,05/25/2026,Bill,,Norton Lumber and Building Materials,,Decks and Patios,,103.55,103.55,"1,417.17"
+,05/26/2026,Bill Payment (Check),3,Books by Bessie,,Checking,75.00,,-75.00,"1,342.17"
+,05/26/2026,Bill,,Diego's Road Warrior Bodyshop,,Equipment Repairs,,755.00,755.00,"2,097.17"
+,05/26/2026,Bill Payment (Credit Card),1,Cal Telephone,,Mastercard,74.36,,-74.36,"2,022.81"
+,05/27/2026,Bill Payment (Check),6,PG&E,,Checking,114.09,,-114.09,"1,908.72"
+,05/27/2026,Bill Payment (Check),45,Tim Philip Masonry,,Checking,666.00,,-666.00,"1,242.72"
+,05/28/2026,Bill,,Robertson & Associates,,Accounting,,315.00,315.00,"1,557.72"
+,05/28/2026,Bill Payment (Credit Card),1,Cal Telephone,,Mastercard,56.50,,-56.50,"1,501.22"
+,05/28/2026,Bill Payment (Credit Card),1,Norton Lumber and Building Materials,,Mastercard,103.55,,-103.55,"1,397.67"
+,05/28/2026,Bill,,Norton Lumber and Building Materials,,,,205.00,205.00,"1,602.67"
+Total for Accounts Payable (A/P),,,,,,,,,"$1,602.67",
+Mastercard,,,,,,,,,,
+,03/24/2026,Expense,3,Tania's Nursery,,Plants and Soil,,158.08,158.08,158.08
+,05/13/2026,Expense,1,Chin's Gas and Oil,,Fuel,,65.00,65.00,223.08
+,05/16/2026,Expense,1,Hicks Hardware,,Decks and Patios,,88.09,88.09,311.17
+,05/18/2026,Expense,22,Tania's Nursery,,Plants and Soil,,54.92,54.92,366.09
+,05/22/2026,Expense,50,Tania's Nursery,,Plants and Soil,,82.45,82.45,448.54
+,05/26/2026,Bill Payment (Credit Card),1,Cal Telephone,,Accounts Payable (A/P),,74.36,74.36,522.90
+,05/26/2026,Expense,1,Ellis Equipment Rental,,Equipment Rental,,112.00,112.00,634.90
+,05/26/2026,Expense,,Lee Advertising,,Advertising,,74.86,74.86,709.76
+,05/28/2026,Bill Payment (Credit Card),1,Cal Telephone,,Accounts Payable (A/P),,56.50,56.50,766.26
+,05/28/2026,Bill Payment (Credit Card),1,Norton Lumber and Building Materials,,Accounts Payable (A/P),,103.55,103.55,869.81
+,05/28/2026,Expense,1,Chin's Gas and Oil,,Fuel,,52.56,52.56,922.37
+,06/02/2026,Credit Card Expense,,Bob's Burger Joint,Bought lunch for crew 102,Meals and Entertainment,,18.97,18.97,941.34
+,06/02/2026,Credit Card Expense,,Squeaky Kleen Car Wash,,Automobile,,19.99,19.99,961.33
+,06/03/2026,Credit Card Expense,,Hicks Hardware,,Decks and Patios,,42.40,42.40,"1,003.73"
+,06/09/2026,Credit Card Expense,,Squeaky Kleen Car Wash,,Automobile,,19.99,19.99,"1,023.72"
+,06/11/2026,Credit Card Credit,,,Monthly Payment,Checking,900.00,,-900.00,123.72
+,06/22/2026,Credit Card Expense,,,,Automobile,,34.00,34.00,157.72
+Total for Mastercard,,,,,,,,,$157.72,
+Arizona Dept. of Revenue Payable,,,,,,,,,,
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,Accounts Receivable (A/R),,29.96,29.96,29.96
+,04/10/2026,Invoice,1029,Dukes Basketball Camp,,Accounts Receivable (A/R),,8.44,8.44,38.40
+,04/14/2026,Sales Tax Payment,,,Q1 Payment,,38.40,,-38.40,$0.00
+Total for Arizona Dept. of Revenue Payable,,,,,,,,,$0.00,
+Board of Equalization Payable,,,,,,,,,,
+,02/10/2026,Invoice,1030,Freeman Sporting Goods:0969 Ocean View Road,,Accounts Receivable (A/R),,10.50,10.50,10.50
+,03/13/2026,Invoice,1031,Freeman Sporting Goods:0969 Ocean View Road,,Accounts Receivable (A/R),,22.00,22.00,32.50
+,04/10/2026,Invoice,1028,Freeman Sporting Goods:55 Twin Lane,,Accounts Receivable (A/R),,6.00,6.00,38.50
+,04/14/2026,Sales Tax Payment,,,Q1 Payment,,38.50,,-38.50,$0.00
+,04/19/2026,Invoice,1006,Freeman Sporting Goods:55 Twin Lane,,Accounts Receivable (A/R),,6.40,6.40,6.40
+,05/06/2026,Invoice,1021,Amy's Bird Sanctuary,,Accounts Receivable (A/R),,34.00,34.00,40.40
+,05/06/2026,Invoice,1022,Jeff's Jalopies,,Accounts Receivable (A/R),,6.00,6.00,46.40
+,05/16/2026,Invoice,1004,Cool Cars,,Accounts Receivable (A/R),,175.52,175.52,221.92
+,05/16/2026,Invoice,1013,Travis Waldron,,Accounts Receivable (A/R),,6.00,6.00,227.92
+,05/19/2026,Invoice,1005,Freeman Sporting Goods:55 Twin Lane,,Accounts Receivable (A/R),,4.00,4.00,231.92
+,05/25/2026,Invoice,1001,Amy's Bird Sanctuary,,Accounts Receivable (A/R),,8.00,8.00,239.92
+,05/25/2026,Invoice,1032,Travis Waldron,,Accounts Receivable (A/R),,30.72,30.72,270.64
+,05/27/2026,Invoice,1033,Geeta Kalapatapu,,Accounts Receivable (A/R),,46.60,46.60,317.24
+,05/27/2026,Invoice,1034,Rondonuwu Fruit and Vegi,,Accounts Receivable (A/R),,3.60,3.60,320.84
+,05/28/2026,Invoice,1035,Mark Cho,,Accounts Receivable (A/R),,23.28,23.28,344.12
+,05/28/2026,Invoice,1037,Sonnenschein Family Store,,Accounts Receivable (A/R),,26.82,26.82,370.94
+Total for Board of Equalization Payable,,,,,,,,,$370.94,
+Loan Payable,,,,,,,,,,
+,05/25/2026,Journal Entry,,,Opening Balance,,,"4,000.00","4,000.00","4,000.00"
+Total for Loan Payable,,,,,,,,,"$4,000.00",
+Notes Payable,,,,,,,,,,
+,05/25/2026,Journal Entry,,,Opening Balance,,,"25,000.00","25,000.00","25,000.00"
+Total for Notes Payable,,,,,,,,,"$25,000.00",
+Total for Liabilities with sub-accounts,,,,,,,,,"$31,131.33","$31,131.33"
+Equity,,,,,,,,,,
+Opening Balance Equity,,,,,,,,,,
+,01/12/2026,Deposit,,,,Checking,,"5,000.00","5,000.00","5,000.00"
+,05/12/2026,Journal Entry,,,Opening Balance,,,"13,495.00","13,495.00","18,495.00"
+,05/24/2026,Deposit,,,,Savings,,600.00,600.00,"19,095.00"
+,05/25/2026,Journal Entry,,,Opening Balance,,"4,000.00",,"-4,000.00","15,095.00"
+,05/25/2026,Journal Entry,,,Opening Balance,,"25,000.00",,"-25,000.00","-9,905.00"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Pump,Inventory Asset,,,,"-9,905.00"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Pump,Opening Balance Equity,,160.00,160.00,"-9,745.00"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Heads,Inventory Asset,,,,"-9,745.00"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Heads,Opening Balance Equity,,7.50,7.50,"-9,737.50"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Pipes,Inventory Asset,,,,"-9,737.50"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Sprinkler Pipes,Opening Balance Equity,,25.00,25.00,"-9,712.50"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Rock Fountain,Inventory Asset,,,,"-9,712.50"
+,05/28/2026,Inventory Qty Adjust,START,,Opening inventory for Rock Fountain,Opening Balance Equity,,375.00,375.00,"-9,337.50"
+Total for Opening Balance Equity,,,,,,,,,"-$9,337.50",
+Retained Earnings,,,,,,,,,,$0.00
+,Net Income,,,,,,,,"1,642.46","1,642.46"
+Total for Equity with sub-accounts,,,,,,,,,"-$7,695.04","-$7,695.04"
+Total for Liabilities and Equity with sub-accounts,,,,,,,,,"$23,436.29","$23,436.29"
+
+
+
+"Accrual Basis Tuesday, June 23, 2026 04:05 AM GMTZ",,,,,,,,,,

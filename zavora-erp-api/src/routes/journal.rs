@@ -6,20 +6,23 @@ use crate::AppState;
 use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
 use super::err_response;
 use zavora_erp_core::ledger::journal::*;
-use zavora_erp_core::{AgentOrUserId, PostingRequest};
+use zavora_erp_core::AgentOrUserId;
 
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE entity_id = $1")
+        .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, JournalEntryRow>(
-        "SELECT * FROM journal_entries WHERE entity_id = $1 ORDER BY date DESC, number DESC LIMIT 100",
+        "SELECT * FROM journal_entries WHERE entity_id = $1 ORDER BY date DESC, number DESC LIMIT $2 OFFSET $3",
     )
-    .bind(ctx.entity_id)
+    .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }
@@ -61,12 +64,33 @@ pub async fn create(
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_POST_JOURNAL, &ctx, "post journal entry").map_err(err_response)?;
-    let posting_req = PostingRequest {
-        entry: req,
-        posted_by: AgentOrUserId::User(ctx.user_id),
-    };
-    match state.engine.post_from_agent(posting_req).await {
-        Ok(result) => Ok(Json(serde_json::to_value(result).unwrap_or_default())),
+
+    // Validate, resolve the period, and post against the CALLER's tenant. The
+    // engine's `post_from_agent` is hardwired to the startup tenant's entity_id,
+    // so it must not be used on the multi-tenant HTTP path.
+    let validation = zavora_erp_core::services::journal::validate_entry(&state.engine, ctx.entity_id, &req)
+        .await
+        .map_err(err_response)?;
+    if !validation.is_valid {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: validation.errors.join("; "),
+        }));
+    }
+
+    let period = zavora_erp_core::services::periods::period_for_date(&state.engine, ctx.entity_id, req.date)
+        .await
+        .map_err(err_response)?;
+    if !period.allows_posting() {
+        return Err(err_response(zavora_erp_core::ErpError::PeriodClosed { period_id: period.id, date: req.date }));
+    }
+
+    match zavora_erp_core::services::journal::create_and_post(
+        &state.engine, ctx.entity_id, req, period.id, AgentOrUserId::User(ctx.user_id),
+    ).await {
+        Ok(entry) => Ok(Json(serde_json::json!({
+            "entry": serde_json::to_value(&entry).unwrap_or_default(),
+            "validation_report": serde_json::to_value(&validation).unwrap_or_default(),
+        }))),
         Err(e) => Err(err_response(e)),
     }
 }
