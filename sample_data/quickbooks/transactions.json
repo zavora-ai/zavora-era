@@ -1,0 +1,4848 @@
+[
+ {
+  "txn_type": "Invoice",
+  "num": "1007",
+  "date": "05/03/2026",
+  "name": "John Melton",
+  "pnl_lines": [
+   {
+    "date": "05/03/2026",
+    "txn_type": "Invoice",
+    "num": "1007",
+    "name": "John Melton",
+    "description": "Custom Design",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 750.0,
+    "account": "Design income",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/03/2026",
+    "txn_type": "Invoice",
+    "num": "1007",
+    "name": "John Melton",
+    "description": "750.00",
+    "split": "",
+    "amount": 750.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Sales Receipt",
+  "num": "1008",
+  "date": "05/03/2026",
+  "name": "Kate Whelan",
+  "pnl_lines": [
+   {
+    "date": "05/03/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1008",
+    "name": "Kate Whelan",
+    "description": "Custom Design",
+    "split": "Checking",
+    "amount": 225.0,
+    "account": "Design income",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/03/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1008",
+    "name": "Kate Whelan",
+    "description": "225.00",
+    "split": "",
+    "amount": 225.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Sales Receipt",
+  "num": "1003",
+  "date": "05/23/2026",
+  "name": "Dylan Sollfrank",
+  "pnl_lines": [
+   {
+    "date": "05/23/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1003",
+    "name": "Dylan Sollfrank",
+    "description": "Custom Design",
+    "split": "Checking",
+    "amount": 337.5,
+    "account": "Design income",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/23/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1003",
+    "name": "Dylan Sollfrank",
+    "description": "337.50",
+    "split": "",
+    "amount": 337.5,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1010",
+  "date": "05/26/2026",
+  "name": "Weiskopf Consulting",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1010",
+    "name": "Weiskopf Consulting",
+    "description": "Custom Design",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 375.0,
+    "account": "Design income",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1010",
+    "name": "Weiskopf Consulting",
+    "description": "375.00",
+    "split": "",
+    "amount": 375.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1015",
+  "date": "05/26/2026",
+  "name": "Paulsen Medical Supplies",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "Custom Design",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 300.0,
+    "account": "Design income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "Discount",
+    "split": "Accounts Receivable (A/R)",
+    "amount": -50.25,
+    "account": "Discounts given",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "Garden Rocks",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 180.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "Installation of landscape design",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 250.0,
+    "account": "Installation",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1015",
+    "name": "Paulsen Medical Supplies",
+    "description": "954.75",
+    "split": "",
+    "amount": 954.75,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1033",
+  "date": "05/27/2026",
+  "name": "Geeta Kalapatapu",
+  "pnl_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1033",
+    "name": "Geeta Kalapatapu",
+    "description": "Custom Design",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 262.5,
+    "account": "Design income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1033",
+    "name": "Geeta Kalapatapu",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1033",
+    "name": "Geeta Kalapatapu",
+    "description": "Fountain Pump",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 45.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1033",
+    "name": "Geeta Kalapatapu",
+    "description": "629.10",
+    "split": "",
+    "amount": 629.1,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1033",
+    "name": "Geeta Kalapatapu",
+    "description": "",
+    "split": "46.60",
+    "amount": 46.6,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1012",
+  "date": "05/14/2026",
+  "name": "Shara Barnett:Barnett Design",
+  "pnl_lines": [
+   {
+    "date": "05/14/2026",
+    "txn_type": "Invoice",
+    "num": "1012",
+    "name": "Shara Barnett:Barnett Design",
+    "description": "Discount",
+    "split": "Accounts Receivable (A/R)",
+    "amount": -30.5,
+    "account": "Discounts given",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/14/2026",
+    "txn_type": "Invoice",
+    "num": "1012",
+    "name": "Shara Barnett:Barnett Design",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/14/2026",
+    "txn_type": "Invoice",
+    "num": "1012",
+    "name": "Shara Barnett:Barnett Design",
+    "description": "Sprinkler Heads",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 30.0,
+    "account": "Sprinklers and Drip Systems",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/14/2026",
+    "txn_type": "Invoice",
+    "num": "1012",
+    "name": "Shara Barnett:Barnett Design",
+    "description": "274.50",
+    "split": "",
+    "amount": 274.5,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Sales Receipt",
+  "num": "1011",
+  "date": "05/26/2026",
+  "name": "Pye's Cakes",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1011",
+    "name": "Pye's Cakes",
+    "description": "Discount",
+    "split": "Undeposited Funds",
+    "amount": -8.75,
+    "account": "Discounts given",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1011",
+    "name": "Pye's Cakes",
+    "description": "Pest Control Services",
+    "split": "Undeposited Funds",
+    "amount": 87.5,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1011",
+    "name": "Pye's Cakes",
+    "description": "78.75",
+    "split": "",
+    "amount": 78.75,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1031",
+  "date": "03/13/2026",
+  "name": "Freeman Sporting Goods:0969 Ocean View Road",
+  "pnl_lines": [
+   {
+    "date": "03/13/2026",
+    "txn_type": "Invoice",
+    "num": "1031",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "03/13/2026",
+    "txn_type": "Invoice",
+    "num": "1031",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 90.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "03/13/2026",
+    "txn_type": "Invoice",
+    "num": "1031",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "387.00",
+    "split": "",
+    "amount": 387.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "03/13/2026",
+    "txn_type": "Invoice",
+    "num": "1031",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "22.00",
+    "amount": 22.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1024",
+  "date": "03/20/2026",
+  "name": "Red Rock Diner",
+  "pnl_lines": [
+   {
+    "date": "03/20/2026",
+    "txn_type": "Invoice",
+    "num": "1024",
+    "name": "Red Rock Diner",
+    "description": "Garden Rocks",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 48.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "03/20/2026",
+    "txn_type": "Invoice",
+    "num": "1024",
+    "name": "Red Rock Diner",
+    "description": "Sprinkler Pipes",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 48.0,
+    "account": "Sprinklers and Drip Systems",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "03/20/2026",
+    "txn_type": "Invoice",
+    "num": "1024",
+    "name": "Red Rock Diner",
+    "description": "Sprinkler Pipes",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 60.0,
+    "account": "Sprinklers and Drip Systems",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "03/20/2026",
+    "txn_type": "Invoice",
+    "num": "1024",
+    "name": "Red Rock Diner",
+    "description": "156.00",
+    "split": "",
+    "amount": 156.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1029",
+  "date": "04/10/2026",
+  "name": "Dukes Basketball Camp",
+  "pnl_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "Concrete for fountain installation",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 75.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "Garden Rocks",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 72.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "460.40",
+    "split": "",
+    "amount": 460.4,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "",
+    "split": "29.96",
+    "amount": 29.96,
+    "account": "Arizona Dept. of Revenue Payable",
+    "ztype": "Liability"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1029",
+    "name": "Dukes Basketball Camp",
+    "description": "",
+    "split": "8.44",
+    "amount": 8.44,
+    "account": "Arizona Dept. of Revenue Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1021",
+  "date": "05/06/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1021",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1021",
+    "name": "Amy's Bird Sanctuary",
+    "description": "2 cubic ft. bag",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 150.0,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1021",
+    "name": "Amy's Bird Sanctuary",
+    "description": "459.00",
+    "split": "",
+    "amount": 459.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1021",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "34.00",
+    "amount": 34.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1032",
+  "date": "05/25/2026",
+  "name": "Travis Waldron",
+  "pnl_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1032",
+    "name": "Travis Waldron",
+    "description": "Garden Rocks",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 84.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1032",
+    "name": "Travis Waldron",
+    "description": "Sod",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 300.0,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1032",
+    "name": "Travis Waldron",
+    "description": "414.72",
+    "split": "",
+    "amount": 414.72,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1032",
+    "name": "Travis Waldron",
+    "description": "",
+    "split": "30.72",
+    "amount": 30.72,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1034",
+  "date": "05/27/2026",
+  "name": "Rondonuwu Fruit and Vegi",
+  "pnl_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1034",
+    "name": "Rondonuwu Fruit and Vegi",
+    "description": "Garden Lighting",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 45.0,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1034",
+    "name": "Rondonuwu Fruit and Vegi",
+    "description": "Tree and Shrub Trimming",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 30.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1034",
+    "name": "Rondonuwu Fruit and Vegi",
+    "description": "78.60",
+    "split": "",
+    "amount": 78.6,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Invoice",
+    "num": "1034",
+    "name": "Rondonuwu Fruit and Vegi",
+    "description": "",
+    "split": "3.60",
+    "amount": 3.6,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1037",
+  "date": "05/28/2026",
+  "name": "Sonnenschein Family Store",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "Concrete for fountain installation",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 47.5,
+    "account": "Fountains and Garden Lighting",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "Fountain Pump",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 12.75,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 125.0,
+    "account": null,
+    "ztype": "Expense"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "Fountain Pump",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 10.0,
+    "account": null,
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "362.07",
+    "split": "",
+    "amount": 362.07,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "",
+    "split": "125.00",
+    "amount": -125.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "",
+    "split": "10.00",
+    "amount": -10.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1037",
+    "name": "Sonnenschein Family Store",
+    "description": "",
+    "split": "26.82",
+    "amount": 26.82,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1030",
+  "date": "02/10/2026",
+  "name": "Freeman Sporting Goods:0969 Ocean View Road",
+  "pnl_lines": [
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1030",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Sod",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 131.25,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1030",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1030",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 35.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1030",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "226.75",
+    "split": "",
+    "amount": 226.75,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1030",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "10.50",
+    "amount": 10.5,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "8",
+  "date": "05/10/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [
+   {
+    "date": "05/10/2026",
+    "txn_type": "Expense",
+    "num": "8",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "Checking",
+    "amount": -24.36,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/10/2026",
+    "txn_type": "Expense",
+    "num": "8",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "24.36",
+    "amount": -24.36,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1004",
+  "date": "05/16/2026",
+  "name": "Cool Cars",
+  "pnl_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "Sod",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 1750.0,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "Sprinkler Heads",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 20.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "Sprinkler Pipes",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 24.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "Installation Hours",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 400.0,
+    "account": "Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "2,369.52",
+    "split": "",
+    "amount": 2369.52,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1004",
+    "name": "Cool Cars",
+    "description": "",
+    "split": "175.52",
+    "amount": 175.52,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "22",
+  "date": "05/18/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "05/18/2026",
+    "txn_type": "Expense",
+    "num": "22",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Mastercard",
+    "amount": -54.92,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/18/2026",
+    "txn_type": "Expense",
+    "num": "22",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "54.92",
+    "amount": 54.92,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1036",
+  "date": "05/28/2026",
+  "name": "Freeman Sporting Goods:0969 Ocean View Road",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Sod",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "2 cubic ft. bag",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Plants and Soil",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 87.5,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Fountain Pump",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 15.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 125.0,
+    "account": null,
+    "ztype": "Expense"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "Fountain Pump",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 10.0,
+    "account": null,
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "477.50",
+    "split": "",
+    "amount": 477.5,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "125.00",
+    "amount": -125.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1036",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "10.00",
+    "amount": -10.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1025",
+  "date": "04/10/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1025",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Maintenance & Repair",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1025",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 120.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1025",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 35.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1025",
+    "name": "Amy's Bird Sanctuary",
+    "description": "205.00",
+    "split": "",
+    "amount": 205.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1002",
+  "date": "02/10/2026",
+  "name": "Bill's Windsurf Shop",
+  "pnl_lines": [
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1002",
+    "name": "Bill's Windsurf Shop",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 140.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1002",
+    "name": "Bill's Windsurf Shop",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 35.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "02/10/2026",
+    "txn_type": "Invoice",
+    "num": "1002",
+    "name": "Bill's Windsurf Shop",
+    "description": "175.00",
+    "split": "",
+    "amount": 175.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1016",
+  "date": "04/09/2026",
+  "name": "Kookies by Kathy",
+  "pnl_lines": [
+   {
+    "date": "04/09/2026",
+    "txn_type": "Invoice",
+    "num": "1016",
+    "name": "Kookies by Kathy",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 75.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/09/2026",
+    "txn_type": "Invoice",
+    "num": "1016",
+    "name": "Kookies by Kathy",
+    "description": "75.00",
+    "split": "",
+    "amount": 75.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1027",
+  "date": "04/10/2026",
+  "name": "Bill's Windsurf Shop",
+  "pnl_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1027",
+    "name": "Bill's Windsurf Shop",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1027",
+    "name": "Bill's Windsurf Shop",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 35.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1027",
+    "name": "Bill's Windsurf Shop",
+    "description": "85.00",
+    "split": "",
+    "amount": 85.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1028",
+  "date": "04/10/2026",
+  "name": "Freeman Sporting Goods:55 Twin Lane",
+  "pnl_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1028",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 75.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1028",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "81.00",
+    "split": "",
+    "amount": 81.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "04/10/2026",
+    "txn_type": "Invoice",
+    "num": "1028",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "",
+    "split": "6.00",
+    "amount": 6.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1006",
+  "date": "04/19/2026",
+  "name": "Freeman Sporting Goods:55 Twin Lane",
+  "pnl_lines": [
+   {
+    "date": "04/19/2026",
+    "txn_type": "Invoice",
+    "num": "1006",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 80.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/19/2026",
+    "txn_type": "Invoice",
+    "num": "1006",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "86.40",
+    "split": "",
+    "amount": 86.4,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "04/19/2026",
+    "txn_type": "Invoice",
+    "num": "1006",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "",
+    "split": "6.40",
+    "amount": 6.4,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1022",
+  "date": "05/06/2026",
+  "name": "Jeff's Jalopies",
+  "pnl_lines": [
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1022",
+    "name": "Jeff's Jalopies",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 75.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1022",
+    "name": "Jeff's Jalopies",
+    "description": "81.00",
+    "split": "",
+    "amount": 81.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/06/2026",
+    "txn_type": "Invoice",
+    "num": "1022",
+    "name": "Jeff's Jalopies",
+    "description": "",
+    "split": "6.00",
+    "amount": 6.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1017",
+  "date": "05/12/2026",
+  "name": "Sushi by Katsuyuki",
+  "pnl_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Invoice",
+    "num": "1017",
+    "name": "Sushi by Katsuyuki",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 80.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Invoice",
+    "num": "1017",
+    "name": "Sushi by Katsuyuki",
+    "description": "80.00",
+    "split": "",
+    "amount": 80.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1013",
+  "date": "05/16/2026",
+  "name": "Travis Waldron",
+  "pnl_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1013",
+    "name": "Travis Waldron",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 75.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1013",
+    "name": "Travis Waldron",
+    "description": "81.00",
+    "split": "",
+    "amount": 81.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/16/2026",
+    "txn_type": "Invoice",
+    "num": "1013",
+    "name": "Travis Waldron",
+    "description": "",
+    "split": "6.00",
+    "amount": 6.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1005",
+  "date": "05/19/2026",
+  "name": "Freeman Sporting Goods:55 Twin Lane",
+  "pnl_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Invoice",
+    "num": "1005",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 50.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Invoice",
+    "num": "1005",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "54.00",
+    "split": "",
+    "amount": 54.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/19/2026",
+    "txn_type": "Invoice",
+    "num": "1005",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "",
+    "split": "4.00",
+    "amount": 4.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1018",
+  "date": "05/19/2026",
+  "name": "Sushi by Katsuyuki",
+  "pnl_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Invoice",
+    "num": "1018",
+    "name": "Sushi by Katsuyuki",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 80.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Invoice",
+    "num": "1018",
+    "name": "Sushi by Katsuyuki",
+    "description": "80.00",
+    "split": "",
+    "amount": 80.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Sales Receipt",
+  "num": "1014",
+  "date": "05/24/2026",
+  "name": "Diego Rodriguez",
+  "pnl_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1014",
+    "name": "Diego Rodriguez",
+    "description": "Weekly Gardening Service",
+    "split": "Undeposited Funds",
+    "amount": 140.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Sales Receipt",
+    "num": "1014",
+    "name": "Diego Rodriguez",
+    "description": "140.00",
+    "split": "",
+    "amount": 140.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1001",
+  "date": "05/25/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1001",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 100.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1001",
+    "name": "Amy's Bird Sanctuary",
+    "description": "108.00",
+    "split": "",
+    "amount": 108.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1001",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "8.00",
+    "amount": 8.0,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1019",
+  "date": "05/26/2026",
+  "name": "Sushi by Katsuyuki",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1019",
+    "name": "Sushi by Katsuyuki",
+    "description": "Weekly Gardening Service",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 80.0,
+    "account": "Maintenance and Repair",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1019",
+    "name": "Sushi by Katsuyuki",
+    "description": "80.00",
+    "split": "",
+    "amount": 80.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Memo",
+  "num": "1026",
+  "date": "05/11/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [
+   {
+    "date": "05/11/2026",
+    "txn_type": "Credit Memo",
+    "num": "1026",
+    "name": "Amy's Bird Sanctuary",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": -100.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/11/2026",
+    "txn_type": "Credit Memo",
+    "num": "1026",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "100.00",
+    "amount": -100.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Refund",
+  "num": "1020",
+  "date": "05/26/2026",
+  "name": "Pye's Cakes",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Refund",
+    "num": "1020",
+    "name": "Pye's Cakes",
+    "description": "Refund - Pest control was ineffective",
+    "split": "Checking",
+    "amount": -87.5,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Refund",
+    "num": "1020",
+    "name": "Pye's Cakes",
+    "description": "",
+    "split": "87.50",
+    "amount": -87.5,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1023",
+  "date": "05/26/2026",
+  "name": "Red Rock Diner",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1023",
+    "name": "Red Rock Diner",
+    "description": "Pest Control Services",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 70.0,
+    "account": "Pest Control Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Invoice",
+    "num": "1023",
+    "name": "Red Rock Diner",
+    "description": "70.00",
+    "split": "",
+    "amount": 70.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1035",
+  "date": "05/28/2026",
+  "name": "Mark Cho",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 275.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "Sprinkler Pipes",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 16.0,
+    "account": "Sales of Product Income",
+    "ztype": "Revenue"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "Rock Fountain",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 125.0,
+    "account": null,
+    "ztype": "Expense"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "Sprinkler Pipes",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 10.0,
+    "account": null,
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "314.28",
+    "split": "",
+    "amount": 314.28,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "",
+    "split": "125.00",
+    "amount": -125.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "",
+    "split": "10.00",
+    "amount": -10.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Invoice",
+    "num": "1035",
+    "name": "Mark Cho",
+    "description": "",
+    "split": "23.28",
+    "amount": 23.28,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Invoice",
+  "num": "1009",
+  "date": "05/25/2026",
+  "name": "Travis Waldron",
+  "pnl_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1009",
+    "name": "Travis Waldron",
+    "description": "Lumber",
+    "split": "Accounts Receivable (A/R)",
+    "amount": 103.55,
+    "account": "Services",
+    "ztype": "Revenue"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Invoice",
+    "num": "1009",
+    "name": "Travis Waldron",
+    "description": "103.55",
+    "split": "",
+    "amount": 103.55,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "",
+  "date": "05/26/2026",
+  "name": "Lee Advertising",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Expense",
+    "num": "",
+    "name": "Lee Advertising",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 74.86,
+    "account": "Advertising",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Expense",
+    "num": "",
+    "name": "Lee Advertising",
+    "description": "",
+    "split": "74.86",
+    "amount": 74.86,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/19/2026",
+  "name": "Squeaky Kleen Car Wash",
+  "pnl_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "Checking",
+    "amount": 19.99,
+    "account": "Automobile",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "19.99",
+    "amount": -19.99,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "Debit",
+  "date": "05/26/2026",
+  "name": "Squeaky Kleen Car Wash",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Check",
+    "num": "Debit",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "Checking",
+    "amount": 19.99,
+    "account": "Automobile",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Check",
+    "num": "Debit",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "19.99",
+    "amount": -19.99,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Expense",
+  "num": "",
+  "date": "06/02/2026",
+  "name": "Squeaky Kleen Car Wash",
+  "pnl_lines": [
+   {
+    "date": "06/02/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 19.99,
+    "account": "Automobile",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "06/02/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "19.99",
+    "amount": 19.99,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Expense",
+  "num": "",
+  "date": "06/09/2026",
+  "name": "Squeaky Kleen Car Wash",
+  "pnl_lines": [
+   {
+    "date": "06/09/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 19.99,
+    "account": "Automobile",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "06/09/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Squeaky Kleen Car Wash",
+    "description": "",
+    "split": "19.99",
+    "amount": 19.99,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Expense",
+  "num": "",
+  "date": "06/22/2026",
+  "name": "",
+  "pnl_lines": [
+   {
+    "date": "06/22/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 34.0,
+    "account": "Automobile",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "06/22/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "34.00",
+    "amount": 34.0,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "4",
+  "date": "04/08/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "04/08/2026",
+    "txn_type": "Check",
+    "num": "4",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Checking",
+    "amount": 54.55,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/08/2026",
+    "txn_type": "Check",
+    "num": "4",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "54.55",
+    "amount": -54.55,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "5",
+  "date": "04/23/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "04/23/2026",
+    "txn_type": "Check",
+    "num": "5",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Checking",
+    "amount": 62.01,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/23/2026",
+    "txn_type": "Check",
+    "num": "5",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "62.01",
+    "amount": -62.01,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "1",
+  "date": "05/13/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "05/13/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 65.0,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/13/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "65.00",
+    "amount": 65.0,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/20/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "05/20/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Checking",
+    "amount": 52.14,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/20/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "52.14",
+    "amount": -52.14,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/27/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Checking",
+    "amount": 63.15,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "63.15",
+    "amount": -63.15,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "1",
+  "date": "05/28/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 52.56,
+    "account": "Fuel",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "52.56",
+    "amount": 52.56,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "1",
+  "date": "05/26/2026",
+  "name": "Ellis Equipment Rental",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Ellis Equipment Rental",
+    "description": "Equipment rental for 5 days",
+    "split": "Mastercard",
+    "amount": 112.0,
+    "account": "Equipment Rental",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Ellis Equipment Rental",
+    "description": "",
+    "split": "112.00",
+    "amount": 112.0,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/21/2026",
+  "name": "Brosnahan Insurance Agency",
+  "pnl_lines": [
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Brosnahan Insurance Agency",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 241.23,
+    "account": "Insurance",
+    "ztype": "Expense"
+   },
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Brosnahan Insurance Agency",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 2000.0,
+    "account": "Miscellaneous",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Brosnahan Insurance Agency",
+    "description": "",
+    "split": "2,000.00",
+    "amount": 2000.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Brosnahan Insurance Agency",
+    "description": "",
+    "split": "241.23",
+    "amount": 241.23,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "15",
+  "date": "04/24/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "04/24/2026",
+    "txn_type": "Expense",
+    "num": "15",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Checking",
+    "amount": 108.09,
+    "account": "Job Expenses",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/24/2026",
+    "txn_type": "Expense",
+    "num": "15",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "108.09",
+    "amount": -108.09,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "108",
+  "date": "05/27/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Expense",
+    "num": "108",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Checking",
+    "amount": 46.98,
+    "account": "Job Expenses",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Expense",
+    "num": "108",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "46.98",
+    "amount": -46.98,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "1",
+  "date": "05/16/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 88.09,
+    "account": "Decks and Patios",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/16/2026",
+    "txn_type": "Expense",
+    "num": "1",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "88.09",
+    "amount": 88.09,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/25/2026",
+  "name": "Norton Lumber and Building Materials",
+  "pnl_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Norton Lumber and Building Materials",
+    "description": "Lumber",
+    "split": "Accounts Payable (A/P)",
+    "amount": 103.55,
+    "account": "Decks and Patios",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Norton Lumber and Building Materials",
+    "description": "",
+    "split": "103.55",
+    "amount": 103.55,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Expense",
+  "num": "",
+  "date": "06/03/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [
+   {
+    "date": "06/03/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 42.4,
+    "account": "Decks and Patios",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "06/03/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "42.40",
+    "amount": 42.4,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "3",
+  "date": "03/24/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "03/24/2026",
+    "txn_type": "Expense",
+    "num": "3",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 158.08,
+    "account": "Plants and Soil",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "03/24/2026",
+    "txn_type": "Expense",
+    "num": "3",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "158.08",
+    "amount": 158.08,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "9",
+  "date": "04/17/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "04/17/2026",
+    "txn_type": "Expense",
+    "num": "9",
+    "name": "Tania's Nursery",
+    "description": "Morning Glories and Sod",
+    "split": "Checking",
+    "amount": 89.09,
+    "account": "Plants and Soil",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/17/2026",
+    "txn_type": "Expense",
+    "num": "9",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "89.09",
+    "amount": -89.09,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "50",
+  "date": "05/22/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Expense",
+    "num": "50",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 82.45,
+    "account": "Plants and Soil",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Expense",
+    "num": "50",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "82.45",
+    "amount": 82.45,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/31/2026",
+  "name": "Tania's Nursery",
+  "pnl_lines": [
+   {
+    "date": "05/31/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "Checking",
+    "amount": 23.5,
+    "account": "Plants and Soil",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/31/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Tania's Nursery",
+    "description": "",
+    "split": "23.50",
+    "amount": -23.5,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "13",
+  "date": "05/22/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Expense",
+    "num": "13",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "Checking",
+    "amount": 215.66,
+    "account": "Sprinklers and Drip Systems",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Expense",
+    "num": "13",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "215.66",
+    "amount": -215.66,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "12",
+  "date": "03/17/2026",
+  "name": "Robertson & Associates",
+  "pnl_lines": [
+   {
+    "date": "03/17/2026",
+    "txn_type": "Expense",
+    "num": "12",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "Checking",
+    "amount": 250.0,
+    "account": "Accounting",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "03/17/2026",
+    "txn_type": "Expense",
+    "num": "12",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "250.00",
+    "amount": -250.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/14/2026",
+  "name": "Books by Bessie",
+  "pnl_lines": [
+   {
+    "date": "05/14/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Books by Bessie",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 75.0,
+    "account": "Accounting",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/14/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Books by Bessie",
+    "description": "",
+    "split": "75.00",
+    "amount": 75.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/28/2026",
+  "name": "Robertson & Associates",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 315.0,
+    "account": "Accounting",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "315.00",
+    "amount": 315.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "12",
+  "date": "04/17/2026",
+  "name": "Books by Bessie",
+  "pnl_lines": [
+   {
+    "date": "04/17/2026",
+    "txn_type": "Check",
+    "num": "12",
+    "name": "Books by Bessie",
+    "description": "",
+    "split": "Checking",
+    "amount": 55.0,
+    "account": "Bookkeeper",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/17/2026",
+    "txn_type": "Check",
+    "num": "12",
+    "name": "Books by Bessie",
+    "description": "",
+    "split": "55.00",
+    "amount": -55.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "01/24/2026",
+  "name": "Robertson & Associates",
+  "pnl_lines": [
+   {
+    "date": "01/24/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 300.0,
+    "account": "Lawyer",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "01/24/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "300.00",
+    "amount": 300.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "",
+  "date": "05/19/2026",
+  "name": "Tony Rondonuwu",
+  "pnl_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Check",
+    "num": "",
+    "name": "Tony Rondonuwu",
+    "description": "Consulting",
+    "split": "Checking",
+    "amount": 100.0,
+    "account": "Lawyer",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Check",
+    "num": "",
+    "name": "Tony Rondonuwu",
+    "description": "",
+    "split": "100.00",
+    "amount": -100.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Expense",
+  "num": "76",
+  "date": "05/28/2026",
+  "name": "Pam Seitz",
+  "pnl_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Expense",
+    "num": "76",
+    "name": "Pam Seitz",
+    "description": "Counsel",
+    "split": "Checking",
+    "amount": 75.0,
+    "account": "Lawyer",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Expense",
+    "num": "76",
+    "name": "Pam Seitz",
+    "description": "",
+    "split": "75.00",
+    "amount": -75.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/26/2026",
+  "name": "Diego's Road Warrior Bodyshop",
+  "pnl_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Diego's Road Warrior Bodyshop",
+    "description": "Repairs on the truck",
+    "split": "Accounts Payable (A/P)",
+    "amount": 755.0,
+    "account": "Equipment Repairs",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Diego's Road Warrior Bodyshop",
+    "description": "",
+    "split": "755.00",
+    "amount": 755.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "70",
+  "date": "05/20/2026",
+  "name": "Chin's Gas and Oil",
+  "pnl_lines": [
+   {
+    "date": "05/20/2026",
+    "txn_type": "Check",
+    "num": "70",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "Checking",
+    "amount": 185.0,
+    "account": "Equipment Repairs",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/20/2026",
+    "txn_type": "Check",
+    "num": "70",
+    "name": "Chin's Gas and Oil",
+    "description": "",
+    "split": "185.00",
+    "amount": -185.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/19/2026",
+  "name": "Bob's Burger Joint",
+  "pnl_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "Checking",
+    "amount": 5.66,
+    "account": "Meals and Entertainment",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/19/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "5.66",
+    "amount": -5.66,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Cash Expense",
+  "num": "",
+  "date": "05/24/2026",
+  "name": "Bob's Burger Joint",
+  "pnl_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "Checking",
+    "amount": 3.86,
+    "account": "Meals and Entertainment",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Cash Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "3.86",
+    "amount": -3.86,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Expense",
+  "num": "",
+  "date": "06/02/2026",
+  "name": "Bob's Burger Joint",
+  "pnl_lines": [
+   {
+    "date": "06/02/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "Mastercard",
+    "amount": 18.97,
+    "account": "Meals and Entertainment",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "06/02/2026",
+    "txn_type": "Credit Card Expense",
+    "num": "",
+    "name": "Bob's Burger Joint",
+    "description": "",
+    "split": "18.97",
+    "amount": 18.97,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "2",
+  "date": "05/22/2026",
+  "name": "Mahoney Mugs",
+  "pnl_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Check",
+    "num": "2",
+    "name": "Mahoney Mugs",
+    "description": "Office Supplies",
+    "split": "Checking",
+    "amount": 18.08,
+    "account": "Office Expenses",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/22/2026",
+    "txn_type": "Check",
+    "num": "2",
+    "name": "Mahoney Mugs",
+    "description": "",
+    "split": "18.08",
+    "amount": -18.08,
+    "account": "Checking",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/12/2026",
+  "name": "Hall Properties",
+  "pnl_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Hall Properties",
+    "description": "Building Lease",
+    "split": "Accounts Payable (A/P)",
+    "amount": 900.0,
+    "account": "Rent or Lease",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Hall Properties",
+    "description": "",
+    "split": "900.00",
+    "amount": 900.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "04/13/2026",
+  "name": "PG&E",
+  "pnl_lines": [
+   {
+    "date": "04/13/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "PG&E",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 86.44,
+    "account": "Gas and Electric",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/13/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "PG&E",
+    "description": "",
+    "split": "86.44",
+    "amount": 86.44,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/12/2026",
+  "name": "PG&E",
+  "pnl_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "PG&E",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 114.09,
+    "account": "Gas and Electric",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "PG&E",
+    "description": "",
+    "split": "114.09",
+    "amount": 114.09,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "04/12/2026",
+  "name": "Cal Telephone",
+  "pnl_lines": [
+   {
+    "date": "04/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Cal Telephone",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 56.5,
+    "account": "Telephone",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Cal Telephone",
+    "description": "",
+    "split": "56.50",
+    "amount": 56.5,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/12/2026",
+  "name": "Cal Telephone",
+  "pnl_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Cal Telephone",
+    "description": "Monthly Phone Bill",
+    "split": "Accounts Payable (A/P)",
+    "amount": 74.36,
+    "account": "Telephone",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Cal Telephone",
+    "description": "",
+    "split": "74.36",
+    "amount": 74.36,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "04/21/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [
+   {
+    "date": "04/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 250.0,
+    "account": "Miscellaneous",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "04/21/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "250.00",
+    "amount": 250.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/13/2026",
+  "name": "Tim Philip Masonry",
+  "pnl_lines": [
+   {
+    "date": "05/13/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Tim Philip Masonry",
+    "description": "",
+    "split": "Accounts Payable (A/P)",
+    "amount": 666.0,
+    "account": "Miscellaneous",
+    "ztype": "Expense"
+   }
+  ],
+  "bs_lines": [
+   {
+    "date": "05/13/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Tim Philip Masonry",
+    "description": "",
+    "split": "666.00",
+    "amount": 666.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Deposit",
+  "num": "",
+  "date": "01/12/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "01/12/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "5,000.00",
+    "split": "",
+    "amount": 5000.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "01/12/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "5,000.00",
+    "amount": 5000.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "10",
+  "date": "02/23/2026",
+  "name": "Robertson & Associates",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "02/23/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "10",
+    "name": "Robertson & Associates",
+    "description": "",
+    "split": "300.00",
+    "amount": -300.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "02/23/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "10",
+    "name": "Robertson & Associates",
+    "description": "300.00",
+    "split": "",
+    "amount": -300.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "1053",
+  "date": "03/03/2026",
+  "name": "Bill's Windsurf Shop",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "03/03/2026",
+    "txn_type": "Payment",
+    "num": "1053",
+    "name": "Bill's Windsurf Shop",
+    "description": "175.00",
+    "split": "",
+    "amount": 175.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "03/03/2026",
+    "txn_type": "Payment",
+    "num": "1053",
+    "name": "Bill's Windsurf Shop",
+    "description": "",
+    "split": "175.00",
+    "amount": -175.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Sales Tax Payment",
+  "num": "",
+  "date": "04/14/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "04/14/2026",
+    "txn_type": "Sales Tax Payment",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "38.40",
+    "amount": -38.4,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "04/14/2026",
+    "txn_type": "Sales Tax Payment",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "38.50",
+    "amount": -38.5,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "04/14/2026",
+    "txn_type": "Sales Tax Payment",
+    "num": "",
+    "name": "",
+    "description": "38.40",
+    "split": "",
+    "amount": -38.4,
+    "account": "Arizona Dept. of Revenue Payable",
+    "ztype": "Liability"
+   },
+   {
+    "date": "04/14/2026",
+    "txn_type": "Sales Tax Payment",
+    "num": "",
+    "name": "",
+    "description": "38.50",
+    "split": "",
+    "amount": -38.5,
+    "account": "Board of Equalization Payable",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "5664",
+  "date": "05/03/2026",
+  "name": "Freeman Sporting Goods:55 Twin Lane",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/03/2026",
+    "txn_type": "Payment",
+    "num": "5664",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "86.40",
+    "split": "",
+    "amount": 86.4,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/03/2026",
+    "txn_type": "Payment",
+    "num": "5664",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "",
+    "split": "86.40",
+    "amount": -86.4,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/05/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/05/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Amy's Bird Sanctuary",
+    "description": "105.00",
+    "split": "",
+    "amount": 105.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/05/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "105.00",
+    "amount": -105.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "7",
+  "date": "05/07/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/07/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "7",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "250.00",
+    "amount": -250.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/07/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "7",
+    "name": "Hicks Hardware",
+    "description": "250.00",
+    "split": "",
+    "amount": -250.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "1886",
+  "date": "05/21/2026",
+  "name": "Cool Cars",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/21/2026",
+    "txn_type": "Payment",
+    "num": "1886",
+    "name": "Cool Cars",
+    "description": "694.00",
+    "split": "",
+    "amount": 694.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/21/2026",
+    "txn_type": "Payment",
+    "num": "1886",
+    "name": "Cool Cars",
+    "description": "",
+    "split": "694.00",
+    "amount": -694.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "11",
+  "date": "05/21/2026",
+  "name": "Hall Properties",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "11",
+    "name": "Hall Properties",
+    "description": "",
+    "split": "900.00",
+    "amount": -900.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/21/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "11",
+    "name": "Hall Properties",
+    "description": "900.00",
+    "split": "",
+    "amount": -900.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "1",
+  "date": "05/25/2026",
+  "name": "Brosnahan Insurance Agency",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "1",
+    "name": "Brosnahan Insurance Agency",
+    "description": "",
+    "split": "2,000.00",
+    "amount": -2000.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "1",
+    "name": "Brosnahan Insurance Agency",
+    "description": "2,000.00",
+    "split": "",
+    "amount": -2000.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/26/2026",
+  "name": "Freeman Sporting Goods:55 Twin Lane",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "50.00",
+    "split": "",
+    "amount": 50.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:55 Twin Lane",
+    "description": "",
+    "split": "50.00",
+    "amount": -50.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "3",
+  "date": "05/26/2026",
+  "name": "Books by Bessie",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "3",
+    "name": "Books by Bessie",
+    "description": "",
+    "split": "75.00",
+    "amount": -75.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "3",
+    "name": "Books by Bessie",
+    "description": "75.00",
+    "split": "",
+    "amount": -75.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "2064",
+  "date": "05/26/2026",
+  "name": "Travis Waldron",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "2064",
+    "name": "Travis Waldron",
+    "description": "103.55",
+    "split": "",
+    "amount": 103.55,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "2064",
+    "name": "Travis Waldron",
+    "description": "",
+    "split": "103.55",
+    "amount": -103.55,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Deposit",
+  "num": "",
+  "date": "05/26/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "218.75",
+    "split": "",
+    "amount": 218.75,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "140.00",
+    "amount": -140.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "78.75",
+    "amount": -78.75,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "6",
+  "date": "05/27/2026",
+  "name": "PG&E",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "6",
+    "name": "PG&E",
+    "description": "",
+    "split": "114.09",
+    "amount": -114.09,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "6",
+    "name": "PG&E",
+    "description": "114.09",
+    "split": "",
+    "amount": -114.09,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Check)",
+  "num": "45",
+  "date": "05/27/2026",
+  "name": "Tim Philip Masonry",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "45",
+    "name": "Tim Philip Masonry",
+    "description": "",
+    "split": "666.00",
+    "amount": -666.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Bill Payment (Check)",
+    "num": "45",
+    "name": "Tim Philip Masonry",
+    "description": "666.00",
+    "split": "",
+    "amount": -666.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Deposit",
+  "num": "",
+  "date": "05/27/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "408.00",
+    "split": "",
+    "amount": 408.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "108.00",
+    "amount": -108.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "300.00",
+    "amount": -300.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Check",
+  "num": "75",
+  "date": "05/28/2026",
+  "name": "Hicks Hardware",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Check",
+    "num": "75",
+    "name": "Hicks Hardware",
+    "description": "",
+    "split": "228.75",
+    "amount": -228.75,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Check",
+    "num": "75",
+    "name": "Hicks Hardware",
+    "description": "125.00",
+    "split": "",
+    "amount": 125.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Check",
+    "num": "75",
+    "name": "Hicks Hardware",
+    "description": "11.25",
+    "split": "",
+    "amount": 11.25,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Check",
+    "num": "75",
+    "name": "Hicks Hardware",
+    "description": "62.50",
+    "split": "",
+    "amount": 62.5,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Check",
+    "num": "75",
+    "name": "Hicks Hardware",
+    "description": "30.00",
+    "split": "",
+    "amount": 30.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Deposit",
+  "num": "",
+  "date": "05/28/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "868.15",
+    "split": "",
+    "amount": 868.15,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "200.00",
+    "split": "",
+    "amount": 200.0,
+    "account": "Savings",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "226.75",
+    "amount": -226.75,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "460.40",
+    "amount": -460.4,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "80.00",
+    "amount": -80.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "81.00",
+    "amount": -81.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "220.00",
+    "amount": -220.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Credit Card Credit",
+  "num": "",
+  "date": "06/11/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "06/11/2026",
+    "txn_type": "Credit Card Credit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "900.00",
+    "amount": -900.0,
+    "account": "Checking",
+    "ztype": "Asset"
+   },
+   {
+    "date": "06/11/2026",
+    "txn_type": "Credit Card Credit",
+    "num": "",
+    "name": "",
+    "description": "900.00",
+    "split": "",
+    "amount": -900.0,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Deposit",
+  "num": "",
+  "date": "05/24/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "600.00",
+    "split": "",
+    "amount": 600.0,
+    "account": "Savings",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/24/2026",
+    "txn_type": "Deposit",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "600.00",
+    "amount": 600.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "03/03/2026",
+  "name": "Freeman Sporting Goods:0969 Ocean View Road",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "03/03/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "226.75",
+    "amount": -226.75,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "03/03/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "226.75",
+    "split": "",
+    "amount": 226.75,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/01/2026",
+  "name": "Dukes Basketball Camp",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/01/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Dukes Basketball Camp",
+    "description": "",
+    "split": "460.40",
+    "amount": -460.4,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/01/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Dukes Basketball Camp",
+    "description": "460.40",
+    "split": "",
+    "amount": 460.4,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/11/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/11/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Amy's Bird Sanctuary",
+    "description": "$0.00",
+    "split": "",
+    "amount": 0.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/24/2026",
+  "name": "Sushi by Katsuyuki",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/24/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Sushi by Katsuyuki",
+    "description": "",
+    "split": "80.00",
+    "amount": -80.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/24/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Sushi by Katsuyuki",
+    "description": "80.00",
+    "split": "",
+    "amount": 80.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "6552",
+  "date": "05/26/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "6552",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "108.00",
+    "amount": -108.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "6552",
+    "name": "Amy's Bird Sanctuary",
+    "description": "108.00",
+    "split": "",
+    "amount": 108.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "5421",
+  "date": "05/26/2026",
+  "name": "John Melton",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "5421",
+    "name": "John Melton",
+    "description": "",
+    "split": "300.00",
+    "amount": -300.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Payment",
+    "num": "5421",
+    "name": "John Melton",
+    "description": "300.00",
+    "split": "",
+    "amount": 300.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/27/2026",
+  "name": "Travis Waldron",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Travis Waldron",
+    "description": "",
+    "split": "81.00",
+    "amount": -81.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Travis Waldron",
+    "description": "81.00",
+    "split": "",
+    "amount": 81.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/27/2026",
+  "name": "Amy's Bird Sanctuary",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/27/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Amy's Bird Sanctuary",
+    "description": "",
+    "split": "220.00",
+    "amount": -220.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/27/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Amy's Bird Sanctuary",
+    "description": "220.00",
+    "split": "",
+    "amount": 220.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/28/2026",
+  "name": "Cool Cars",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Cool Cars",
+    "description": "",
+    "split": "1,675.52",
+    "amount": -1675.52,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Cool Cars",
+    "description": "1,675.52",
+    "split": "",
+    "amount": 1675.52,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Payment",
+  "num": "",
+  "date": "05/28/2026",
+  "name": "Freeman Sporting Goods:0969 Ocean View Road",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "",
+    "split": "387.00",
+    "amount": -387.0,
+    "account": "Accounts Receivable (A/R)",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Payment",
+    "num": "",
+    "name": "Freeman Sporting Goods:0969 Ocean View Road",
+    "description": "387.00",
+    "split": "",
+    "amount": 387.0,
+    "account": "Undeposited Funds",
+    "ztype": "Asset"
+   }
+  ]
+ },
+ {
+  "txn_type": "Inventory Qty Adjust",
+  "num": "START",
+  "date": "05/28/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "160.00",
+    "split": "",
+    "amount": 160.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "7.50",
+    "split": "",
+    "amount": 7.5,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "25.00",
+    "split": "",
+    "amount": 25.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "375.00",
+    "split": "",
+    "amount": 375.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "160.00",
+    "amount": 160.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "7.50",
+    "amount": 7.5,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "25.00",
+    "amount": 25.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "",
+    "amount": 0.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Inventory Qty Adjust",
+    "num": "START",
+    "name": "",
+    "description": "",
+    "split": "375.00",
+    "amount": 375.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill",
+  "num": "",
+  "date": "05/28/2026",
+  "name": "Norton Lumber and Building Materials",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Norton Lumber and Building Materials",
+    "description": "80.00",
+    "split": "",
+    "amount": 80.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Norton Lumber and Building Materials",
+    "description": "125.00",
+    "split": "",
+    "amount": 125.0,
+    "account": "Inventory Asset",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill",
+    "num": "",
+    "name": "Norton Lumber and Building Materials",
+    "description": "",
+    "split": "205.00",
+    "amount": 205.0,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Journal Entry",
+  "num": "",
+  "date": "05/12/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/12/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "13,495.00",
+    "split": "",
+    "amount": 13495.0,
+    "account": "Original Cost",
+    "ztype": "Asset"
+   },
+   {
+    "date": "05/12/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "13,495.00",
+    "amount": 13495.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Credit Card)",
+  "num": "1",
+  "date": "05/26/2026",
+  "name": "Cal Telephone",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Cal Telephone",
+    "description": "74.36",
+    "split": "",
+    "amount": -74.36,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/26/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Cal Telephone",
+    "description": "",
+    "split": "74.36",
+    "amount": 74.36,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Credit Card)",
+  "num": "1",
+  "date": "05/28/2026",
+  "name": "Cal Telephone",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Cal Telephone",
+    "description": "56.50",
+    "split": "",
+    "amount": -56.5,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Cal Telephone",
+    "description": "",
+    "split": "56.50",
+    "amount": 56.5,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Bill Payment (Credit Card)",
+  "num": "1",
+  "date": "05/28/2026",
+  "name": "Norton Lumber and Building Materials",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Norton Lumber and Building Materials",
+    "description": "103.55",
+    "split": "",
+    "amount": -103.55,
+    "account": "Accounts Payable (A/P)",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/28/2026",
+    "txn_type": "Bill Payment (Credit Card)",
+    "num": "1",
+    "name": "Norton Lumber and Building Materials",
+    "description": "",
+    "split": "103.55",
+    "amount": 103.55,
+    "account": "Mastercard",
+    "ztype": "Liability"
+   }
+  ]
+ },
+ {
+  "txn_type": "Journal Entry",
+  "num": "",
+  "date": "05/25/2026",
+  "name": "",
+  "pnl_lines": [],
+  "bs_lines": [
+   {
+    "date": "05/25/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "4,000.00",
+    "amount": 4000.0,
+    "account": "Loan Payable",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "",
+    "split": "25,000.00",
+    "amount": 25000.0,
+    "account": "Notes Payable",
+    "ztype": "Liability"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "4,000.00",
+    "split": "",
+    "amount": -4000.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   },
+   {
+    "date": "05/25/2026",
+    "txn_type": "Journal Entry",
+    "num": "",
+    "name": "",
+    "description": "25,000.00",
+    "split": "",
+    "amount": -25000.0,
+    "account": "Opening Balance Equity",
+    "ztype": "Equity"
+   }
+  ]
+ }
+]
