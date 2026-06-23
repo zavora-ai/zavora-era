@@ -1,0 +1,668 @@
+{
+ "token_email": "craig1782233434@demo.co",
+ "ar_code": "1101",
+ "ap_code": "2001",
+ "accounts": {
+  "Asset||Checking": {
+   "code": "1001",
+   "name": "Checking",
+   "ztype": "Asset",
+   "qbo_type": "Bank"
+  },
+  "Asset||Savings": {
+   "code": "1002",
+   "name": "Savings",
+   "ztype": "Asset",
+   "qbo_type": "Bank"
+  },
+  "Asset||Accounts Receivable (A/R)": {
+   "code": "1101",
+   "name": "Accounts Receivable (A/R)",
+   "ztype": "Asset",
+   "qbo_type": "Accounts receivable (A/R)"
+  },
+  "Asset||Inventory Asset": {
+   "code": "1201",
+   "name": "Inventory Asset",
+   "ztype": "Asset",
+   "qbo_type": "Other Current Assets"
+  },
+  "Asset||Prepaid Expenses": {
+   "code": "1202",
+   "name": "Prepaid Expenses",
+   "ztype": "Asset",
+   "qbo_type": "Other Current Assets"
+  },
+  "Asset||Uncategorized Asset": {
+   "code": "1203",
+   "name": "Uncategorized Asset",
+   "ztype": "Asset",
+   "qbo_type": "Other Current Assets"
+  },
+  "Asset||Undeposited Funds": {
+   "code": "1204",
+   "name": "Undeposited Funds",
+   "ztype": "Asset",
+   "qbo_type": "Other Current Assets"
+  },
+  "Asset||Truck": {
+   "code": "1501",
+   "name": "Truck",
+   "ztype": "Asset",
+   "qbo_type": "Fixed Assets"
+  },
+  "Asset||Depreciation": {
+   "code": "1502",
+   "name": "Depreciation",
+   "ztype": "Asset",
+   "qbo_type": "Fixed Assets"
+  },
+  "Asset||Original Cost": {
+   "code": "1503",
+   "name": "Original Cost",
+   "ztype": "Asset",
+   "qbo_type": "Fixed Assets"
+  },
+  "Liability||Accounts Payable (A/P)": {
+   "code": "2001",
+   "name": "Accounts Payable (A/P)",
+   "ztype": "Liability",
+   "qbo_type": "Accounts payable (A/P)"
+  },
+  "Liability||Mastercard": {
+   "code": "2101",
+   "name": "Mastercard",
+   "ztype": "Liability",
+   "qbo_type": "Credit Card"
+  },
+  "Liability||Visa": {
+   "code": "2102",
+   "name": "Visa",
+   "ztype": "Liability",
+   "qbo_type": "Credit Card"
+  },
+  "Liability||Arizona Dept. of Revenue Payable": {
+   "code": "2201",
+   "name": "Arizona Dept. of Revenue Payable",
+   "ztype": "Liability",
+   "qbo_type": "Other Current Liabilities"
+  },
+  "Liability||Board of Equalization Payable": {
+   "code": "2202",
+   "name": "Board of Equalization Payable",
+   "ztype": "Liability",
+   "qbo_type": "Other Current Liabilities"
+  },
+  "Liability||Loan Payable": {
+   "code": "2203",
+   "name": "Loan Payable",
+   "ztype": "Liability",
+   "qbo_type": "Other Current Liabilities"
+  },
+  "Liability||Notes Payable": {
+   "code": "2501",
+   "name": "Notes Payable",
+   "ztype": "Liability",
+   "qbo_type": "Long Term Liabilities"
+  },
+  "Equity||Opening Balance Equity": {
+   "code": "3001",
+   "name": "Opening Balance Equity",
+   "ztype": "Equity",
+   "qbo_type": "Equity"
+  },
+  "Equity||Retained Earnings": {
+   "code": "3002",
+   "name": "Retained Earnings",
+   "ztype": "Equity",
+   "qbo_type": "Equity"
+  },
+  "Revenue||Billable Expense Income": {
+   "code": "4001",
+   "name": "Billable Expense Income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Design income": {
+   "code": "4002",
+   "name": "Design income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Discounts given": {
+   "code": "4003",
+   "name": "Discounts given",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Fees Billed": {
+   "code": "4004",
+   "name": "Fees Billed",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Landscaping Services": {
+   "code": "4005",
+   "name": "Landscaping Services",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Job Materials": {
+   "code": "4006",
+   "name": "Job Materials",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Decks and Patios": {
+   "code": "4007",
+   "name": "Decks and Patios",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Fountains and Garden Lighting": {
+   "code": "4008",
+   "name": "Fountains and Garden Lighting",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Plants and Soil": {
+   "code": "4009",
+   "name": "Plants and Soil",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Sprinklers and Drip Systems": {
+   "code": "4010",
+   "name": "Sprinklers and Drip Systems",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Labor": {
+   "code": "4011",
+   "name": "Labor",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Installation": {
+   "code": "4012",
+   "name": "Installation",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Maintenance and Repair": {
+   "code": "4013",
+   "name": "Maintenance and Repair",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Other Income": {
+   "code": "4014",
+   "name": "Other Income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Pest Control Services": {
+   "code": "4015",
+   "name": "Pest Control Services",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Refunds-Allowances": {
+   "code": "4016",
+   "name": "Refunds-Allowances",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Sales of Product Income": {
+   "code": "4017",
+   "name": "Sales of Product Income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Services": {
+   "code": "4018",
+   "name": "Services",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Unapplied Cash Payment Income": {
+   "code": "4019",
+   "name": "Unapplied Cash Payment Income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Revenue||Uncategorized Income": {
+   "code": "4020",
+   "name": "Uncategorized Income",
+   "ztype": "Revenue",
+   "qbo_type": "Income"
+  },
+  "Expense||Cost of Goods Sold": {
+   "code": "6001",
+   "name": "Cost of Goods Sold",
+   "ztype": "Expense",
+   "qbo_type": "Cost of Goods Sold"
+  },
+  "Expense||Advertising": {
+   "code": "7001",
+   "name": "Advertising",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Automobile": {
+   "code": "7002",
+   "name": "Automobile",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Fuel": {
+   "code": "7003",
+   "name": "Fuel",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Bank Charges": {
+   "code": "7004",
+   "name": "Bank Charges",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Commissions & fees": {
+   "code": "7005",
+   "name": "Commissions & fees",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Disposal Fees": {
+   "code": "7006",
+   "name": "Disposal Fees",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Dues & Subscriptions": {
+   "code": "7007",
+   "name": "Dues & Subscriptions",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Equipment Rental": {
+   "code": "7008",
+   "name": "Equipment Rental",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Insurance": {
+   "code": "7009",
+   "name": "Insurance",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Workers Compensation": {
+   "code": "7011",
+   "name": "Workers Compensation",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Job Expenses": {
+   "code": "7012",
+   "name": "Job Expenses",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Cost of Labor": {
+   "code": "7013",
+   "name": "Cost of Labor",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Installation": {
+   "code": "7014",
+   "name": "Installation",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Maintenance and Repairs": {
+   "code": "7015",
+   "name": "Maintenance and Repairs",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Job Materials": {
+   "code": "7016",
+   "name": "Job Materials",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Decks and Patios": {
+   "code": "7017",
+   "name": "Decks and Patios",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Fountain and Garden Lighting": {
+   "code": "7018",
+   "name": "Fountain and Garden Lighting",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Plants and Soil": {
+   "code": "7019",
+   "name": "Plants and Soil",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Sprinklers and Drip Systems": {
+   "code": "7021",
+   "name": "Sprinklers and Drip Systems",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Permits": {
+   "code": "7022",
+   "name": "Permits",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Legal & Professional Fees": {
+   "code": "7023",
+   "name": "Legal & Professional Fees",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Accounting": {
+   "code": "7024",
+   "name": "Accounting",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Bookkeeper": {
+   "code": "7025",
+   "name": "Bookkeeper",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Lawyer": {
+   "code": "7026",
+   "name": "Lawyer",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Maintenance and Repair": {
+   "code": "7027",
+   "name": "Maintenance and Repair",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Building Repairs": {
+   "code": "7028",
+   "name": "Building Repairs",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Computer Repairs": {
+   "code": "7029",
+   "name": "Computer Repairs",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Equipment Repairs": {
+   "code": "7031",
+   "name": "Equipment Repairs",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Meals and Entertainment": {
+   "code": "7032",
+   "name": "Meals and Entertainment",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Office Expenses": {
+   "code": "7033",
+   "name": "Office Expenses",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Promotional": {
+   "code": "7034",
+   "name": "Promotional",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Purchases": {
+   "code": "7035",
+   "name": "Purchases",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Rent or Lease": {
+   "code": "7036",
+   "name": "Rent or Lease",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Stationery & Printing": {
+   "code": "7037",
+   "name": "Stationery & Printing",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Supplies": {
+   "code": "7038",
+   "name": "Supplies",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Taxes & Licenses": {
+   "code": "7039",
+   "name": "Taxes & Licenses",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Travel": {
+   "code": "7040",
+   "name": "Travel",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Travel Meals": {
+   "code": "7041",
+   "name": "Travel Meals",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Unapplied Cash Bill Payment Expense": {
+   "code": "7042",
+   "name": "Unapplied Cash Bill Payment Expense",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Uncategorized Expense": {
+   "code": "7043",
+   "name": "Uncategorized Expense",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Utilities": {
+   "code": "7044",
+   "name": "Utilities",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Gas and Electric": {
+   "code": "7045",
+   "name": "Gas and Electric",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Expense||Telephone": {
+   "code": "7046",
+   "name": "Telephone",
+   "ztype": "Expense",
+   "qbo_type": "Expenses"
+  },
+  "Revenue||Interest Earned": {
+   "code": "4501",
+   "name": "Interest Earned",
+   "ztype": "Revenue",
+   "qbo_type": "Other Income"
+  },
+  "Revenue||Other Portfolio Income": {
+   "code": "4502",
+   "name": "Other Portfolio Income",
+   "ztype": "Revenue",
+   "qbo_type": "Other Income"
+  },
+  "Expense||Depreciation": {
+   "code": "8001",
+   "name": "Depreciation",
+   "ztype": "Expense",
+   "qbo_type": "Other Expense"
+  },
+  "Expense||Miscellaneous": {
+   "code": "8002",
+   "name": "Miscellaneous",
+   "ztype": "Expense",
+   "qbo_type": "Other Expense"
+  },
+  "Expense||Penalties & Settlements": {
+   "code": "8003",
+   "name": "Penalties & Settlements",
+   "ztype": "Expense",
+   "qbo_type": "Other Expense"
+  }
+ },
+ "customers": {
+  "Amy's Bird Sanctuary": "2ad7db33-719d-4101-bfa3-aa2115a4176a",
+  "Bill's Windsurf Shop": "87789fb1-566f-472e-a0a8-9096b523132b",
+  "Cool Cars": "3823be49-b749-4191-b053-8629da5529de",
+  "Diego Rodriguez": "92da0f91-6bf4-44eb-a1e5-e69131c44c21",
+  "Dukes Basketball Camp": "f92c2f87-66ce-410d-a0e4-550e5518bd7d",
+  "Dylan Sollfrank": "1203635b-f2ff-4b0a-bae1-62217ba48c52",
+  "Freeman Sporting Goods": "484f3fff-cc89-4d42-8b76-27307d966411",
+  "0969 Ocean View Road": "8bf87e8c-046e-425b-afbc-2e1df66de353",
+  "55 Twin Lane": "a1ac61f9-9dbc-4988-83c2-ec7b8bd6c0d9",
+  "Geeta Kalapatapu": "a4c60272-2179-43a8-8c58-d06801b8772f",
+  "Gevelber Photography": "d125055c-dd17-41ef-82e4-996554f7deac",
+  "Jeff's Jalopies": "93d614f4-4d2e-4b72-9575-444a137c5dca",
+  "John Melton": "bf5604c8-121d-4083-ba31-9150ff9e9f32",
+  "Kate Whelan": "60f39d05-830d-4918-8822-8a629ddab399",
+  "Kookies by Kathy": "f80a921f-5ede-4597-ad91-e77ebeaeec4c",
+  "Mark Cho": "f380eb62-af64-46b1-bcf5-4f5991a0a6ec",
+  "Paulsen Medical Supplies": "a948f65c-9ae1-4890-a6be-cb2c9f5ce67a",
+  "Pye's Cakes": "c78dc9c0-96a0-4338-af91-86b476796203",
+  "Rago Travel Agency": "f5a90c40-49e1-4ad2-b52b-5711520b04bc",
+  "Red Rock Diner": "4758003a-a661-443d-be5b-3dda732351e8",
+  "Rondonuwu Fruit and Vegi": "6f01411b-ff1e-46bd-954d-79fb0ae576d1",
+  "Shara Barnett": "772f504d-a6a7-4f31-adab-5b81c7eeda78",
+  "Barnett Design": "65b61616-064a-46da-b308-db63403031a2",
+  "Sonnenschein Family Store": "e0f51a9d-79a5-4eef-92cc-d6df5db276ec",
+  "Sushi by Katsuyuki": "53369679-58ab-4ede-8e48-7b231b403ec4",
+  "Travis Waldron": "dfec1a5b-6fd0-422e-893f-a728079ad654",
+  "Video Games by Dan": "f05a6552-7809-4715-9444-1c55e0887a24",
+  "Wedding Planning by Whitney": "db127fca-490d-4701-aefa-5a6aefe21e02",
+  "Weiskopf Consulting": "94035b5c-e1cf-4e8d-99d4-7e3af4b75ad4"
+ },
+ "vendors": {
+  "Bob's Burger Joint": "d0b8cbfe-a32a-41ab-b0d3-7c38a1fb8d40",
+  "Books by Bessie": "c2b0027f-9f1d-4c36-8e92-f8ff6d4859ce",
+  "Brosnahan Insurance Agency": "b72a857c-0479-4cd1-a1a4-f5bde12bed0d",
+  "Cal Telephone": "f32cfa09-a355-47de-a8a7-6fd6888d5fda",
+  "Chin's Gas and Oil": "559259a2-5c20-4ab0-9eb0-107cffdfe6b6",
+  "Cigna Health Care": "586f3812-798c-4352-b654-fff18656ff3a",
+  "Computers by Jenni": "b06e6d58-aee6-4244-9253-c786ed01693e",
+  "Diego's Road Warrior Bodyshop": "18f4ad5f-ee02-4a22-971f-63eefa0784f2",
+  "EDD": "3706dfb9-e5c3-4d46-bbe2-c8ff31203173",
+  "Ellis Equipment Rental": "f1ff825c-d3ad-4460-91fc-da47a23b2a23",
+  "Fidelity": "5e18b90e-eb5b-48e5-b5cf-c08200ea8c89",
+  "Hall Properties": "7fc4ba86-654a-4675-a2e2-b59904b53af4",
+  "Hicks Hardware": "7eaf5950-a36d-444c-8d5c-9867b6220972",
+  "Lee Advertising": "b01b6a08-79c8-4a93-8101-a0cdd11e7ce8",
+  "Mahoney Mugs": "aa222772-fba4-4edf-92ed-1fcc039fb149",
+  "Met Life Dental": "e6bbf733-1b26-4a7e-96f6-e2ccf8d461de",
+  "National Eye Care": "3d3e62e8-207b-4d6e-8d37-4db94e22d318",
+  "Norton Lumber and Building Materials": "af87f3ff-1b37-4a20-ae60-7f59f1c220a5",
+  "Pam Seitz": "d42eedb4-547a-414f-b0e2-76d608df99a9",
+  "PG&E": "ce4d75e5-396b-4eeb-b5c7-990803050eea",
+  "Robertson & Associates": "7a47076d-6172-4620-9dc1-c0df773573f6",
+  "Squeaky Kleen Car Wash": "f8192186-f31f-417a-9dd3-8a80433d5845",
+  "Tania's Nursery": "d90f7473-1999-467f-b2fd-fee8eaaf0078",
+  "Tim Philip Masonry": "16ebafe5-6149-4775-99fe-652a935a86d8",
+  "Tony Rondonuwu": "680b739f-9b18-45b8-a06a-9fd44a5c0f1c",
+  "United States Treasury": "db092398-3919-4320-8205-1e13ba0287f7"
+ },
+ "products": {
+  "Design": {
+   "income_account_name": "Design income",
+   "income_code": "4002"
+  },
+  "Concrete": {
+   "income_account_name": "Fountains and Garden Lighting",
+   "income_code": "4008"
+  },
+  "Pump": {
+   "income_account_name": "Sales of Product Income",
+   "income_code": "4017"
+  },
+  "Rock Fountain": {
+   "income_account_name": "Sales of Product Income",
+   "income_code": "4017"
+  },
+  "Lighting": {
+   "income_account_name": "Fountains and Garden Lighting",
+   "income_code": "4008"
+  },
+  "Rocks": {
+   "income_account_name": "Fountains and Garden Lighting",
+   "income_code": "4008"
+  },
+  "Services": {
+   "income_account_name": "Services",
+   "income_code": "4018"
+  },
+  "Gardening": {
+   "income_account_name": "Landscaping Services",
+   "income_code": "4005"
+  },
+  "Hours": {
+   "income_account_name": "Services",
+   "income_code": "4018"
+  },
+  "Installation": {
+   "income_account_name": "Installation",
+   "income_code": "4012"
+  },
+  "Maintenance & Repair": {
+   "income_account_name": "Maintenance and Repair",
+   "income_code": "4013"
+  },
+  "Sod": {
+   "income_account_name": "Plants and Soil",
+   "income_code": "4009"
+  },
+  "Soil": {
+   "income_account_name": "Plants and Soil",
+   "income_code": "4009"
+  },
+  "Sprinkler Heads": {
+   "income_account_name": "Sales of Product Income",
+   "income_code": "4017"
+  },
+  "Sprinkler Pipes": {
+   "income_account_name": "Sales of Product Income",
+   "income_code": "4017"
+  },
+  "Trimming": {
+   "income_account_name": "Landscaping Services",
+   "income_code": "4005"
+  },
+  "Pest Control": {
+   "income_account_name": "Pest Control Services",
+   "income_code": "4015"
+  },
+  "Refunds & Allowances": {
+   "income_account_name": "Other Income",
+   "income_code": "4014"
+  }
+ }
+}
