@@ -1,0 +1,447 @@
+[
+ {
+  "name": "Checking",
+  "type": "Bank",
+  "qb_balance": 1201.0
+ },
+ {
+  "name": "Savings",
+  "type": "Bank",
+  "qb_balance": 800.0
+ },
+ {
+  "name": "Accounts Receivable (A/R)",
+  "type": "Accounts receivable (A/R)",
+  "qb_balance": 5281.52
+ },
+ {
+  "name": "Inventory Asset",
+  "type": "Other Current Assets",
+  "qb_balance": 596.25
+ },
+ {
+  "name": "Prepaid Expenses",
+  "type": "Other Current Assets",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Uncategorized Asset",
+  "type": "Other Current Assets",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Undeposited Funds",
+  "type": "Other Current Assets",
+  "qb_balance": 2062.52
+ },
+ {
+  "name": "Truck",
+  "type": "Fixed Assets",
+  "qb_balance": 13495.0
+ },
+ {
+  "name": "Depreciation",
+  "type": "Fixed Assets",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Original Cost",
+  "type": "Fixed Assets",
+  "qb_balance": 13495.0
+ },
+ {
+  "name": "Accounts Payable (A/P)",
+  "type": "Accounts payable (A/P)",
+  "qb_balance": 1602.67
+ },
+ {
+  "name": "Mastercard",
+  "type": "Credit Card",
+  "qb_balance": 157.72
+ },
+ {
+  "name": "Visa",
+  "type": "Credit Card",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Arizona Dept. of Revenue Payable",
+  "type": "Other Current Liabilities",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Board of Equalization Payable",
+  "type": "Other Current Liabilities",
+  "qb_balance": 370.94
+ },
+ {
+  "name": "Loan Payable",
+  "type": "Other Current Liabilities",
+  "qb_balance": 4000.0
+ },
+ {
+  "name": "Notes Payable",
+  "type": "Long Term Liabilities",
+  "qb_balance": 25000.0
+ },
+ {
+  "name": "Opening Balance Equity",
+  "type": "Equity",
+  "qb_balance": -9337.5
+ },
+ {
+  "name": "Retained Earnings",
+  "type": "Equity",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Billable Expense Income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Design income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Discounts given",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Fees Billed",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Landscaping Services",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Job Materials",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Decks and Patios",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Fountains and Garden Lighting",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Plants and Soil",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Sprinklers and Drip Systems",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Labor",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Installation",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Maintenance and Repair",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Other Income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Pest Control Services",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Refunds-Allowances",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Sales of Product Income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Services",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Unapplied Cash Payment Income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Uncategorized Income",
+  "type": "Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Cost of Goods Sold",
+  "type": "Cost of Goods Sold",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Advertising",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Automobile",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Fuel",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Bank Charges",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Commissions & fees",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Disposal Fees",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Dues & Subscriptions",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Equipment Rental",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Insurance",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Workers Compensation",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Job Expenses",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Cost of Labor",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Installation",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Maintenance and Repairs",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Equipment Rental",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Job Materials",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Decks and Patios",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Fountain and Garden Lighting",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Plants and Soil",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Sprinklers and Drip Systems",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Permits",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Legal & Professional Fees",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Accounting",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Bookkeeper",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Lawyer",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Maintenance and Repair",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Building Repairs",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Computer Repairs",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Equipment Repairs",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Meals and Entertainment",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Office Expenses",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Promotional",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Purchases",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Rent or Lease",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Stationery & Printing",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Supplies",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Taxes & Licenses",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Travel",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Travel Meals",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Unapplied Cash Bill Payment Expense",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Uncategorized Expense",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Utilities",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Gas and Electric",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Telephone",
+  "type": "Expenses",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Interest Earned",
+  "type": "Other Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Other Portfolio Income",
+  "type": "Other Income",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Depreciation",
+  "type": "Other Expense",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Miscellaneous",
+  "type": "Other Expense",
+  "qb_balance": 0.0
+ },
+ {
+  "name": "Penalties & Settlements",
+  "type": "Other Expense",
+  "qb_balance": 0.0
+ }
+]

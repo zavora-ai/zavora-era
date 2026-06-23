@@ -25,3 +25,6 @@ zavora-erp-ui/dist/
 
 # Test/tooling artifacts
 .playwright-mcp/
+__pycache__/
+*.pyc
+.playwright-cli/
