@@ -49,11 +49,33 @@ pub async fn create_account(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct ImportStatementBody {
+    pub bank_account_id: Uuid,
+    pub filename: String,
+    pub content: String,
+}
+
+/// POST /bank/import — import a bank statement (CSV/MT940/OFX) into the
+/// categorisation queue. Idempotent: re-importing the same file for a bank
+/// account is rejected, and individual duplicate lines are skipped.
 pub async fn import_statement(
-    State(_state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
-    // TODO: file upload parsing (CSV/MT940/OFX)
-    Json(serde_json::json!({ "status": "import_endpoint_ready", "message": "Upload CSV/MT940/OFX file" }))
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ImportStatementBody>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "import bank statement").map_err(err_response)?;
+    let req = ImportStatementRequest {
+        entity_id: ctx.entity_id,
+        bank_account_id: body.bank_account_id,
+        filename: body.filename,
+        content: body.content,
+        imported_by: AgentOrUserId::User(ctx.user_id),
+    };
+    match svc::import_statement(&state.engine, req).await {
+        Ok(result) => Ok(Json(serde_json::to_value(result).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
 }
 
 /// DELETE /bank-accounts/{id} — soft-delete a bank account (sets is_active = false).

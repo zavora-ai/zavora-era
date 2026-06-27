@@ -7,6 +7,7 @@ use crate::middleware::auth::{AuthContext, require_role, ROLES_CLOSE_PERIOD, ROL
 use super::err_response;
 use zavora_erp_core::period::*;
 use zavora_erp_core::services::periods as svc;
+use zavora_erp_core::services::period_close;
 
 pub async fn list(
     ctx: AuthContext,
@@ -72,6 +73,34 @@ pub async fn reopen(
     };
     match svc::reopen_period(&state.engine, ctx.entity_id, reopen_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /periods/year-end-close — execute the year-end closing procedure for a
+/// fiscal year. Requires every period of the year to be hard-closed first. Posts
+/// the closing entry into the year's last period and the opening-balance entry
+/// into the next year's first period, atomically. Idempotent: refuses if the year
+/// has already been closed.
+///
+/// Body: `{ "fiscal_year": 2025 }`. The actor is taken from the verified JWT.
+pub async fn year_end_close(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CLOSE_PERIOD, &ctx, "execute year-end close").map_err(err_response)?;
+    let Some(fiscal_year) = body.get("fiscal_year").and_then(|v| v.as_i64()) else {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: "Missing or invalid 'fiscal_year' (expected an integer year)".to_string(),
+        }));
+    };
+    let req = period_close::YearEndCloseRequest {
+        fiscal_year: fiscal_year as i32,
+        executed_by: zavora_erp_core::AgentOrUserId::User(ctx.user_id),
+    };
+    match period_close::execute_year_end_close(&state.engine, ctx.entity_id, req).await {
+        Ok(result) => Ok(Json(serde_json::to_value(result).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
 }

@@ -17,6 +17,34 @@ use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest
 /// 3. Creates a StatementImport record
 /// 4. Inserts each transaction into the categorisation queue (status: uncategorised)
 /// 5. Rejects invalid/unparseable files with a descriptive error (no partial records)
+///
+/// # Idempotency
+/// Re-importing the same file content for the same bank account is rejected
+/// (file-level `content_hash`). Individual lines that duplicate ones already
+/// present are skipped (`dedup_key`). The header + all lines commit in one
+/// transaction.
+///
+/// # Format detection
+/// Chosen by filename extension, then content sniffing:
+/// - **MT940**: `.mt940` / `.sta` / `.940`, or content starting with `:20:`.
+/// - **OFX**: `.ofx` / `.qfx`, or content containing `<OFX>` / `OFXHEADER`.
+/// - **CSV**: `.csv`, or comma-separated content with a header row.
+///
+/// # CSV schema
+/// The first row is treated as a header when it contains any of `date`,
+/// `description`, `amount`, or `balance` (case-insensitive); otherwise parsing
+/// starts at row 1. Columns are **positional**, not name-matched. Dates accept
+/// `YYYY-MM-DD`, `DD/MM/YYYY`, or `MM/DD/YYYY`. Supported column layouts:
+///
+/// | Columns | Layout                                          | Sign convention |
+/// |---------|-------------------------------------------------|-----------------|
+/// | 3       | `date, description, amount`                     | negative ⇒ debit (money out), positive ⇒ credit (money in) |
+/// | 4       | `date, description, amount, balance`            | same as above |
+/// | 5+      | `date, description, debit, credit, balance`     | explicit debit & credit columns (blank = none) |
+///
+/// A separate reference column is **not** parsed; put identifying text in
+/// `description`. Every data row must resolve to at least one of debit/credit or
+/// the whole import is rejected (no partial imports).
 pub async fn import_statement(
     engine: &ErpEngine,
     req: ImportStatementRequest,
@@ -44,9 +72,39 @@ pub async fn import_statement(
         StatementFormat::Api => "api",
     };
 
+    // File-level idempotency: a stable hash of the raw content. Re-importing the
+    // exact same file for the same bank account is rejected so the categorisation
+    // queue (and any downstream GL postings) cannot be silently doubled.
+    let content_hash = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        req.content.hash(&mut h);
+        format!("{:016x}", h.finish())
+    };
+
+    let existing = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM statement_imports WHERE entity_id = $1 AND bank_account_id = $2 AND content_hash = $3",
+    )
+    .bind(req.entity_id)
+    .bind(req.bank_account_id)
+    .bind(&content_hash)
+    .fetch_optional(engine.pool())
+    .await?;
+    if existing.is_some() {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "This statement file has already been imported for this bank account ({} lines). Re-importing is blocked to prevent duplicate transactions.",
+                line_count
+            ),
+        });
+    }
+
+    // All-or-nothing: the import header and every line commit together.
+    let mut tx = engine.pool().begin().await?;
+
     sqlx::query(
-        r#"INSERT INTO statement_imports (id, entity_id, bank_account_id, format, filename, imported_at, line_count, matched_count, unmatched_count)
-           VALUES ($1, $2, $3, $4, $5, NOW(), $6, 0, 0)"#,
+        r#"INSERT INTO statement_imports (id, entity_id, bank_account_id, format, filename, imported_at, line_count, matched_count, unmatched_count, content_hash)
+           VALUES ($1, $2, $3, $4, $5, NOW(), $6, 0, 0, $7)"#,
     )
     .bind(import_id)
     .bind(req.entity_id)
@@ -54,16 +112,35 @@ pub async fn import_statement(
     .bind(format_str)
     .bind(&req.filename)
     .bind(line_count as i32)
-    .execute(engine.pool())
+    .bind(&content_hash)
+    .execute(&mut *tx)
     .await?;
 
-    // 4. Insert each transaction line into categorisation queue
-    for line in &lines {
+    // 4. Insert each transaction line into categorisation queue, skipping any
+    // line that duplicates one already present for this bank account (line-level
+    // dedup via a deterministic key + ON CONFLICT DO NOTHING).
+    let mut inserted = 0u32;
+    for (idx, line) in lines.iter().enumerate() {
         let txn_id = Uuid::new_v4();
-        sqlx::query(
+        let dedup_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            line.value_date.hash(&mut h);
+            line.reference.hash(&mut h);
+            line.description.hash(&mut h);
+            line.debit.map(|d| d.to_string()).hash(&mut h);
+            line.credit.map(|c| c.to_string()).hash(&mut h);
+            // Include the within-file position so legitimately identical lines in
+            // one statement (e.g. two equal fees same day) are preserved, while a
+            // re-imported file (same positions) still collides.
+            idx.hash(&mut h);
+            format!("{:016x}", h.finish())
+        };
+        let res = sqlx::query(
             r#"INSERT INTO imported_transactions 
-               (id, entity_id, bank_account, value_date, description, reference, debit, credit, running_bal, category_status, import_batch_id, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uncategorised', $10, NOW())"#,
+               (id, entity_id, bank_account, value_date, description, reference, debit, credit, running_bal, category_status, import_batch_id, created_at, dedup_key)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uncategorised', $10, NOW(), $11)
+               ON CONFLICT (entity_id, bank_account, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING"#,
         )
         .bind(txn_id)
         .bind(req.entity_id)
@@ -75,14 +152,18 @@ pub async fn import_statement(
         .bind(line.credit)
         .bind(line.balance.unwrap_or(Decimal::ZERO))
         .bind(import_id)
-        .execute(engine.pool())
+        .bind(&dedup_key)
+        .execute(&mut *tx)
         .await?;
+        inserted += res.rows_affected() as u32;
     }
+
+    tx.commit().await?;
 
     Ok(ImportStatementResult {
         import_id,
         format,
-        line_count,
+        line_count: inserted,
         matched_count: 0,
         unmatched_count: 0,
     })

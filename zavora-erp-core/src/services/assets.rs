@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -50,130 +50,153 @@ pub async fn create_asset(
     Ok(id)
 }
 
-/// Run monthly depreciation for all active assets.
+/// Last day of the month containing `d`.
+fn month_end(d: NaiveDate) -> NaiveDate {
+    let (y, m) = (d.year(), d.month());
+    let first_next = if m == 12 {
+        NaiveDate::from_ymd_opt(y + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(y, m + 1, 1)
+    }
+    .unwrap();
+    first_next.pred_opt().unwrap()
+}
+
+/// First day of the month following `d`'s month.
+fn next_month_start(d: NaiveDate) -> NaiveDate {
+    month_end(d).succ_opt().unwrap()
+}
+
+/// Run depreciation for all active assets up to (and including) the month of
+/// `as_of`, catching up any months not yet posted.
 ///
-/// For each active asset where net_book_value > residual_value:
-/// 1. Computes monthly depreciation based on method (straight line or declining balance)
-/// 2. Updates accumulated_depreciation and net_book_value on the asset
-/// 3. Creates a journal entry: DR Depreciation Expense / CR Accumulated Depreciation
+/// Idempotent: each asset tracks `depreciated_through`, so a month is never
+/// depreciated twice. Catch-up: an asset acquired several months ago (or whose
+/// runs were skipped) books every missing month in one call. Each month's
+/// depreciation is posted into that month's fiscal period (catch-up stops at the
+/// first month with no open period). The whole run is atomic.
 ///
 /// Returns the IDs of all assets that were depreciated.
 pub async fn run_depreciation(
     engine: &ErpEngine,
     entity_id: Uuid,
-    period_id: Uuid,
+    as_of: NaiveDate,
     triggered_by: &AgentOrUserId,
 ) -> ErpResult<Vec<Uuid>> {
-    // Get the period for the journal entry date
-    let period = crate::services::periods::get_period(engine, entity_id, period_id).await?;
+    let target = month_end(as_of);
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
 
-    // Fetch all active assets that still have depreciable value
     let rows = sqlx::query_as::<_, FixedAssetRow>(
-        r#"SELECT * FROM fixed_assets 
-           WHERE entity_id = $1 
-             AND status = 'active' 
-             AND net_book_value > residual_value"#,
+        r#"SELECT * FROM fixed_assets
+           WHERE entity_id = $1 AND status = 'active' AND net_book_value > residual_value"#,
     )
     .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
-    if rows.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+    // period_id -> (posting date = period end, lines)
+    let mut per_period: std::collections::HashMap<Uuid, (NaiveDate, Vec<CreateJournalLineRequest>)> =
+        Default::default();
+    // pending asset updates (applied atomically with the journals)
+    let mut updates: Vec<(Uuid, Decimal, Decimal, &'static str, NaiveDate)> = Vec::new();
     let mut depreciated_ids = Vec::new();
-    let mut journal_lines = Vec::new();
 
     for row in &rows {
-        // Reconstruct the asset for computation
-        let asset = row_to_asset(row)?;
-        let monthly_depr = asset.monthly_depreciation();
-
-        if monthly_depr <= Decimal::ZERO {
-            continue;
-        }
-
-        // Cap depreciation so NBV doesn't go below residual
-        let max_depr = asset.net_book_value - asset.residual_value;
-        let depr_amount = monthly_depr.min(max_depr);
-
-        if depr_amount <= Decimal::ZERO {
-            continue;
-        }
-
-        // Update the asset in the database
-        let new_accum = asset.accumulated_depreciation + depr_amount;
-        let new_nbv = asset.net_book_value - depr_amount;
-        let new_status = if new_nbv <= asset.residual_value {
-            "fully_depreciated"
-        } else {
-            "active"
+        let mut asset = row_to_asset(row)?;
+        // first month to book: the month after `depreciated_through`, else the
+        // acquisition month (full-month convention in the month of acquisition).
+        let mut cursor = match row.depreciated_through {
+            Some(d) => next_month_start(d),
+            None => asset.acquisition_date,
         };
+        let mut new_accum = asset.accumulated_depreciation;
+        let mut new_nbv = asset.net_book_value;
+        let mut last_booked: Option<NaiveDate> = None;
 
-        sqlx::query(
-            r#"UPDATE fixed_assets 
-               SET accumulated_depreciation = $1, 
-                   net_book_value = $2, 
-                   status = $3
-               WHERE id = $4"#,
-        )
-        .bind(new_accum)
-        .bind(new_nbv)
-        .bind(new_status)
-        .bind(asset.id)
-        .execute(engine.pool())
-        .await?;
+        while month_end(cursor) <= target {
+            if new_nbv <= asset.residual_value {
+                break;
+            }
+            // declining-balance / KRA depend on the running NBV
+            asset.net_book_value = new_nbv;
+            let mut monthly = asset.monthly_depreciation();
+            let cap = new_nbv - asset.residual_value;
+            if monthly > cap {
+                monthly = cap;
+            }
+            if monthly <= Decimal::ZERO {
+                break;
+            }
 
-        // DR Depreciation Expense
-        journal_lines.push(CreateJournalLineRequest {
-            account_code: asset.gl_depr_expense.clone(),
-            debit: Some(depr_amount),
-            credit: None,
-            currency: base_ccy.clone(),
-            fx_rate: Some(Decimal::ONE),
-            description: Some(format!("Depreciation: {} ({})", asset.description, asset.asset_number)),
-            dimensions: None,
-        });
+            let m_end = month_end(cursor);
+            let period = match crate::services::periods::period_for_date(engine, entity_id, m_end).await {
+                Ok(p) if p.allows_posting() => p,
+                _ => break, // no open period for this month — stop catching up here
+            };
+            let bucket = per_period.entry(period.id).or_insert_with(|| (period.end_date, Vec::new()));
+            bucket.1.push(CreateJournalLineRequest {
+                account_code: asset.gl_depr_expense.clone(),
+                debit: Some(monthly),
+                credit: None,
+                currency: base_ccy.clone(),
+                fx_rate: Some(Decimal::ONE),
+                description: Some(format!("Depreciation {} — {} ({})", m_end.format("%b %Y"), asset.description, asset.asset_number)),
+                dimensions: None,
+            });
+            bucket.1.push(CreateJournalLineRequest {
+                account_code: asset.gl_accum_depr_account.clone(),
+                debit: None,
+                credit: Some(monthly),
+                currency: base_ccy.clone(),
+                fx_rate: Some(Decimal::ONE),
+                description: Some(format!("Accum depr {} — {} ({})", m_end.format("%b %Y"), asset.description, asset.asset_number)),
+                dimensions: None,
+            });
 
-        // CR Accumulated Depreciation
-        journal_lines.push(CreateJournalLineRequest {
-            account_code: asset.gl_accum_depr_account.clone(),
-            debit: None,
-            credit: Some(depr_amount),
-            currency: base_ccy.clone(),
-            fx_rate: Some(Decimal::ONE),
-            description: Some(format!("Accum depr: {} ({})", asset.description, asset.asset_number)),
-            dimensions: None,
-        });
+            new_accum += monthly;
+            new_nbv -= monthly;
+            last_booked = Some(m_end);
+            cursor = next_month_start(cursor);
+        }
 
-        depreciated_ids.push(asset.id);
+        if let Some(through) = last_booked {
+            let status = if new_nbv <= asset.residual_value { "fully_depreciated" } else { "active" };
+            updates.push((asset.id, new_accum, new_nbv, status, through));
+            depreciated_ids.push(asset.id);
+        }
     }
 
-    if journal_lines.is_empty() {
+    if per_period.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Create a single consolidated journal entry for all depreciation
-    let entry_req = CreateJournalEntryRequest {
-        date: period.end_date,
-        source: JournalSource::Depreciation,
-        source_id: None,
-        reference: format!("DEPR-{}", period.name),
-        description: format!("Monthly depreciation for {}", period.name),
-        lines: journal_lines,
-        post_immediately: true,
-    };
-
-    crate::services::journal::create_and_post(
-        engine,
-        entity_id,
-        entry_req,
-        period_id,
-        triggered_by.clone(),
-    )
-    .await?;
+    // Atomic: post each period's journal and apply all asset updates together.
+    let mut tx = engine.pool().begin().await?;
+    for (period_id, (date, lines)) in per_period {
+        let req = CreateJournalEntryRequest {
+            date,
+            source: JournalSource::Depreciation,
+            source_id: None,
+            reference: format!("DEPR-{}", date.format("%Y-%m")),
+            description: format!("Depreciation for {}", date.format("%B %Y")),
+            lines,
+            post_immediately: true,
+        };
+        crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, req, period_id, triggered_by.clone()).await?;
+    }
+    for (id, accum, nbv, status, through) in &updates {
+        sqlx::query(
+            "UPDATE fixed_assets SET accumulated_depreciation=$1, net_book_value=$2, status=$3, depreciated_through=$4 WHERE id=$5",
+        )
+        .bind(accum)
+        .bind(nbv)
+        .bind(status)
+        .bind(through)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
 
     Ok(depreciated_ids)
 }

@@ -1290,12 +1290,21 @@ pub async fn post_invoice(
         dimensions: None,
     });
 
-    // CR Revenue (per line)
+    // CR Revenue (per line). A negative line total represents a discount or
+    // contra-revenue line; book it as a positive DEBIT to the revenue account
+    // rather than a negative credit, so no journal line ever carries a negative
+    // amount (which would violate journal validation) while the entry still
+    // balances against AR.
     for line in &lines {
+        let (debit, credit) = if line.line_total < Decimal::ZERO {
+            (Some(-line.line_total), None)
+        } else {
+            (None, Some(line.line_total))
+        };
         journal_lines.push(CreateJournalLineRequest {
             account_code: line.account_code.clone(),
-            debit: None,
-            credit: Some(line.line_total),
+            debit,
+            credit,
             currency: invoice.currency.clone(),
             fx_rate: Some(invoice.fx_rate),
             description: Some(line.description.clone()),
