@@ -17,10 +17,44 @@ export interface DashboardSummary {
   outstanding_invoices: InvoiceSummary[];
   pending_approvals: number;
   uncategorised_txns: number;
+  // QuickBooks-style widgets.
+  invoices_bar: InvoicesBar;
+  expense_breakdown: CategoryAmount[];
+  bank_accounts: BankAccountBalance[];
+  pnl_mtd: PnlSnapshot;
   // Entity activity counts (used to detect a brand-new tenant for the empty state).
   invoice_count?: number;
   bill_count?: number;
   payment_count?: number;
+}
+
+export interface InvoicesBar {
+  overdue: number;
+  overdue_count: number;
+  due_soon: number;
+  due_soon_count: number;
+  open: number;
+  open_count: number;
+  paid_last_30: number;
+}
+
+export interface CategoryAmount {
+  code: string;
+  name: string;
+  amount: number;
+}
+
+export interface BankAccountBalance {
+  id: string;
+  name: string;
+  bank_name: string;
+  balance: number;
+}
+
+export interface PnlSnapshot {
+  income: number;
+  expenses: number;
+  net_income: number;
 }
 
 export interface MonthlyAmount {

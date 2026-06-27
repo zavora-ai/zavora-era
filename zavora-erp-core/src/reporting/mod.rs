@@ -703,6 +703,11 @@ pub struct DashboardSummary {
     pub outstanding_invoices: Vec<InvoiceSummary>,
     pub pending_approvals: u32,
     pub uncategorised_txns: u32,
+    // QuickBooks-style widgets.
+    pub invoices_bar: InvoicesBar,
+    pub expense_breakdown: Vec<CategoryAmount>,
+    pub bank_accounts: Vec<BankAccountBalance>,
+    pub pnl_mtd: PnlSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -723,4 +728,42 @@ pub struct InvoiceSummary {
     pub balance_due: Decimal,
     pub due_date: NaiveDate,
     pub is_overdue: bool,
+}
+
+/// QuickBooks-style invoice money-bar: open receivables split by ageing bucket,
+/// plus cash collected recently.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InvoicesBar {
+    pub overdue: Decimal,
+    pub overdue_count: u32,
+    pub due_soon: Decimal,
+    pub due_soon_count: u32,
+    pub open: Decimal,
+    pub open_count: u32,
+    pub paid_last_30: Decimal,
+}
+
+/// A named amount, e.g. one slice of an expenses-by-category breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryAmount {
+    pub code: String,
+    pub name: String,
+    pub amount: Decimal,
+}
+
+/// Per-bank-account book balance for the dashboard bank strip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankAccountBalance {
+    pub id: Uuid,
+    pub name: String,
+    pub bank_name: String,
+    pub balance: Decimal,
+}
+
+/// Profit & loss totals for a single period (used for the dashboard P&L card).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PnlSnapshot {
+    pub income: Decimal,
+    pub expenses: Decimal,
+    pub net_income: Decimal,
 }
