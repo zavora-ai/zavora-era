@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
@@ -20,6 +21,7 @@ export default function InvoicesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
   const { data: resp, isLoading } = useQuery({
@@ -123,7 +125,7 @@ export default function InvoicesPage() {
         ))}
       </div>
 
-      <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No invoices yet. Create your first invoice to get paid." />
+      <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/invoices/${r.id}`)} emptyMessage="No invoices yet. Create your first invoice to get paid." />
       <PaginationControls page={page} limit={limit} total={invoicesTotal} onPage={setPage} />
 
       {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
