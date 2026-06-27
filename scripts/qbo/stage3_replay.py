@@ -42,6 +42,36 @@ AP_CODE = ACC[f"Liability||{AP_NAME}"]["code"]
 def code_for(zt, name):
     x = ACC.get(f"{zt}||{name}"); return x["code"] if x else None
 
+PRODUCTS = maps.get("products", {})
+
+def resolve_product(desc, account_name):
+    """Map a QBO invoice/bill line to a catalog product. Returns (product_id, info)
+    or (None, None).
+
+    Inventory products in the QBO sample are only ever *sold as inventory* on
+    lines posted to "Sales of Product Income". The same words (e.g. "Sprinkler
+    Pipes") also appear as free-text on service lines posted to other revenue
+    accounts (e.g. "Sprinklers and Drip Systems") — those are NOT inventory sales
+    and must not issue stock. So an inventory product only matches when the line's
+    revenue account is "Sales of Product Income"; non-inventory products match by
+    name/description on any account."""
+    d = (desc or "").strip().lower()
+    if not d:
+        return None, None
+    def matches(info, pname):
+        pn, pd = pname.strip().lower(), (info.get("description") or "").strip().lower()
+        return (pn and (pn == d or pn in d or d in pn)) or (pd and (pd == d or pd in d or d in pd))
+    # 1) inventory products: require the Sales-of-Product-Income account
+    if account_name == "Sales of Product Income":
+        for pname, info in PRODUCTS.items():
+            if info.get("id") and info.get("is_inventory") and matches(info, pname):
+                return info["id"], info
+    # 2) non-inventory products: match by name/description on any account
+    for pname, info in PRODUCTS.items():
+        if info.get("id") and not info.get("is_inventory") and matches(info, pname):
+            return info["id"], info
+    return None, None
+
 def resolve_party(table, name, kind):
     for cand in (name, name.split(":")[-1].strip(), name.split(":")[0].strip()):
         if cand in table: return table[cand]
@@ -142,11 +172,22 @@ def main():
             cid = resolve_party(CUST, name, "customer")
             if not cid: log["cust_unresolved"] += 1; continue
             lines, total = [], 0.0
+            has_tracked_inventory = False
             for l in t["pnl_lines"]:
                 code = code_for("Revenue", l["account"])
                 if not code: unresolved.add(("Revenue", l["account"])); continue
-                lines.append({"description": (l["description"] or l["account"]), "quantity": 1,
-                              "unit_price": l["amount"], "account_code": code, "vat_treatment": "ZeroRated"})
+                desc = l["description"] or l["account"]
+                # Link the line to a product so the invoice references the catalog
+                # and, for Inventory products, the post step issues stock + books
+                # COGS at WAC. Keep the exact QBO unit_price/account/vat.
+                pid, pinfo = resolve_product(l["description"], l["account"])
+                line = {"description": desc, "quantity": 1, "unit_price": l["amount"],
+                        "account_code": code, "vat_treatment": "ZeroRated"}
+                if pid:
+                    line["product_id"] = pid
+                    if pinfo.get("is_inventory"):
+                        has_tracked_inventory = True
+                lines.append(line)
                 total += l["amount"]
             if not lines: continue
             st, r = call("POST", "/invoices", token, {"customer_id": cid, "issue_date": date, "lines": lines})
@@ -154,25 +195,33 @@ def main():
                 log["invoice_fail"] += 1
                 if log["invoice_fail"] <= 8: print(f"  INV FAIL {ref} {st}: {str(r)[:150]}")
                 continue
-            call("POST", f"/invoices/{r['id']}/post", token)
+            pst, pr = call("POST", f"/invoices/{r['id']}/post", token)
+            if pst >= 300:
+                log["invoice_post_fail"] += 1
+                if log["invoice_post_fail"] <= 8: print(f"  INV POST FAIL {ref} {pst}: {str(pr)[:150]}")
             log["invoice_ok"] += 1
+            if has_tracked_inventory:
+                log["invoice_with_inventory"] += 1
             if total > 0.005: open_inv[cid].append({"id": r["id"], "bal": round(total, 2)})
             inv_by_cust.setdefault(cid, []).append(r["id"])
-            # COGS leg of inventory sales (DR COGS / CR Inventory Asset) — the invoice
-            # flow only books income; replay the cost side as a balanced journal.
-            cogs = []
-            for l in t["pnl_lines"]:
-                if l["ztype"] == "Expense":
-                    code = code_for("Expense", l["account"])
-                    if code:
-                        d_, c_ = to_dr_cr("Expense", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
-            for l in t["bs_lines"]:
-                if l["account"] == "Inventory Asset":
-                    code = code_for("Asset", l["account"])
-                    if code:
-                        d_, c_ = to_dr_cr("Asset", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
-            if cogs:
-                post_journal(date, f"{ref} cogs", "COGS", cogs, log)
+            # COGS for Inventory-tracked products is now booked by invoice posting
+            # (DR COGS / CR Inventory at WAC). Only replay a manual COGS journal
+            # for any expense/inventory lines NOT covered by a tracked product
+            # (none in the QBO sample, but kept for completeness).
+            if not has_tracked_inventory:
+                cogs = []
+                for l in t["pnl_lines"]:
+                    if l["ztype"] == "Expense":
+                        code = code_for("Expense", l["account"])
+                        if code:
+                            d_, c_ = to_dr_cr("Expense", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
+                for l in t["bs_lines"]:
+                    if l["account"] == "Inventory Asset":
+                        code = code_for("Asset", l["account"])
+                        if code:
+                            d_, c_ = to_dr_cr("Asset", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
+                if cogs:
+                    post_journal(date, f"{ref} cogs", "COGS", cogs, log)
 
         elif typ == "Bill":
             vid = resolve_party(VEND, name, "vendor")
@@ -184,6 +233,18 @@ def main():
                 lines.append({"description": (l["description"] or l["account"]), "quantity": 1,
                               "unit_price": l["amount"], "account_code": code, "vat_treatment": "ZeroRated"})
                 total += l["amount"]
+            # Inventory purchases: QBO books these to Inventory Asset (a balance-sheet
+            # line), not to an expense. Replay them as bill lines posting to the
+            # Inventory Asset account so AP and the GL Inventory Asset both move,
+            # keeping the GL in step with the inventory subledger opening seed.
+            for l in t["bs_lines"]:
+                if l["account"] == "Inventory Asset" and l["amount"] > 0.005:
+                    code = code_for("Asset", "Inventory Asset")
+                    if code:
+                        lines.append({"description": (l["description"] or "Inventory purchase"),
+                                      "quantity": 1, "unit_price": l["amount"],
+                                      "account_code": code, "vat_treatment": "ZeroRated"})
+                        total += l["amount"]
             if not lines: continue
             st, r = call("POST", "/bills", token, {"vendor_id": vid, "issue_date": date, "due_date": date, "lines": lines})
             if st >= 300 or not (r and r.get("id")):

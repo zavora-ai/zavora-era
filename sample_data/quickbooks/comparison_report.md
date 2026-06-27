@@ -1,9 +1,33 @@
 # Zavora vs QuickBooks — report comparison (Craig's Design & Landscaping)
 
 The QuickBooks sample company was rebuilt in a fresh Zavora tenant through real
-flows: **31 invoices, 13 bills, 15 customer payments, 10 bill payments, 1 credit
-note, 52 journals** (plus per-invoice COGS legs), replayed from the QBO general
-ledger (`transactions.json`). Sales tax neutralized per the agreed approach.
+flows: **31 invoices, 14 bills, 15 customer payments, 10 bill payments, 1 credit
+note, 49 journals**, replayed from the QBO general ledger (`transactions.json`).
+Sales tax neutralized per the agreed approach.
+
+## Inventory is now fully modelled through the real engine ✅
+
+Earlier rebuilds faked inventory: products were untracked, no inventory items or
+stock movements existed, and COGS (405.00) was hand-posted as manual journals.
+The rebuild now runs inventory through the actual engine end-to-end:
+
+- The 4 QBO Inventory items (Pump, Rock Fountain, Sprinkler Heads, Sprinkler
+  Pipes) are created as `inventory_items`, linked to their products
+  (`track_inventory=true`, `inventory_item_id` set), and seeded with opening
+  stock.
+- Invoice/bill lines now carry `product_id` (50 of 64 invoice lines link to the
+  catalog; the rest are genuine free-text service lines).
+- Posting an invoice that sells a tracked product **issues stock and books
+  DR COGS / CR Inventory at weighted-average cost** — no manual COGS journal.
+- **COGS = 405.00 exact** (Rock Fountain 3×125 + Pump 2×10 + Pipes 2×5 + Heads
+  1×0), and the **inventory subledger ties to the GL Inventory Asset to the
+  cent: 596.25 = 596.25** (opening 1,001.25 + 0 − issues 405.00).
+- Stock movements recorded: 4 receipts (opening) + 8 issues (sales).
+
+Documented constraint: QBO's export carries opening *values*, not *quantities*,
+and has fractional cost layers, so per-item opening **quantities** are synthetic
+(Rock Fountain carries a fractional opening qty). The inventory **value**, COGS,
+and subledger-to-GL tie are all exact.
 
 ## Final result (as_at 2026-12-31)
 
@@ -16,7 +40,14 @@ ledger (`transactions.json`). Sales tax neutralized per the agreed approach.
 | Operating Expenses | 5,237.31 | 5,237.31 | **0.00 ✓** |
 | **Net Income** | **1,642.46** | **1,642.46** | **0.00 ✓** |
 
-### Balance Sheet — balances; equity base exact
+### Balance Sheet — balances; equity base exact; residual = neutralized sales tax
+The Trial Balance balances (41,375.08) and the Balance Sheet balances. The
+equity base ties to QBO exactly (−7,695.04 + 1,642.46 current-year earnings).
+The remaining **−123.42** on Assets and Liabilities (down from −328.42 before
+inventory was properly modelled) is entirely the deliberately **neutralized US
+sales tax**, and nets out on both sides so the sheet still balances.
+
+### (prior run, for reference)
 | Line | QBO | Zavora | Δ |
 |------|-----:|-----:|-----:|
 | Total Assets | 23,436.29 | 23,107.87 | −328.42 |
