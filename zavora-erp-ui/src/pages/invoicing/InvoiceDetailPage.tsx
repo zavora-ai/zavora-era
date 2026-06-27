@@ -12,6 +12,15 @@ import {
   Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck, FileText
 } from 'lucide-react';
 
+interface InvoiceLineRow {
+  id: string;
+  description: string;
+  quantity: number | string;
+  unit_price: number | string;
+  vat_amount: number | string;
+  line_total: number | string;
+}
+
 const ETIMS_BADGE: Record<string, { label: string; cls: string }> = {
   not_transmitted: { label: 'eTIMS: Not transmitted', cls: 'bg-gray-100 text-gray-600' },
   transmitted: { label: 'eTIMS: Transmitted to KRA', cls: 'bg-green-100 text-green-700' },
@@ -27,11 +36,15 @@ export default function InvoiceDetailPage() {
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const { data: invoice, isLoading } = useQuery<Invoice>({
+  // GET /invoices/{id} returns { invoice, lines }. Unwrap so the page reads the
+  // invoice fields (and render the real line items below).
+  const { data, isLoading } = useQuery<{ invoice: Invoice; lines: InvoiceLineRow[] }>({
     queryKey: ['invoice', id],
-    queryFn: () => getInvoice(id!).then(r => r.data),
+    queryFn: () => getInvoice(id!).then(r => (r.data.invoice ? r.data : { invoice: r.data, lines: [] })),
     enabled: !!id,
   });
+  const invoice = data?.invoice;
+  const lines = data?.lines ?? [];
 
   const { data: payments = [] } = useQuery<Payment[]>({
     queryKey: ['payments'],
@@ -40,7 +53,7 @@ export default function InvoiceDetailPage() {
 
   const { data: auditEvents = [] } = useQuery<AuditEventEntry[]>({
     queryKey: ['audit', 'Invoice', id],
-    queryFn: () => getAuditForObject('Invoice', id!).then(r => r.data),
+    queryFn: () => getAuditForObject('Invoice', id!).then(r => r.data.events ?? r.data),
     enabled: !!id,
   });
 
@@ -212,15 +225,21 @@ export default function InvoiceDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {/* Since we only have the totals from the invoice summary, show a placeholder */}
-              <tr>
-                <td className="px-5 py-3 text-sm text-gray-600" colSpan={5}>
-                  <div className="flex justify-between">
-                    <span>Invoice line items</span>
-                    <span className="font-medium">{formatCurrency(invoice.subtotal, invoice.currency)}</span>
-                  </div>
-                </td>
-              </tr>
+              {lines.length === 0 ? (
+                <tr>
+                  <td className="px-5 py-3 text-sm text-gray-400" colSpan={5}>No line items.</td>
+                </tr>
+              ) : (
+                lines.map((l) => (
+                  <tr key={l.id}>
+                    <td className="px-5 py-3 text-sm text-gray-900">{l.description}</td>
+                    <td className="px-5 py-3 text-sm text-right text-gray-600">{Number(l.quantity)}</td>
+                    <td className="px-5 py-3 text-sm text-right text-gray-600">{formatCurrency(Number(l.unit_price), invoice.currency)}</td>
+                    <td className="px-5 py-3 text-sm text-right text-gray-600">{formatCurrency(Number(l.vat_amount), invoice.currency)}</td>
+                    <td className="px-5 py-3 text-sm text-right font-medium">{formatCurrency(Number(l.line_total), invoice.currency)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
             <tfoot className="bg-gray-50">
               <tr className="border-t">
