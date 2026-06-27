@@ -176,6 +176,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/invoices/{id}/write-off", post(routes::invoices::write_off))
         .route("/api/v1/invoices/{id}/credit-note", post(routes::invoices::create_credit_note))
         .route("/api/v1/invoices/{id}/etims-transmit", post(routes::invoices::etims_transmit))
+        // Invoice templates (branding for the send/PDF flow)
+        .route("/api/v1/invoice-templates", get(routes::invoice_templates::list).post(routes::invoice_templates::create))
         // Estimates
         .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
         .route("/api/v1/estimates/{id}", get(routes::estimates::get_one).put(routes::estimates::update).delete(routes::estimates::delete))

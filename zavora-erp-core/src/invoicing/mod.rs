@@ -4,6 +4,7 @@ pub mod recurring;
 pub mod credit_note;
 pub mod template;
 pub mod line;
+pub mod pdf;
 
 pub use invoice::*;
 pub use estimate::*;

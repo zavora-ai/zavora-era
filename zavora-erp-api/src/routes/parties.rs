@@ -237,6 +237,7 @@ pub async fn send_statement(
         related_type: Some("customer".to_string()),
         related_id: Some(id),
         schedule_at: None,
+        attachments: Vec::new(),
     };
 
     match zavora_erp_core::services::notifications::send_notification(&state.engine, ctx.entity_id, req).await {

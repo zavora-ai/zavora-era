@@ -113,11 +113,13 @@ pub async fn send(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(_req): Json<SendInvoiceRequest>,
+    Json(mut req): Json<SendInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     require_role(ROLES_SEND, &ctx, "send invoice").map_err(err_response)?;
-    match svc::mark_invoice_sent(&state.engine, ctx.entity_id, id).await {
-        Ok(()) => Ok(Json(serde_json::json!({ "status": "sent", "invoice_id": id }))),
+    req.invoice_id = id; // path is authoritative
+    match svc::send_invoice(&state.engine, ctx.entity_id, req).await {
+        Ok(Some(recipient)) => Ok(Json(serde_json::json!({ "status": "sent", "invoice_id": id, "emailed_to": recipient }))),
+        Ok(None) => Ok(Json(serde_json::json!({ "status": "sent", "invoice_id": id, "emailed_to": null }))),
         Err(e) => Err(err_response(e)),
     }
 }

@@ -161,6 +161,7 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
             related_type: Some("fiscal_period".to_string()),
             related_id: Some(updated.id),
             schedule_at: None,
+            attachments: Vec::new(),
         };
         // Best-effort notification — don't fail the close operation on notification errors
         let _ = super::notifications::send_notification(engine, entity_id, notification).await;

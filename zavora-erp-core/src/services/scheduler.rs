@@ -86,6 +86,7 @@ pub async fn process_report_schedules_for(engine: &ErpEngine, entity_id: Uuid) -
                 related_type: Some("report_schedule".to_string()),
                 related_id: Some(s.id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
             let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
         }
@@ -444,6 +445,7 @@ pub async fn process_invoice_reminders_for(engine: &ErpEngine, entity_id: Uuid) 
                     related_type: Some("Invoice".to_string()),
                     related_id: Some(inv.id),
                     schedule_at: None,
+                    attachments: Vec::new(),
                 };
 
                 let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
@@ -667,6 +669,7 @@ pub async fn run_overdue_check(engine: &ErpEngine) -> ErpResult<OverdueCheckResu
                 related_type: Some("Invoice".to_string()),
                 related_id: Some(inv.id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
 
             let delivery_outcome =

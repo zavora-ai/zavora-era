@@ -177,6 +177,18 @@ pub enum InvoiceDeliveryChannel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendInvoiceRequest {
     pub invoice_id: Uuid,
+    #[serde(default)]
     pub channels: Vec<InvoiceDeliveryChannel>,
     pub message: Option<String>,
+    /// Template to render the PDF with. Falls back to the invoice's stored
+    /// template, then the entity default, then built-in defaults.
+    #[serde(default)]
+    pub template_id: Option<Uuid>,
+    /// Override the recipient email (else the customer's primary email is used).
+    #[serde(default)]
+    pub recipient_email: Option<String>,
+    /// When true, only stamp `sent_at` (the customer was sent the invoice
+    /// off-system); skip email delivery and PDF generation.
+    #[serde(default)]
+    pub mark_sent_only: bool,
 }

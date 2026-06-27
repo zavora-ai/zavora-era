@@ -29,6 +29,9 @@ rand = "0.8"
 # Email delivery
 lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
 
+# Base64 (PDF attachment transport through the notification stream)
+base64 = "0.22"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 proptest = "1"

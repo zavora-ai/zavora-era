@@ -1162,6 +1162,231 @@ pub async fn mark_invoice_sent(
     Ok(())
 }
 
+/// Send an invoice to its customer by email — a formatted HTML message with the
+/// invoice PDF attached — and stamp `sent_at`. The PDF is rendered with the
+/// chosen template (request `template_id` → invoice's template → entity default
+/// → built-in). If `mark_sent_only` is set, or no recipient email is available,
+/// it falls back to just stamping `sent_at` (off-system send). Email delivery is
+/// queued via the notification system; if SMTP is unconfigured the worker
+/// no-ops, so this never blocks marking the invoice sent.
+///
+/// Returns the recipient the email was queued to, if any.
+pub async fn send_invoice(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    req: crate::invoicing::SendInvoiceRequest,
+) -> ErpResult<Option<String>> {
+    let invoice_id = req.invoice_id;
+    let invoice = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if invoice.status == "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: "Post the invoice before sending it".to_string(),
+        });
+    }
+
+    // Mark-sent-only short circuit (off-system delivery).
+    if req.mark_sent_only {
+        mark_invoice_sent(engine, entity_id, invoice_id).await?;
+        return Ok(None);
+    }
+
+    // Resolve the customer + recipient email.
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Customer".to_string(), id: invoice.customer_id })?;
+
+    let recipient = req.recipient_email.clone().or_else(|| {
+        serde_json::from_value::<Vec<crate::types::ContactEmail>>(customer.email.clone())
+            .ok()
+            .and_then(|emails| emails.into_iter().map(|e| e.email).find(|e| !e.is_empty()))
+    });
+
+    // No email anywhere → mark sent only (still records the action).
+    let Some(recipient) = recipient else {
+        mark_invoice_sent(engine, entity_id, invoice_id).await?;
+        return Ok(None);
+    };
+
+    // Resolve the template: request → invoice → entity default → None (built-in).
+    let template_id = req.template_id.or(invoice.template_id);
+    let template = load_template(engine, entity_id, template_id).await?;
+
+    // Org name + branding from settings (best-effort).
+    let org_name = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT organization_name FROM entity_settings WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .flatten()
+    .unwrap_or_else(|| "Your Company".to_string());
+
+    // Build the PDF.
+    let lines = sqlx::query_as::<_, InvoiceLineRow>(
+        "SELECT * FROM invoice_lines WHERE invoice_id = $1",
+    )
+    .bind(invoice_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let (accent_hex, footer_text) = match &template {
+        Some(t) => (t.primary_color.clone(), t.footer_text.clone()),
+        None => ("#1a56db".to_string(), None),
+    };
+
+    let pdf_data = crate::invoicing::pdf::InvoicePdfData {
+        org_name: org_name.clone(),
+        invoice_number: invoice.number.clone(),
+        invoice_type_label: if invoice.invoice_type == "credit_note" { "Credit Note".to_string() } else { "Tax Invoice".to_string() },
+        issue_date: invoice.issue_date.to_string(),
+        due_date: invoice.due_date.to_string(),
+        currency: invoice.currency.clone(),
+        customer_name: customer.name.clone(),
+        customer_email: Some(recipient.clone()),
+        lines: lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+            description: l.description.clone(),
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            line_total: l.line_total,
+        }).collect(),
+        subtotal: invoice.subtotal,
+        discount_total: invoice.discount_total,
+        tax_total: invoice.tax_total,
+        gross_total: invoice.gross_total,
+        amount_paid: invoice.amount_paid,
+        balance_due: invoice.balance_due,
+        notes: invoice.notes.clone(),
+        footer_text,
+        accent_rgb: crate::invoicing::pdf::parse_hex_color(&accent_hex),
+    };
+    let pdf_bytes = crate::invoicing::pdf::render_invoice_pdf(&pdf_data);
+    let pdf_b64 = {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        B64.encode(&pdf_bytes)
+    };
+
+    // Formatted HTML email body.
+    let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex);
+    let subject = format!("Invoice {} from {}", invoice.number, org_name);
+
+    let notif = crate::notifications::SendNotificationRequest {
+        event_type: crate::notifications::NotificationEventType::InvoiceSent,
+        channels: vec![crate::types::Channel::Email],
+        recipients: vec![recipient.clone()],
+        subject: Some(subject),
+        body,
+        related_type: Some("Invoice".to_string()),
+        related_id: Some(invoice_id),
+        schedule_at: None,
+        attachments: vec![crate::notifications::NotificationAttachment {
+            filename: format!("{}.pdf", invoice.number),
+            mime_type: "application/pdf".to_string(),
+            content_base64: pdf_b64,
+        }],
+    };
+    crate::services::notifications::send_notification(engine, entity_id, notif).await?;
+
+    // Stamp sent.
+    mark_invoice_sent(engine, entity_id, invoice_id).await?;
+
+    Ok(Some(recipient))
+}
+
+/// Load an invoice template by id, or the entity's default, or None.
+async fn load_template(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    template_id: Option<Uuid>,
+) -> ErpResult<Option<crate::invoicing::InvoiceTemplateRow>> {
+    if let Some(tid) = template_id {
+        let row = sqlx::query_as::<_, crate::invoicing::InvoiceTemplateRow>(
+            "SELECT * FROM invoice_templates WHERE id = $1 AND entity_id = $2",
+        )
+        .bind(tid)
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?;
+        if row.is_some() {
+            return Ok(row);
+        }
+    }
+    // Fall back to the entity default template.
+    let row = sqlx::query_as::<_, crate::invoicing::InvoiceTemplateRow>(
+        "SELECT * FROM invoice_templates WHERE entity_id = $1 AND is_default = true LIMIT 1",
+    )
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+    Ok(row)
+}
+
+/// Render a clean, branded HTML email body for an invoice.
+fn render_invoice_email_html(
+    org_name: &str,
+    invoice: &InvoiceRow,
+    customer_name: &str,
+    message: Option<&str>,
+    accent_hex: &str,
+) -> String {
+    let intro = message
+        .filter(|m| !m.trim().is_empty())
+        .map(|m| format!("<p style=\"margin:0 0 16px;color:#374151\">{}</p>", html_escape(m)))
+        .unwrap_or_default();
+    format!(
+        r#"<!DOCTYPE html><html><body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
+  <div style="max-width:600px;margin:0 auto;padding:24px">
+    <div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+      <div style="background:{accent};padding:20px 24px">
+        <h1 style="margin:0;color:#fff;font-size:18px">{org}</h1>
+      </div>
+      <div style="padding:24px">
+        <p style="margin:0 0 16px;color:#111827">Hi {customer},</p>
+        {intro}
+        <p style="margin:0 0 16px;color:#374151">
+          Please find attached invoice <strong>{number}</strong>.
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px">
+          <tr><td style="padding:6px 0;color:#6b7280">Invoice</td><td style="padding:6px 0;text-align:right;color:#111827">{number}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Issue date</td><td style="padding:6px 0;text-align:right;color:#111827">{issue}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Due date</td><td style="padding:6px 0;text-align:right;color:#111827">{due}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#111827;font-weight:bold">Amount due</td>
+              <td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;color:{accent};font-weight:bold;font-size:18px">{currency} {balance}</td></tr>
+        </table>
+        <p style="margin:0;color:#9ca3af;font-size:12px">Thank you for your business.</p>
+      </div>
+    </div>
+    <p style="text-align:center;color:#9ca3af;font-size:11px;margin:16px 0 0">Sent by {org} via Zavora ERP</p>
+  </div>
+</body></html>"#,
+        accent = html_escape(accent_hex),
+        org = html_escape(org_name),
+        customer = html_escape(customer_name),
+        intro = intro,
+        number = html_escape(&invoice.number),
+        issue = invoice.issue_date,
+        due = invoice.due_date,
+        currency = html_escape(&invoice.currency),
+        balance = invoice.balance_due,
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
 /// Post an invoice — creates the GL journal entry (DR AR / CR Revenue / CR VAT Output).
 /// For line items with tracked inventory products, also issues stock and posts COGS
 /// (DR COGS / CR Inventory at weighted average cost). Rejects with InsufficientStock
@@ -1250,6 +1475,7 @@ pub async fn post_invoice(
                 related_type: Some("Invoice".to_string()),
                 related_id: Some(invoice_id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
 
             // Best-effort notification — don't fail the entire operation if notification fails
