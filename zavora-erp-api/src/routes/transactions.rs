@@ -31,10 +31,50 @@ pub async fn list(
         limit: q.limit,
         offset: q.offset,
     };
-    match svc::get_queue(&state.engine, query).await {
-        Ok(rows) => Ok(Json(serde_json::to_value(rows).unwrap_or_default())),
-        Err(e) => Err(err_response(e)),
-    }
+    let rows = match svc::get_queue(&state.engine, query).await {
+        Ok(rows) => rows,
+        Err(e) => return Err(err_response(e)),
+    };
+
+    // Resolve account code -> name once for assigned-account display.
+    let names: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT code, name FROM accounts WHERE entity_id = $1",
+    )
+    .bind(ctx.entity_id)
+    .fetch_all(state.engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+
+    // Map the raw DB rows onto the contract the UI consumes (status/amount/date,
+    // signed amount = credit − debit, resolved account names).
+    let out: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            use rust_decimal::prelude::ToPrimitive;
+            let amount = (r.credit.unwrap_or_default() - r.debit.unwrap_or_default())
+                .to_f64()
+                .unwrap_or(0.0);
+            let assigned_name = r.assigned_account.as_ref().and_then(|c| names.get(c).cloned());
+            serde_json::json!({
+                "id": r.id,
+                "entity_id": r.entity_id,
+                "bank_account_id": r.bank_account,
+                "date": r.value_date,
+                "description": r.description,
+                "reference": r.reference,
+                "amount": amount,
+                "status": r.category_status,
+                "suggestion": r.suggestion,
+                "assigned_account_code": r.assigned_account,
+                "assigned_account_name": assigned_name,
+                "created_at": r.created_at,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::Value::Array(out)))
 }
 
 pub async fn categorise(
