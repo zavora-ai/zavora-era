@@ -153,14 +153,42 @@ def main():
             vend_map[v["name"]] = r["id"]
     print("vendors created:", len(vend_map))
 
-    # ---- products (map item -> income account code) ----
+    # ---- products (create them, and map item name -> {id, income code}) ----
+    # QBO product types: "Service", "Inventory", "NonInventory". Zavora's
+    # ProductType is Service | Goods | Expense (serialised as-is). Inventory and
+    # NonInventory both map to Goods; everything else to Service.
     prod_map = {}
+    created_products = 0
     for p in products:
         inc = p.get("income_account", "")
-        # income account names sometimes are paths "A:B:C" -> use leaf
+        # income account names are sometimes paths "A:B:C" -> use the leaf.
         leaf = inc.split(":")[-1].strip() if inc else ""
-        prod_map[p["name"]] = {"income_account_name": leaf,
-                               "income_code": code_for("Revenue", leaf)}
+        income_code = code_for("Revenue", leaf)
+        qtype = (p.get("type") or "").strip().lower()
+        ztype = "Goods" if qtype in ("inventory", "noninventory", "non-inventory") else "Service"
+        body = {
+            "name": p["name"],
+            "description": p.get("description") or None,
+            "product_type": ztype,
+            "vat_treatment": "ZeroRated",  # QBO sample has no VAT; matches invoice replay
+        }
+        if income_code:
+            body["sales_account"] = income_code
+        st, r = call("POST", "/products", token, body)
+        if st < 300 and r and r.get("id"):
+            created_products += 1
+            prod_map[p["name"]] = {
+                "id": r["id"],
+                "income_account_name": leaf,
+                "income_code": income_code,
+            }
+        else:
+            # keep the income mapping even if creation failed, so the replay can
+            # still resolve the revenue account by name.
+            prod_map[p["name"]] = {"income_account_name": leaf, "income_code": income_code}
+            if created_products + 1 <= 5:
+                print(f"  PRODUCT FAIL {p['name']}: {st} {str(r)[:120]}")
+    print("products created:", created_products)
 
     maps = {"token_email": email, "token": token, "ar_code": ar_code, "ap_code": ap_code,
             "accounts": acct_map, "customers": cust_map, "vendors": vend_map,
