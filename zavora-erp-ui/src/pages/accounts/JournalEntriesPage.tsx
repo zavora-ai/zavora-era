@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJournalEntries, createJournalEntry, getAccounts, reverseJournalEntry } from '../../api/client';
 import type { JournalEntry, Account } from '../../types';
@@ -15,6 +16,7 @@ export default function JournalEntriesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [reverseTarget, setReverseTarget] = useState<JournalEntry | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
   const { data: resp, isLoading } = useQuery({
@@ -35,7 +37,7 @@ export default function JournalEntriesPage() {
     {
       key: 'actions', header: '',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           {r.status === 'posted' && hasRole(ROLES_POST) && (
             <button
               onClick={() => { setNotice(null); setReverseTarget(r); }}
@@ -69,7 +71,7 @@ export default function JournalEntriesPage() {
           <span>{notice.message}</span>
         </div>
       )}
-      <DataTable columns={columns} data={entries} loading={isLoading} emptyMessage="No journal entries yet. Create a manual entry to record adjustments." />
+      <DataTable columns={columns} data={entries} loading={isLoading} onRowClick={(r) => navigate(`/journal-entries/${r.id}`)} emptyMessage="No journal entries yet. Create a manual entry to record adjustments." />
       <PaginationControls page={page} limit={limit} total={total} onPage={setPage} />
       {showCreate && <CreateJournalEntryModal onClose={() => setShowCreate(false)} />}
       {reverseTarget && (
@@ -159,7 +161,7 @@ interface JournalLine {
 
 function CreateJournalEntryModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const today = new Date().toISOString().split('T')[0];
 

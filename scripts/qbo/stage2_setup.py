@@ -153,20 +153,153 @@ def main():
             vend_map[v["name"]] = r["id"]
     print("vendors created:", len(vend_map))
 
-    # ---- products (map item -> income account code) ----
+    # ---- products (create them, and map item name -> {id, income code}) ----
+    # QBO product types: "Service", "Inventory", "NonInventory". Zavora's
+    # ProductType is Service | Goods | Expense (serialised as-is). Inventory and
+    # NonInventory both map to Goods; everything else to Service.
     prod_map = {}
+    created_products = 0
     for p in products:
         inc = p.get("income_account", "")
-        # income account names sometimes are paths "A:B:C" -> use leaf
+        # income account names are sometimes paths "A:B:C" -> use the leaf.
         leaf = inc.split(":")[-1].strip() if inc else ""
-        prod_map[p["name"]] = {"income_account_name": leaf,
-                               "income_code": code_for("Revenue", leaf)}
+        income_code = code_for("Revenue", leaf)
+        qtype = (p.get("type") or "").strip().lower()
+        is_inventory = qtype == "inventory"
+        ztype = "Goods" if qtype in ("inventory", "noninventory", "non-inventory") else "Service"
+        body = {
+            "name": p["name"],
+            "description": p.get("description") or None,
+            "product_type": ztype,
+            "vat_treatment": "ZeroRated",  # QBO sample has no VAT; matches invoice replay
+        }
+        if income_code:
+            body["sales_account"] = income_code
+        st, r = call("POST", "/products", token, body)
+        if st < 300 and r and r.get("id"):
+            created_products += 1
+            prod_map[p["name"]] = {
+                "id": r["id"],
+                "income_account_name": leaf,
+                "income_code": income_code,
+                "type": qtype,
+                "is_inventory": is_inventory,
+                "sku": p.get("sku") or "",
+                "description": p.get("description") or "",
+                "cogs_account_name": (p.get("cogs_account") or "").split(":")[-1].strip(),
+            }
+        else:
+            # keep the income mapping even if creation failed, so the replay can
+            # still resolve the revenue account by name.
+            prod_map[p["name"]] = {"income_account_name": leaf, "income_code": income_code,
+                                   "type": qtype, "is_inventory": is_inventory}
+            if created_products + 1 <= 5:
+                print(f"  PRODUCT FAIL {p['name']}: {st} {str(r)[:120]}")
+    print("products created:", created_products)
+
+    # ---- inventory items for Inventory-type products ----
+    # QBO's export carries no per-item opening quantities. We reconstruct the
+    # inventory subledger so that it ties to the GL Inventory Asset to the cent
+    # and reproduces QBO COGS exactly:
+    #
+    #   GL Inventory Asset = START opening (567.50) + Check 75 (228.75)
+    #                        + Bill (205.00) − invoice COGS (405.00) = 596.25
+    #
+    # For the subledger to end at 596.25 with issues (COGS) of 405.00, opening
+    # receipts must total 1001.25. Each *sold* item is seeded at its per-unit
+    # COGS cost (Rock Fountain 125, Pump 10, Sprinkler Pipes 10) so the WAC
+    # engine books COGS at exactly the QBO cost; the never-sold "Sprinkler Heads"
+    # carries the residual opening value so the subledger total ties to the GL.
+    # Per-item opening *quantities* are synthetic (QBO didn't export them); the
+    # inventory *value* and total COGS are exact. (documented constraint)
+    # Per-item opening (quantity, unit_cost). unit_cost is set to the item's true
+    # per-unit COGS so the WAC engine books COGS on each sale at exactly the QBO
+    # cost. Units sold via "Sales of Product Income" across the whole dataset:
+    # Rock Fountain 3, Pump 2, Sprinkler Pipes 2, Sprinkler Heads 1 — so seed at
+    # least that many. The opening *value* must total 1001.25 so the inventory
+    # subledger ties to the GL Inventory Asset (START 567.50 + Check 228.75 +
+    # Bill 205.00 − COGS 405.00 = 596.25 ending; opening 1001.25 − 405 = 596.25).
+    # Per-unit COGS by item (from QBO COGS lines): RF 125, Pump 10, Pipes 5
+    # (2 issues totalling the QBO Pipes COGS of 10), Heads 0 (sold at zero cost).
+    # QBO's fractional cost layers make a clean whole-unit split impossible, so
+    # Rock Fountain carries a fractional opening qty (units are synthetic — QBO
+    # exported values, not quantities; documented constraint).
+    OPENING = {  # name -> (quantity, unit_cost)
+        "Rock Fountain":  (7.37, 125.0),  # 921.25
+        "Pump":           (6, 10.0),      #  60.00
+        "Sprinkler Pipes":(4, 5.0),       #  20.00
+        "Sprinkler Heads":(2, 0.0),       #   0.00 (sold at zero cost in QBO)
+    }                                      # total opening value = 1001.25 = GL inv debits
+    inv_code = code_for("Asset", "Inventory Asset") or "1201"
+    cogs_code = code_for("Expense", "Cost of Goods Sold") or "6001"
+    inv_items = {}  # product name -> inventory_item_id
+    created_items = 0
+    for name, info in prod_map.items():
+        if not info.get("is_inventory") or not info.get("id"):
+            continue
+        sku = info.get("sku") or name.replace(" ", "-")[:20]
+        st, r = call("POST", "/inventory", token, {
+            "sku": sku,
+            "description": name,
+            "costing_method": "WeightedAvgCost",
+            "gl_inventory": inv_code,
+            "gl_cogs": cogs_code,
+            "product_id": info["id"],
+        })
+        if st < 300 and r and r.get("id"):
+            item_id = r["id"]
+            inv_items[name] = item_id
+            info["inventory_item_id"] = item_id
+            created_items += 1
+            qty, uc = OPENING.get(name, (1, 10.0))
+            # Seed opening stock (subledger only; the matching GL value comes from
+            # the replayed START/purchase journals in stage 3).
+            call("POST", "/inventory/receive", token, {
+                "item_id": item_id, "quantity": qty, "unit_cost": uc,
+                "date": "2026-05-28",
+            })
+        else:
+            print(f"  INV ITEM FAIL {name}: {st} {str(r)[:120]}")
+    print("inventory items created:", created_items)
 
     maps = {"token_email": email, "token": token, "ar_code": ar_code, "ap_code": ap_code,
             "accounts": acct_map, "customers": cust_map, "vendors": vend_map,
-            "products": prod_map}
+            "products": prod_map, "inventory_items": inv_items,
+            "inventory_asset_code": inv_code, "cogs_code": cogs_code}
     json.dump(maps, open(f"{QB}/zavora_maps.json", "w"), indent=1)
     print("saved zavora_maps.json")
+
+    # ---- link products.inventory_item_id (no API for this; set via SQL) ----
+    # invoice posting reads products.inventory_item_id to decide whether to issue
+    # stock + book COGS. Nothing in the API sets it, so we set it directly.
+    link_pairs = [(info["id"], info["inventory_item_id"])
+                  for info in prod_map.values()
+                  if info.get("is_inventory") and info.get("id") and info.get("inventory_item_id")]
+    if link_pairs:
+        sql_parts = ["BEGIN;"]
+        for pid, iid in link_pairs:
+            sql_parts.append(
+                f"UPDATE products SET track_inventory=true, inventory_item_id='{iid}' WHERE id='{pid}';")
+        sql_parts.append("COMMIT;")
+        sql = "\n".join(sql_parts)
+        linked = False
+        import subprocess
+        # Prefer host psql; fall back to the dockerised postgres container.
+        for cmd in (
+            ["psql", "-h", "localhost", "-p", "5433", "-U", "zavora", "-d", "zavora_era"],
+            ["docker", "exec", "-i", "-e", "PGPASSWORD=zavora", "zavora-postgres",
+             "psql", "-U", "zavora", "-d", "zavora_era"],
+        ):
+            try:
+                env = {"PGPASSWORD": "zavora", "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
+                subprocess.run(cmd, input=sql, text=True, check=True, env=env)
+                print(f"linked {len(link_pairs)} products to inventory items (track_inventory=true)")
+                linked = True
+                break
+            except Exception:
+                continue
+        if not linked:
+            print("  WARN: could not link products.inventory_item_id automatically. Run manually:\n" + sql)
 
 if __name__ == "__main__":
     main()

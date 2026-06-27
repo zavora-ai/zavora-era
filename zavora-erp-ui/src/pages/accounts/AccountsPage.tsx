@@ -9,7 +9,7 @@ import { Plus } from 'lucide-react';
 
 export default function AccountsPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: accounts = [], isLoading } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [], isLoading } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const columns: Column<Account>[] = [
     { key: 'code', header: 'Code', render: (r) => <span className="font-mono text-sm">{r.code}</span> },

@@ -193,8 +193,8 @@ function treatmentToRate(t?: string): number {
 
 function CreateEstimateModal({ onClose, editId }: { onClose: () => void; editId?: string }) {
   const queryClient = useQueryClient();
-  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
-  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   // In edit mode, load the existing estimate + its lines to prefill the form.
   const { data: existing } = useQuery({

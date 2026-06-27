@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getCustomers, createCustomer } from '../../api/client';
 import type { Customer } from '../../types';
@@ -10,10 +11,11 @@ import { Plus, Mail, Phone, MapPin, FileText } from 'lucide-react';
 
 export default function CustomersPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const navigate = useNavigate();
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ['customers'],
-    queryFn: () => getCustomers().then(r => r.data),
+    queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const columns: Column<Customer>[] = [
@@ -46,7 +48,7 @@ export default function CustomersPage() {
           </button>
         }
       />
-      <DataTable columns={columns} data={customers} loading={isLoading} emptyMessage="No customers yet. Add your first customer to start invoicing." />
+      <DataTable columns={columns} data={customers} loading={isLoading} onRowClick={(r) => navigate(`/customers/${r.id}`)} emptyMessage="No customers yet. Add your first customer to start invoicing." />
       {showCreate && <CreateCustomerModal onClose={() => setShowCreate(false)} />}
     </div>
   );

@@ -16,7 +16,7 @@ export default function InventoryPage() {
 
   const { data: items = [], isLoading } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
-    queryFn: () => getInventory().then(r => r.data),
+    queryFn: () => getInventory().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const columns: Column<InventoryItem>[] = [
@@ -334,7 +334,7 @@ function IssueStockModal({ items, onClose }: { items: InventoryItem[]; onClose: 
 
 function AdjustStockModal({ items, onClose }: { items: InventoryItem[]; onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
   const adjAccounts = accounts.filter((a) => a.account_type === 'Expense' || a.account_type === 'Revenue');
   const [itemId, setItemId] = useState('');
   const [counted, setCounted] = useState('');

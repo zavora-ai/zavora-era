@@ -30,12 +30,12 @@ export default function RecurringInvoicesPage() {
 
   const { data: recurring = [], isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ['recurring-invoices'],
-    queryFn: () => getRecurringInvoices().then(r => r.data),
+    queryFn: () => getRecurringInvoices().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers'],
-    queryFn: () => getCustomers().then(r => r.data),
+    queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const deleteMutation = useMutation({
@@ -170,8 +170,8 @@ export default function RecurringInvoicesPage() {
 
 function CreateRecurringModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
-  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const today = new Date().toISOString().split('T')[0];
 

@@ -27,7 +27,7 @@ export default function BillsPage() {
   });
   const bills: Bill[] = resp?.data ?? [];
   const billsTotal: number = resp?.total_count ?? 0;
-  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
+  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bills'] });
@@ -136,9 +136,9 @@ export default function BillsPage() {
 // ============================================================
 function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
-  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
-  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => r.data) });
+  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const isEdit = !!editId;
 
