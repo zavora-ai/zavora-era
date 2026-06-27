@@ -206,6 +206,9 @@ function CreateJournalEntryModal({ onClose }: { onClose: () => void }) {
 
     mutation.mutate({
       date: form.date,
+      // Required by the API contract (CreateJournalEntryRequest).
+      source: 'Manual',
+      post_immediately: true,
       reference: form.reference || undefined,
       description: form.description,
       lines: form.lines
@@ -213,8 +216,11 @@ function CreateJournalEntryModal({ onClose }: { onClose: () => void }) {
         .map(l => ({
           account_code: l.account_code,
           description: l.description || undefined,
-          debit: l.debit || 0,
-          credit: l.credit || 0,
+          // Send the empty side as null (not 0) so the line is unambiguously a
+          // debit or a credit, and always include the line currency.
+          debit: l.debit > 0 ? l.debit : null,
+          credit: l.credit > 0 ? l.credit : null,
+          currency: 'KES',
         })),
     });
   };

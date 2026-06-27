@@ -153,6 +153,8 @@ export const closePeriod = (id: string, data: { close_type: 'Soft' | 'Hard' }) =
   api.post(`/periods/${id}/close`, data);
 export const reopenPeriod = (id: string, data: { reason: string }) =>
   api.post(`/periods/${id}/reopen`, data);
+export const yearEndClose = (data: { fiscal_year: number }) =>
+  api.post('/periods/year-end-close', data);
 
 // === Journal Entries ===
 export type PageParams = { limit?: number; offset?: number };

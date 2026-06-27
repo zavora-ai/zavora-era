@@ -54,6 +54,27 @@ export default function TransactionsPage() {
     }
   };
 
+  // Bulk-accept every AI suggestion currently shown (those with a suggested
+  // account that aren't yet categorised). Uses the same per-transaction endpoint.
+  const handleAutoCategorise = async () => {
+    const withSuggestions = transactions.filter(
+      (t) => t.suggestion?.account_code && t.status === 'uncategorised',
+    );
+    if (withSuggestions.length === 0) {
+      alert('No AI suggestions to apply on the current list.');
+      return;
+    }
+    if (!window.confirm(`Apply AI suggestions to ${withSuggestions.length} transaction(s)?`)) return;
+    for (const t of withSuggestions) {
+      try {
+        await acceptMutation.mutateAsync({ id: t.id, account_code: t.suggestion!.account_code });
+      } catch {
+        /* keep going; failures stay uncategorised for manual handling */
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+  };
+
   const handleExclude = (txn: CategorisationTransaction) => {
     excludeMutation.mutate(txn.id);
   };
@@ -113,7 +134,11 @@ export default function TransactionsPage() {
               : `Transactions (${transactions.length})`}
           </span>
           <div className="flex gap-2">
-            <button className="btn-secondary text-xs inline-flex items-center gap-1">
+            <button
+              className="btn-secondary text-xs inline-flex items-center gap-1"
+              onClick={handleAutoCategorise}
+              disabled={acceptMutation.isPending}
+            >
               <Sparkles className="w-3 h-3" /> Auto-Categorise
             </button>
           </div>

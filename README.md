@@ -22,14 +22,31 @@ migrations/         — PostgreSQL schema + immutability triggers
 # 1. Copy environment file
 cp .env.example .env
 
-# 2. Create database
-createdb zavora_era
+# 2. Start Postgres + Redis (Docker)
+docker compose up -d
 
 # 3. Run the server (migrations auto-apply on startup)
 cargo run --bin zavora-erp-api
 
-# Server starts on http://localhost:8080
+# Server starts on http://localhost:8080 (configurable via BIND_ADDR)
 ```
+
+> **Local dev defaults.** `docker-compose.yml` publishes Postgres on host port
+> `5433` and Redis on `6380`. The `.env` `DATABASE_URL`/`REDIS_URL` already point
+> at these. The web UI (`zavora-erp-ui`, Vite) runs on
+> `http://localhost:3000` and proxies `/api` to the API server.
+
+## Chart of Accounts
+
+The engine ships a **Kenya Standard** COA template (`ledger::coa_template`) seeded
+on tenant signup. It also supports importing an external chart — the
+`scripts/qbo/` tooling replays a QuickBooks export (e.g. the "Craig's Design and
+Landscaping" sample) into a tenant, mapping QuickBooks account types onto Zavora
+account types and **repointing the posting setup** (AR/AP, default bank, default
+sales/purchase, rounding) at the imported accounts. Because both sets can
+coexist, a tenant's live chart may contain more accounts than the bare Kenya
+template; GL determination always resolves through the per-tenant
+`PostingSetup`, never hardcoded codes.
 
 ## API Endpoints
 
@@ -49,6 +66,8 @@ cargo run --bin zavora-erp-api
 - `GET /api/v1/periods` — List periods
 - `POST /api/v1/periods` — Generate periods for a year
 - `POST /api/v1/periods/{id}/close` — Close a period
+- `POST /api/v1/periods/{id}/reopen` — Reopen a soft-closed period
+- `POST /api/v1/periods/year-end-close` — Execute year-end close for a fiscal year (body: `{"fiscal_year": 2025}`)
 
 ### Journal Entries
 - `POST /api/v1/journal-entries` — Create and post
@@ -72,6 +91,33 @@ cargo run --bin zavora-erp-api
 ### Payments
 - `POST /api/v1/payments` — Record payment
 - `POST /api/v1/payments/mpesa-callback` — M-Pesa Daraja webhook
+
+### Banking
+- `POST /api/v1/bank/import` — Import a bank statement (CSV / MT940 / OFX) into the categorisation queue
+
+Bank import is idempotent: re-importing the same file for a bank account is
+rejected, and individual duplicate lines are skipped.
+
+**CSV format.** The first row is treated as a header when it contains any of
+`date`, `description`, `amount`, or `balance` (case-insensitive). Columns are
+**positional** (not matched by name). Dates accept `YYYY-MM-DD`, `DD/MM/YYYY`,
+or `MM/DD/YYYY`. Supported layouts:
+
+| Columns | Layout | Notes |
+|---|---|---|
+| 3 | `date, description, amount` | negative amount = money out (debit), positive = money in (credit) |
+| 4 | `date, description, amount, balance` | as above, with running balance |
+| 5+ | `date, description, debit, credit, balance` | explicit debit/credit columns; leave one blank |
+
+There is no separate reference column — put identifying text in `description`.
+Every data row must have a debit or credit, or the whole file is rejected (no
+partial imports). Example (5-column):
+
+```csv
+Date,Description,Debit,Credit,Balance
+2026-06-01,Customer deposit,,1000.00,1000.00
+2026-06-02,Bank charge,50.00,,950.00
+```
 
 ### Payroll
 - `POST /api/v1/payroll/run` — Run payroll
