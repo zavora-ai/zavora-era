@@ -79,24 +79,27 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="Cash & Bank" value={formatCurrency(s.cash_and_bank)} icon={<Wallet className="w-6 h-6" />} />
+        <StatCard title="Cash & Bank" value={formatCurrency(s.cash_and_bank)} icon={<Wallet className="w-6 h-6" />} onClick={() => navigate('/banking')} />
         <StatCard
           title="Accounts Receivable"
           value={formatCurrency(s.total_receivable)}
           subtitle={`${s.overdue_invoice_count} overdue`}
           icon={<TrendingUp className="w-6 h-6" />}
+          onClick={() => navigate('/invoices')}
         />
         <StatCard
           title="Accounts Payable"
           value={formatCurrency(s.total_payable)}
           subtitle={`${s.overdue_bill_count} overdue`}
           icon={<TrendingDown className="w-6 h-6" />}
+          onClick={() => navigate('/bills')}
         />
         <StatCard
           title="Net Income (this month)"
           value={formatCurrency(s.net_income_mtd)}
           trend={priorPct !== null ? { value: `${priorPct >= 0 ? '+' : ''}${priorPct}% vs last month`, positive: s.net_income_mtd >= s.net_income_prior } : undefined}
           icon={<TrendingUp className="w-6 h-6" />}
+          onClick={() => navigate('/reports')}
         />
       </div>
 
