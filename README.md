@@ -155,7 +155,7 @@ tenants** at month rollover, so a manual run is only needed to book early.
 - **SHA** — 2.75% of gross (replaces NHIF)
 - **Housing Levy** — 1.5% employee + 1.5% employer
 - **HELB** — Per-employee deduction
-- **WHT** — Auto-computed from vendor category (5–30%)
+- **WHT** — Auto-computed from vendor category & residency (2–30%; rates seeded in `wht_rates`)
 - **VAT** — Standard 16%, Petroleum 8%, Zero-rated, Exempt
 - **KRA Asset Classes** — Declining balance (37.5%, 30%, 25%, 12.5%)
 - **M-Pesa Daraja** — STK Push payment links on invoices
