@@ -52,6 +52,35 @@ accounting error.
 - **Undeposited Funds** clearing reproduced via bank-account routing + deposit
   journals.
 
+## Full reports walkthrough (Zavora UI) vs QuickBooks
+Every financial statement was opened in the Zavora UI for the rebuilt company and
+checked:
+
+| Zavora report | Result | vs QuickBooks |
+|---------------|--------|---------------|
+| Profit & Loss | Net Income 1,642.46 | **matches to the cent** |
+| Balance Sheet | balances; Assets 23,107.87 | −328.42 (neutralized sales tax) |
+| Trial Balance | balanced (41,170.08) | account balances match where tax-free |
+| Changes in Equity | closing −7,695.04 | ties to BS / QBO equity base |
+| AR Ageing | total 5,158.10 | = A/R (QBO 5,281.52 − tax) |
+| AP Ageing | total 1,397.67 | = A/P (QBO 1,602.67 − tax) |
+| General Ledger (drill) | per-account running balance | n/a (Simple Start has none) |
+| Customer Statement | running ledger + closing | n/a |
+| Audit Trail | who / what / when / before-after | n/a |
+
+## Bugs found & fixed during the UI walkthrough
+Beyond the three posting/auth fixes above, reviewing the rebuilt company in the
+browser surfaced and fixed:
+4. **Balance Sheet "Total Liabilities + Equity" rendered `NaN`** (string Decimals
+   concatenated instead of summed).
+5. **Report drill-down stuck on "Generating…" forever** (StrictMode left the
+   mutation isPending; gated on result).
+6. **Audit Trail crashed** (`events.map is not a function` — paginated envelope).
+7. **Audit Trail too thin to pass an audit** — now resolves the real actor
+   (name + email), shows the document number/reference, full timestamp, and an
+   expandable before/after/metadata diff.
+8. **AR/AP Ageing rendered as raw JSON** — added a proper aged table view.
+
 ## Bottom line
 Zavora reproduces QuickBooks' **Profit & Loss exactly** and its **Balance Sheet
 within 1.4%**, with the entire residual explained by the deliberate sales-tax
