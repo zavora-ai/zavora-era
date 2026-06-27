@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::engine::ErpEngine;
 use crate::error::ErpResult;
 use crate::reporting::*;
+use crate::types::MonthlyAmount;
 
 /// As-at per-account movement (`account_code`, `total_debit`, `total_credit`)
 /// with `$1 = entity_id`, `$2 = as_at`. Computed from period snapshots for every
@@ -230,14 +231,14 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
     .await
     .unwrap_or(0) as u32;
 
-    // Cash and bank — sum of all cash/bank account balances
+    // Cash and bank — sum of all cash/bank account balances. NOTE: account_type
+    // is stored PascalCase ('Asset'); the previous 'asset' filter matched nothing.
     let cash_and_bank = sqlx::query_scalar::<_, Decimal>(
         r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
            FROM journal_lines jl
-           JOIN journal_entries je ON jl.entry_id = je.id
-           JOIN accounts a ON jl.account_code = a.code AND a.entity_id = je.entity_id
-           WHERE je.entity_id = $1 AND je.status = 'posted'
-           AND a.code LIKE '1%' AND a.account_type = 'asset' AND a.code < '1100'"#,
+           JOIN accounts a ON jl.account_code = a.code AND a.entity_id = jl.entity_id
+           WHERE jl.entity_id = $1
+           AND a.account_type = 'Asset' AND a.code LIKE '1%' AND a.code < '1100'"#,
     )
     .bind(entity_id)
     .fetch_one(engine.pool())
@@ -262,6 +263,201 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
     .await
     .unwrap_or(0) as u32;
 
+    // --- Period boundaries -------------------------------------------------
+    let month_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+    let prior_month_end = month_start.pred_opt().unwrap();
+    let prior_month_start =
+        NaiveDate::from_ymd_opt(prior_month_end.year(), prior_month_end.month(), 1).unwrap();
+    let due_soon_cutoff = today + chrono::Duration::days(30);
+    let paid_since = today - chrono::Duration::days(30);
+    // First day of the month five months before this one (→ a 6-month window).
+    let six_months_start = {
+        let mut y = today.year();
+        let mut m = today.month() as i32 - 5;
+        while m <= 0 {
+            m += 12;
+            y -= 1;
+        }
+        NaiveDate::from_ymd_opt(y, m as u32, 1).unwrap()
+    };
+
+    // --- Net income: this month vs the prior month -------------------------
+    let (income_mtd, expenses_mtd) = pnl_totals(engine, entity_id, month_start, today).await;
+    let (income_prior, expenses_prior) =
+        pnl_totals(engine, entity_id, prior_month_start, prior_month_end).await;
+    let net_income_mtd = income_mtd - expenses_mtd;
+    let net_income_prior = income_prior - expenses_prior;
+
+    // --- 6-month revenue / expense series ----------------------------------
+    let monthly = sqlx::query_as::<_, (i32, i32, Decimal, Decimal)>(
+        r#"SELECT EXTRACT(YEAR FROM jl.entry_date)::int  AS yr,
+                  EXTRACT(MONTH FROM jl.entry_date)::int AS mo,
+                  COALESCE(SUM(CASE WHEN a.account_type IN ('Revenue','ContraRevenue')
+                                    THEN -(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0))
+                                    ELSE 0 END), 0) AS revenue,
+                  COALESCE(SUM(CASE WHEN a.account_type IN ('Expense','ContraExpense')
+                                    THEN  (COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0))
+                                    ELSE 0 END), 0) AS expense
+           FROM journal_lines jl
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = jl.entity_id
+           WHERE jl.entity_id = $1 AND jl.entry_date >= $2
+           GROUP BY yr, mo"#,
+    )
+    .bind(entity_id)
+    .bind(six_months_start)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default();
+
+    // Fill the 6-month window so the chart always has a continuous axis.
+    let mut revenue_6m = Vec::with_capacity(6);
+    let mut expenses_6m = Vec::with_capacity(6);
+    for i in 0..6 {
+        let mut y = six_months_start.year();
+        let mut m = six_months_start.month() as i32 + i;
+        while m > 12 {
+            m -= 12;
+            y += 1;
+        }
+        let (rev, exp) = monthly
+            .iter()
+            .find(|(yr, mo, _, _)| *yr == y && *mo == m)
+            .map(|(_, _, r, e)| (*r, *e))
+            .unwrap_or((Decimal::ZERO, Decimal::ZERO));
+        revenue_6m.push(MonthlyAmount { year: y, month: m as u32, amount: rev });
+        expenses_6m.push(MonthlyAmount { year: y, month: m as u32, amount: exp });
+    }
+
+    // --- Invoice money-bar (open receivables by ageing bucket) -------------
+    let bar = sqlx::query_as::<_, (Decimal, i64, Decimal, i64, Decimal, i64)>(
+        r#"SELECT
+            COALESCE(SUM(balance_due) FILTER (WHERE due_date < $2), 0),
+            COUNT(*) FILTER (WHERE due_date < $2),
+            COALESCE(SUM(balance_due) FILTER (WHERE due_date >= $2 AND due_date <= $3), 0),
+            COUNT(*) FILTER (WHERE due_date >= $2 AND due_date <= $3),
+            COALESCE(SUM(balance_due) FILTER (WHERE due_date > $3), 0),
+            COUNT(*) FILTER (WHERE due_date > $3)
+           FROM invoices
+           WHERE entity_id = $1 AND status NOT IN ('paid','voided','draft') AND balance_due > 0"#,
+    )
+    .bind(entity_id)
+    .bind(today)
+    .bind(due_soon_cutoff)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or((Decimal::ZERO, 0, Decimal::ZERO, 0, Decimal::ZERO, 0));
+
+    let paid_last_30 = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT COALESCE(SUM(amount), 0) FROM payments
+           WHERE entity_id = $1 AND payment_type LIKE '%customer_payment%' AND payment_date >= $2"#,
+    )
+    .bind(entity_id)
+    .bind(paid_since)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+
+    let invoices_bar = InvoicesBar {
+        overdue: bar.0,
+        overdue_count: bar.1 as u32,
+        due_soon: bar.2,
+        due_soon_count: bar.3 as u32,
+        open: bar.4,
+        open_count: bar.5 as u32,
+        paid_last_30,
+    };
+
+    // --- Expenses by category (this month, top accounts) -------------------
+    let expense_breakdown = sqlx::query_as::<_, (String, String, Decimal)>(
+        r#"SELECT a.code, a.name,
+                  SUM(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0)) AS amount
+           FROM journal_lines jl
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = jl.entity_id
+           WHERE jl.entity_id = $1
+             AND a.account_type IN ('Expense','ContraExpense')
+             AND jl.entry_date >= $2 AND jl.entry_date <= $3
+           GROUP BY a.code, a.name
+           HAVING SUM(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0)) > 0
+           ORDER BY amount DESC
+           LIMIT 8"#,
+    )
+    .bind(entity_id)
+    .bind(month_start)
+    .bind(today)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(code, name, amount)| CategoryAmount { code, name, amount })
+    .collect();
+
+    // --- Bank accounts strip (book balance per registered account) ---------
+    let bank_accounts = sqlx::query_as::<_, (Uuid, String, String, Decimal)>(
+        r#"SELECT ba.id, ba.name, ba.bank_name,
+                  COALESCE((SELECT SUM(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0))
+                            FROM journal_lines jl
+                            WHERE jl.entity_id = ba.entity_id AND jl.account_code = ba.gl_account), 0) AS balance
+           FROM bank_accounts ba
+           WHERE ba.entity_id = $1 AND ba.is_active = true
+           ORDER BY ba.name"#,
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(id, name, bank_name, balance)| BankAccountBalance { id, name, bank_name, balance })
+    .collect();
+
+    // --- Outstanding invoices (soonest due first) --------------------------
+    let outstanding_invoices = sqlx::query_as::<_, (Uuid, String, Option<String>, Decimal, Decimal, NaiveDate)>(
+        r#"SELECT i.id, i.number, c.name, i.gross_total, i.balance_due, i.due_date
+           FROM invoices i
+           LEFT JOIN customers c ON c.id = i.customer_id AND c.entity_id = i.entity_id
+           WHERE i.entity_id = $1 AND i.status NOT IN ('paid','voided','draft') AND i.balance_due > 0
+           ORDER BY i.due_date ASC
+           LIMIT 8"#,
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(id, number, customer_name, amount, balance_due, due_date)| InvoiceSummary {
+        id,
+        number,
+        customer_name: customer_name.unwrap_or_default(),
+        amount,
+        balance_due,
+        due_date,
+        is_overdue: due_date < today,
+    })
+    .collect();
+
+    // --- Recent posted transactions ----------------------------------------
+    let recent_transactions = sqlx::query_as::<_, (Uuid, NaiveDate, String, Decimal, String)>(
+        r#"SELECT je.id, je.date, je.description,
+                  COALESCE((SELECT SUM(COALESCE(functional_debit,0)) FROM journal_lines WHERE entry_id = je.id), 0) AS amount,
+                  je.source
+           FROM journal_entries je
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+           ORDER BY je.date DESC, je.created_at DESC
+           LIMIT 8"#,
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|(id, date, description, amount, source)| TransactionSummary {
+        id,
+        date,
+        description,
+        amount,
+        transaction_type: source.trim_matches('"').to_string(),
+    })
+    .collect();
+
     Ok(DashboardSummary {
         as_at: now,
         total_receivable,
@@ -271,15 +467,51 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
         overdue_payable,
         overdue_bill_count,
         cash_and_bank,
-        net_income_mtd: Decimal::ZERO, // TODO: compute from P&L
-        net_income_prior: Decimal::ZERO,
-        revenue_6m: Vec::new(),
-        expenses_6m: Vec::new(),
-        recent_transactions: Vec::new(),
-        outstanding_invoices: Vec::new(),
+        net_income_mtd,
+        net_income_prior,
+        revenue_6m,
+        expenses_6m,
+        recent_transactions,
+        outstanding_invoices,
         pending_approvals,
         uncategorised_txns,
+        invoices_bar,
+        expense_breakdown,
+        bank_accounts,
+        pnl_mtd: PnlSnapshot {
+            income: income_mtd,
+            expenses: expenses_mtd,
+            net_income: net_income_mtd,
+        },
     })
+}
+
+/// Sum P&L income and expense for a date range (used by the dashboard).
+/// Revenue is credit-natured (negated to a positive); expense is debit-natured.
+async fn pnl_totals(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> (Decimal, Decimal) {
+    sqlx::query_as::<_, (Decimal, Decimal)>(
+        r#"SELECT
+            COALESCE(SUM(CASE WHEN a.account_type IN ('Revenue','ContraRevenue')
+                              THEN -(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0))
+                              ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN a.account_type IN ('Expense','ContraExpense')
+                              THEN  (COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0))
+                              ELSE 0 END), 0)
+           FROM journal_lines jl
+           JOIN accounts a ON a.code = jl.account_code AND a.entity_id = jl.entity_id
+           WHERE jl.entity_id = $1 AND jl.entry_date >= $2 AND jl.entry_date <= $3"#,
+    )
+    .bind(entity_id)
+    .bind(from)
+    .bind(to)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or((Decimal::ZERO, Decimal::ZERO))
 }
 
 /// Trial balance report.
