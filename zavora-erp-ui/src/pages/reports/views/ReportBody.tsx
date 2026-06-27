@@ -22,6 +22,7 @@ import DimensionalAnalysisView from './DimensionalAnalysisView';
 import EquityChangesView from './EquityChangesView';
 import CashFlowDirectView from './CashFlowDirectView';
 import GlDetailView from './GlDetailView';
+import AgeingView from './AgeingView';
 import RawJsonView from './RawJsonView';
 
 export default function ReportBody({ result, onDrill }: { result: any; onDrill?: (code: string) => void }) {
@@ -66,6 +67,10 @@ export default function ReportBody({ result, onDrill }: { result: any; onDrill?:
       return <CashFlowDirectView c={c} />;
     case 'GlDetail':
       return <GlDetailView c={c} />;
+    case 'ArAgeing':
+      return <AgeingView c={c} partyLabel="Customer" />;
+    case 'ApAgeing':
+      return <AgeingView c={c} partyLabel="Vendor" />;
     default:
       return <RawJsonView c={c} />;
   }
