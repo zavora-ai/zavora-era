@@ -231,14 +231,20 @@ pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
     .await
     .unwrap_or(0) as u32;
 
-    // Cash and bank — sum of all cash/bank account balances. NOTE: account_type
-    // is stored PascalCase ('Asset'); the previous 'asset' filter matched nothing.
+    // Cash and bank — sum the GL balances of the accounts backing the entity's
+    // bank accounts, so this matches the Banking page exactly (which totals the
+    // same set). Each bank_account references a gl_account; we net debit−credit
+    // on those codes. Asset GLs (Checking/Savings/Undeposited) net positive;
+    // credit-card GLs modelled as bank accounts net negative — same as the
+    // Banking page's per-account display.
     let cash_and_bank = sqlx::query_scalar::<_, Decimal>(
         r#"SELECT COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
            FROM journal_lines jl
-           JOIN accounts a ON jl.account_code = a.code AND a.entity_id = jl.entity_id
            WHERE jl.entity_id = $1
-           AND a.account_type = 'Asset' AND a.code LIKE '1%' AND a.code < '1100'"#,
+           AND jl.account_code IN (
+               SELECT gl_account FROM bank_accounts
+               WHERE entity_id = $1 AND is_active = true
+           )"#,
     )
     .bind(entity_id)
     .fetch_one(engine.pool())
