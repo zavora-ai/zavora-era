@@ -32,7 +32,7 @@ export default function AuditPage() {
     queryFn: () => getAuditEvents({
       object_type: filterObjectType || undefined,
       event_type: filterEventType || undefined,
-    }).then(r => r.data),
+    }).then(r => r.data.events ?? r.data),
   });
 
   const objectTypes = ['Invoice', 'Bill', 'Payment', 'JournalEntry', 'Account', 'Customer', 'Vendor', 'Employee', 'Asset', 'Inventory'];
