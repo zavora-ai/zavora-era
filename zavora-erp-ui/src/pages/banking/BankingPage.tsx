@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { getBankAccounts, createBankAccount, deleteBankAccount } from '../../api/client';
+import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement } from '../../api/client';
 import type { BankAccount } from '../../types';
 
 export default function BankingPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: bankAccounts = [], isLoading } = useQuery<BankAccount[]>({
     queryKey: ['bank-accounts'],
@@ -122,13 +125,21 @@ export default function BankingPage() {
           Import statements in MT940, OFX, or CSV format.
         </p>
         <div className="flex gap-3">
-          <button className="btn-primary">Import Statement</button>
-          <button className="btn-secondary">Run Auto-Match</button>
+          <button className="btn-primary" onClick={() => setShowImport(true)} disabled={bankAccounts.length === 0}>
+            Import Statement
+          </button>
+          <button className="btn-secondary" onClick={() => navigate('/reconciliation')}>
+            Run Auto-Match
+          </button>
         </div>
+        {bankAccounts.length === 0 && (
+          <p className="text-xs text-gray-400 mt-2">Add a bank account first to import statements.</p>
+        )}
       </div>
 
       {/* Create modal */}
       {showCreate && <CreateBankAccountModal onClose={() => setShowCreate(false)} />}
+      {showImport && <ImportStatementModal bankAccounts={bankAccounts} onClose={() => setShowImport(false)} />}
     </div>
   );
 }
@@ -235,6 +246,126 @@ function CreateBankAccountModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function ImportStatementModal({
+  bankAccounts,
+  onClose,
+}: {
+  bankAccounts: BankAccount[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [bankAccountId, setBankAccountId] = useState(bankAccounts[0]?.id ?? '');
+  const [filename, setFilename] = useState('');
+  const [content, setContent] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ line_count: number; format: string } | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      importStatement({ bank_account_id: bankAccountId, filename: filename || 'statement.csv', content }),
+    onSuccess: (res: any) => {
+      setError(null);
+      setResult({ line_count: res?.data?.line_count ?? 0, format: res?.data?.format ?? 'CSV' });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+    },
+    onError: (err: any) => {
+      setResult(null);
+      setError(err.response?.data?.error || 'Failed to import statement');
+    },
+  });
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFilename(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setContent(String(reader.result ?? ''));
+    reader.readAsText(file);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!bankAccountId) {
+      setError('Select a bank account');
+      return;
+    }
+    if (!content.trim()) {
+      setError('Upload a file or paste statement content');
+      return;
+    }
+    mutation.mutate();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Import Bank Statement</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg mb-4">{error}</div>}
+        {result && (
+          <div className="bg-green-50 text-green-700 text-sm p-3 rounded-lg mb-4">
+            Imported {result.line_count} transaction{result.line_count === 1 ? '' : 's'} ({result.format}) into the
+            categorisation queue. <button className="underline" onClick={onClose}>Done</button>
+          </div>
+        )}
+
+        {!result && (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bank Account</label>
+              <select
+                className="input w-full"
+                value={bankAccountId}
+                onChange={(e) => setBankAccountId(e.target.value)}
+              >
+                {bankAccounts.map((ba) => (
+                  <option key={ba.id} value={ba.id}>
+                    {ba.name} — {ba.bank_name} ({ba.currency})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Statement file (CSV / MT940 / OFX)</label>
+              <input type="file" accept=".csv,.mt940,.sta,.940,.ofx,.qfx,text/csv" className="input w-full" onChange={onFile} />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">…or paste content</label>
+              <textarea
+                className="input w-full font-mono text-xs"
+                rows={6}
+                placeholder={'Date,Description,Debit,Credit,Balance\n2026-06-01,Customer deposit,,1000.00,1000.00\n2026-06-02,Bank charge,50.00,,950.00'}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                CSV columns are positional: <code>date, description, amount[, balance]</code> or{' '}
+                <code>date, description, debit, credit, balance</code>. Re-importing the same file is blocked.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary" disabled={mutation.isPending}>
+                {mutation.isPending ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

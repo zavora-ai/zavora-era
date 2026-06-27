@@ -100,11 +100,39 @@ def main():
     ap_code = code_for("Liability", "Accounts Payable (A/P)")
     print("AR code:", ar_code, "AP code:", ap_code)
 
-    # ---- point posting config at the QBO AR/AP accounts ----
+    # ---- point posting config at the QBO accounts (not just AR/AP) ----
+    # Leaving default_bank / default_sales / default_purchase / rounding on the
+    # Kenya-seed codes makes fresh postings land in different accounts than the
+    # imported QBO history, fragmenting reports. Remap every default we can to a
+    # real QBO account so new transactions post consistently with replayed data.
     st, cfg = call("GET", "/settings", token)
     posting = (cfg or {}).get("posting", {})
     posting["accounts_receivable"] = ar_code
     posting["accounts_payable"] = ap_code
+
+    def first_code(ztype, *names):
+        for n in names:
+            c = code_for(ztype, n)
+            if c:
+                return c
+        return None
+
+    # Operating bank for payments recorded without an explicit bank account.
+    bank = first_code("Asset", "Checking", "Savings")
+    if bank:
+        posting["default_bank"] = bank
+    # Fallback income / purchase / COGS accounts.
+    sales = first_code("Revenue", "Sales of Product Income", "Services", "Landscaping Services")
+    if sales:
+        posting["default_sales"] = sales
+    cogs = first_code("Expense", "Cost of Goods Sold")
+    if cogs:
+        posting["default_purchase"] = cogs
+    # Dedicated rounding account if the chart has one.
+    rounding = first_code("Expense", "Rounding Differences", "Miscellaneous")
+    if rounding:
+        posting["rounding_adjustment"] = rounding
+
     st, _ = call("PUT", "/settings", token, {"posting": posting})
     print("posting config patched:", st)
 
@@ -134,7 +162,7 @@ def main():
         prod_map[p["name"]] = {"income_account_name": leaf,
                                "income_code": code_for("Revenue", leaf)}
 
-    maps = {"token_email": email, "ar_code": ar_code, "ap_code": ap_code,
+    maps = {"token_email": email, "token": token, "ar_code": ar_code, "ap_code": ap_code,
             "accounts": acct_map, "customers": cust_map, "vendors": vend_map,
             "products": prod_map}
     json.dump(maps, open(f"{QB}/zavora_maps.json", "w"), indent=1)

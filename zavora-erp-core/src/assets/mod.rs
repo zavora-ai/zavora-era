@@ -134,6 +134,10 @@ pub struct FixedAssetRow {
     pub disposal_date: Option<NaiveDate>,
     pub disposal_proceeds: Option<Decimal>,
     pub created_at: DateTime<Utc>,
+    /// Month-end through which depreciation has already been posted (NULL = none).
+    /// Makes a depreciation run idempotent and supports catch-up.
+    #[sqlx(default)]
+    pub depreciated_through: Option<NaiveDate>,
 }
 
 /// Request to create a fixed asset.

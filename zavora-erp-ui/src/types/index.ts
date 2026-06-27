@@ -509,9 +509,11 @@ export interface AuditEventEntry {
   event_type: string;
   object_type: string;
   object_id: string;
-  actor: any;
-  before_state?: any;
-  after_state?: any;
+  actor: { type?: string; id?: string } | string;
+  actor_name?: string;
+  actor_email?: string;
+  before?: any;
+  after?: any;
   metadata?: any;
   timestamp: string;
 }

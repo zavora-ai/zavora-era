@@ -118,14 +118,18 @@ async fn fetch_auth_user(
     by_email: Option<&str>,
     by_id: Option<Uuid>,
 ) -> Result<Option<AuthUserRow>, ErpError> {
+    // Look up the user GLOBALLY (email / id are the login identity). Previously
+    // this was scoped to `served_entity()`, so only the startup tenant's users
+    // could log in — every other signed-up tenant was locked out. The returned
+    // row carries entity_id, so the issued token still binds the correct tenant.
     let base = "SELECT id, entity_id, email, display_name, role, is_active, password_hash \
-                FROM era_users WHERE entity_id = $1 AND ";
+                FROM era_users WHERE ";
     let sql = if by_email.is_some() {
-        format!("{base} lower(email) = lower($2)")
+        format!("{base} lower(email) = lower($1) ORDER BY id LIMIT 1")
     } else {
-        format!("{base} id = $2")
+        format!("{base} id = $1")
     };
-    let mut q = sqlx::query_as::<_, AuthUserRow>(&sql).bind(served_entity());
+    let mut q = sqlx::query_as::<_, AuthUserRow>(&sql);
     q = match by_email {
         Some(email) => q.bind(email.to_string()),
         None => q.bind(by_id.unwrap()),

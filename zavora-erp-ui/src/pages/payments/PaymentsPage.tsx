@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPayments, recordPayment } from '../../api/client';
+import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills } from '../../api/client';
 import api from '../../api/client';
 import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -312,7 +312,8 @@ function AllocatePaymentModal({ payment, onClose }: { payment: Payment; onClose:
 function RecordPaymentModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    payment_type: 'CustomerPayment',
+    // API contract: serde expects snake_case PaymentType ('customer_payment' | 'vendor_payment').
+    payment_type: 'customer_payment',
     amount: 0,
     method: 'BankTransfer',
     reference: '',
@@ -322,6 +323,41 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     apply_to_document_id: '',
     apply_amount: 0,
   });
+
+  const isCustomer = form.payment_type === 'customer_payment';
+
+  // Parties for the selector — customers for AR receipts, vendors for AP payments.
+  const { data: customers = [] } = useQuery<any[]>({
+    queryKey: ['customers'],
+    queryFn: () => getCustomers().then((r) => r.data),
+  });
+  const { data: vendors = [] } = useQuery<any[]>({
+    queryKey: ['vendors'],
+    queryFn: () => getVendors().then((r) => r.data),
+  });
+  const parties = isCustomer ? customers : vendors;
+
+  // Open documents to apply against, scoped to the selected party.
+  const { data: invoicesResp } = useQuery<any>({
+    queryKey: ['invoices', 'for-payment'],
+    queryFn: () => getInvoices({ limit: 200 }).then((r) => r.data),
+    enabled: isCustomer,
+  });
+  const { data: billsResp } = useQuery<any>({
+    queryKey: ['bills', 'for-payment'],
+    queryFn: () => getBills({ limit: 200 }).then((r) => r.data),
+    enabled: !isCustomer,
+  });
+  const docItems: any[] = isCustomer
+    ? (invoicesResp?.data ?? invoicesResp ?? [])
+    : (billsResp?.data ?? billsResp ?? []);
+  const openDocs = (Array.isArray(docItems) ? docItems : []).filter(
+    (d) =>
+      (!form.party_id || d.customer_id === form.party_id || d.vendor_id === form.party_id) &&
+      !['paid', 'voided', 'draft'].includes(d.status) &&
+      Number(d.balance_due ?? 0) > 0,
+  );
+
   const mutation = useMutation({
     mutationFn: (data: any) => recordPayment(data),
     onSuccess: () => {
@@ -366,10 +402,28 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           <select
             className="input"
             value={form.payment_type}
-            onChange={(e) => setForm({ ...form, payment_type: e.target.value })}
+            onChange={(e) =>
+              setForm({ ...form, payment_type: e.target.value, party_id: '', apply_to_document_id: '' })
+            }
           >
-            <option value="CustomerPayment">Payment Received (from Customer)</option>
-            <option value="VendorPayment">Payment Sent (to Vendor)</option>
+            <option value="customer_payment">Payment Received (from Customer)</option>
+            <option value="vendor_payment">Payment Sent (to Vendor)</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">{isCustomer ? 'Customer' : 'Vendor'} *</label>
+          <select
+            className="input"
+            value={form.party_id}
+            onChange={(e) => setForm({ ...form, party_id: e.target.value, apply_to_document_id: '' })}
+            required
+          >
+            <option value="">Choose a {isCustomer ? 'customer' : 'vendor'}...</option>
+            {parties.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -434,13 +488,27 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           <h4 className="text-sm font-medium text-gray-700 mb-2">Apply to Document</h4>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Invoice/Bill ID</label>
-              <input
-                className="input font-mono text-xs"
+              <label className="label">{isCustomer ? 'Invoice' : 'Bill'}</label>
+              <select
+                className="input"
                 value={form.apply_to_document_id}
-                onChange={(e) => setForm({ ...form, apply_to_document_id: e.target.value })}
-                placeholder="Paste document ID to apply"
-              />
+                onChange={(e) => {
+                  const doc = openDocs.find((d) => d.id === e.target.value);
+                  setForm({
+                    ...form,
+                    apply_to_document_id: e.target.value,
+                    apply_amount: doc ? Number(doc.balance_due ?? 0) : form.apply_amount,
+                  });
+                }}
+                disabled={!form.party_id}
+              >
+                <option value="">{form.party_id ? 'None (unapplied)' : 'Select a party first'}</option>
+                {openDocs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.number} — balance {Number(d.balance_due ?? 0).toFixed(2)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">Amount to Apply</label>

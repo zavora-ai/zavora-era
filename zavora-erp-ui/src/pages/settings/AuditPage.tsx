@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAuditEvents } from '../../api/client';
 import type { AuditEventEntry } from '../../types';
-import { formatDate } from '../../utils/format';
+
 import PageHeader from '../../components/shared/PageHeader';
 import { ChevronDown, ChevronRight, FileEdit, FilePlus, CheckCircle, RotateCcw, ShieldCheck, Filter } from 'lucide-react';
 
@@ -22,6 +22,30 @@ const EVENT_COLORS: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
 };
 
+// Precise timestamp for an audit (date + time).
+function dateTime(ts: string): string {
+  const d = new Date(ts);
+  return isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+// Human label for the affected object (its document number / reference), not the UUID.
+function objectLabel(e: AuditEventEntry): { primary: string; secondary?: string } {
+  const s = e.after ?? e.before ?? {};
+  const num = s.number || s.invoice_number || s.bill_number || s.credit_note_number || s.code;
+  const ref = s.reference || s.name || s.description;
+  if (num) return { primary: String(num), secondary: ref ? String(ref) : undefined };
+  if (ref) return { primary: String(ref) };
+  return { primary: `#${e.object_id.slice(0, 8)}` };
+}
+
+function actorOf(e: AuditEventEntry): { name: string; email?: string } {
+  if (e.actor_name) return { name: e.actor_name, email: e.actor_email || undefined };
+  if (typeof e.actor === 'string') return { name: e.actor };
+  return { name: 'System' };
+}
+
 export default function AuditPage() {
   const [filterObjectType, setFilterObjectType] = useState('');
   const [filterEventType, setFilterEventType] = useState('');
@@ -32,7 +56,7 @@ export default function AuditPage() {
     queryFn: () => getAuditEvents({
       object_type: filterObjectType || undefined,
       event_type: filterEventType || undefined,
-    }).then(r => r.data),
+    }).then(r => r.data.events ?? r.data),
   });
 
   const objectTypes = ['Invoice', 'Bill', 'Payment', 'JournalEntry', 'Account', 'Customer', 'Vendor', 'Employee', 'Asset', 'Inventory'];
@@ -97,70 +121,69 @@ export default function AuditPage() {
               const Icon = EVENT_ICONS[event.event_type] || FileEdit;
               const color = EVENT_COLORS[event.event_type] || 'bg-gray-100 text-gray-700';
               const isExpanded = expandedId === event.id;
+              const label = objectLabel(event);
+              const actor = actorOf(event);
+              const hasDetail = !!(event.before || event.after || event.metadata);
 
               return (
                 <div key={event.id} className="hover:bg-gray-50 transition-colors">
                   <div
-                    className="flex items-center gap-4 px-6 py-4 cursor-pointer"
+                    className="flex items-center gap-4 px-6 py-3.5 cursor-pointer"
                     onClick={() => setExpandedId(isExpanded ? null : event.id)}
                   >
-                    {/* Expand toggle */}
                     <div className="text-gray-400">
-                      {(event.before_state || event.after_state) ? (
-                        isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
-                      ) : (
-                        <div className="w-4 h-4" />
-                      )}
+                      {hasDetail ? (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />) : <div className="w-4 h-4" />}
                     </div>
 
-                    {/* Event icon */}
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${color}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
                       <Icon className="w-4 h-4" />
                     </div>
 
-                    {/* Event details */}
+                    {/* What */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium mr-2 ${color}`}>
-                          {event.event_type}
-                        </span>
-                        {event.object_type}
-                        <span className="text-gray-400 font-mono text-xs ml-1">#{event.object_id.slice(0, 8)}</span>
+                      <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${color}`}>{event.event_type}</span>
+                        <span className="text-gray-500">{event.object_type.replace(/_/g, ' ')}</span>
+                        <span className="font-semibold">{label.primary}</span>
+                        {label.secondary && <span className="text-gray-400 truncate">· {label.secondary}</span>}
                       </p>
+                      <p className="text-[11px] text-gray-400 font-mono mt-0.5">{event.object_type}/{event.object_id}</p>
                     </div>
 
-                    {/* Actor */}
-                    <div className="text-sm text-gray-500">
-                      {typeof event.actor === 'string' ? event.actor : event.actor?.name || 'System'}
+                    {/* Who */}
+                    <div className="text-right shrink-0">
+                      <p className="text-sm text-gray-700">{actor.name}</p>
+                      {actor.email && <p className="text-[11px] text-gray-400">{actor.email}</p>}
                     </div>
 
-                    {/* Timestamp */}
-                    <div className="text-xs text-gray-400 whitespace-nowrap">
-                      {formatDate(event.timestamp)}
+                    {/* When */}
+                    <div className="text-xs text-gray-400 whitespace-nowrap w-44 text-right shrink-0">
+                      {dateTime(event.timestamp)}
                     </div>
                   </div>
 
-                  {/* Expanded: before/after */}
-                  {isExpanded && (event.before_state || event.after_state) && (
-                    <div className="px-6 pb-4 pl-[4.5rem]">
+                  {isExpanded && hasDetail && (
+                    <div className="px-6 pb-4 pl-[4.5rem] space-y-3">
                       <div className="grid grid-cols-2 gap-4">
-                        {event.before_state && (
+                        {event.before && (
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Before</p>
-                            <pre className="text-xs bg-red-50 border border-red-100 rounded-lg p-3 overflow-x-auto max-h-48">
-                              {JSON.stringify(event.before_state, null, 2)}
-                            </pre>
+                            <pre className="text-xs bg-red-50 border border-red-100 rounded-lg p-3 overflow-x-auto max-h-56">{JSON.stringify(event.before, null, 2)}</pre>
                           </div>
                         )}
-                        {event.after_state && (
+                        {event.after && (
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase mb-1">After</p>
-                            <pre className="text-xs bg-green-50 border border-green-100 rounded-lg p-3 overflow-x-auto max-h-48">
-                              {JSON.stringify(event.after_state, null, 2)}
-                            </pre>
+                            <pre className="text-xs bg-green-50 border border-green-100 rounded-lg p-3 overflow-x-auto max-h-56">{JSON.stringify(event.after, null, 2)}</pre>
                           </div>
                         )}
                       </div>
+                      {event.metadata && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Metadata</p>
+                          <pre className="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-x-auto max-h-40">{JSON.stringify(event.metadata, null, 2)}</pre>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

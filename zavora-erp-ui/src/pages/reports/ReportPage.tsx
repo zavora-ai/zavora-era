@@ -108,7 +108,7 @@ function ReportView({ meta }: { meta: ReportMeta }) {
           dimensionTypes={dimensionTypes}
           result={result}
           onGenerate={() => generate.mutate()}
-          isPending={generate.isPending}
+          isPending={generate.isPending && !result}
           onExportCsv={() => csvExport.mutate()}
           csvPending={csvExport.isPending}
         />
@@ -122,7 +122,7 @@ function ReportView({ meta }: { meta: ReportMeta }) {
           </div>
         )}
 
-        {generate.isPending && (
+        {generate.isPending && !result && (
           <div className="card p-12 mb-5 text-center">
             <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
             <p className="mt-3 text-sm text-gray-500">Generating report…</p>

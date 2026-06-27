@@ -679,8 +679,13 @@ pub async fn record_mpesa_payment(
             if !is_dup {
                 return Err(ErpError::Database(e));
             }
-            // Duplicate callback. If a payment was already recorded for this receipt,
-            // return it (idempotent success); otherwise the original is still in flight.
+            // Duplicate callback. Two cases:
+            //  (a) a payment was already recorded for this receipt -> idempotent
+            //      success, return the existing payment.
+            //  (b) the claim row exists but has no payment_id -> a previous attempt
+            //      crashed between claiming the receipt and recording the payment
+            //      (an orphaned claim). Recover by continuing to record the payment
+            //      now, rather than rejecting forever and losing the money.
             let existing = sqlx::query_as::<_, PaymentRow>(
                 r#"SELECT p.* FROM payments p
                    JOIN mpesa_transactions m ON m.payment_id = p.id
@@ -694,12 +699,14 @@ pub async fn record_mpesa_payment(
             if let Some(row) = existing {
                 return Ok(payment_from_row(row));
             }
-            return Err(ErpError::PaymentError {
-                message: format!(
-                    "Duplicate M-Pesa callback for receipt {} is already being processed",
-                    receipt
-                ),
-            });
+            // Orphaned claim recovery: fall through to record the payment. The
+            // back-link UPDATE below will attach payment_id to the existing claim
+            // row. (If two callbacks race here, the payments unique number + the
+            // single claim row keep this safe; at worst one retry is needed.)
+            tracing::warn!(
+                "Recovering orphaned M-Pesa claim for receipt {} (no payment linked yet)",
+                receipt
+            );
         }
     }
 

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPeriods, generatePeriods, closePeriod, reopenPeriod } from '../../api/client';
+import { getPeriods, generatePeriods, closePeriod, reopenPeriod, yearEndClose } from '../../api/client';
 import type { FiscalPeriod } from '../../types';
 import { formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_CLOSE_PERIOD } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
-import { CalendarClock, Lock, Unlock, Plus, AlertCircle } from 'lucide-react';
+import { CalendarClock, Lock, Unlock, Plus, AlertCircle, Archive } from 'lucide-react';
 
 const STATUS_LABELS: Record<FiscalPeriod['status'], string> = {
   open: 'Open',
@@ -23,6 +23,7 @@ const MONTHS = [
 export default function PeriodsPage() {
   const [showGenerate, setShowGenerate] = useState(false);
   const [reopenTarget, setReopenTarget] = useState<FiscalPeriod | null>(null);
+  const [yearEndTarget, setYearEndTarget] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -96,6 +97,17 @@ export default function PeriodsPage() {
               <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
                 <CalendarClock className="w-4 h-4 text-gray-500" />
                 <h2 className="text-sm font-semibold text-gray-900">FY {year}</h2>
+                {hasRole(ROLES_CLOSE_PERIOD) &&
+                  groups[year].length > 0 &&
+                  groups[year].every((p) => p.status === 'hard_closed') && (
+                    <button
+                      onClick={() => { setError(null); setYearEndTarget(year); }}
+                      className="btn-secondary text-xs py-1 px-2 ml-auto"
+                      title="Post the year-end closing and opening-balance entries"
+                    >
+                      <Archive className="w-3 h-3" /> Close Year
+                    </button>
+                  )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -180,6 +192,13 @@ export default function PeriodsPage() {
           onError={setError}
         />
       )}
+      {yearEndTarget !== null && (
+        <YearEndCloseModal
+          fiscalYear={yearEndTarget}
+          onClose={() => setYearEndTarget(null)}
+          onError={setError}
+        />
+      )}
     </div>
   );
 }
@@ -237,6 +256,73 @@ function GeneratePeriodsModal({ onClose, onError }: { onClose: () => void; onErr
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function YearEndCloseModal({
+  fiscalYear,
+  onClose,
+  onError,
+}: {
+  fiscalYear: number;
+  onClose: () => void;
+  onError: (msg: string | null) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [result, setResult] = useState<{ net_income: string; closing: string; opening: string } | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => yearEndClose({ fiscal_year: fiscalYear }),
+    onSuccess: (res: any) => {
+      onError(null);
+      setResult({
+        net_income: res?.data?.net_income ?? '0',
+        closing: res?.data?.closing_entry_id ?? '',
+        opening: res?.data?.opening_entry_id ?? '',
+      });
+      queryClient.invalidateQueries({ queryKey: ['periods'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+    },
+    onError: (e: any) => {
+      onError(e?.response?.data?.error || e?.response?.data?.message || 'Year-end close failed.');
+      onClose();
+    },
+  });
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Close Year ${fiscalYear}`} subtitle="Posts closing & opening-balance entries" size="sm">
+      {result ? (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm">
+            <Archive className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              Year {fiscalYear} closed. Net income carried to retained earnings: <strong>{result.net_income}</strong>.
+              A closing entry and a {fiscalYear + 1} opening-balance entry were posted.
+            </span>
+          </div>
+          <div className="flex justify-end pt-2">
+            <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              This closes the books for FY {fiscalYear}: it posts a closing entry (revenue/expense → retained
+              earnings) into the last period and carries balances forward into FY {fiscalYear + 1}. All {fiscalYear}{' '}
+              periods must already be hard-closed, and FY {fiscalYear + 1} periods must exist. This cannot be undone.
+            </span>
+          </div>
+          <div className="flex items-center justify-end pt-4 border-t gap-3">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+            <button onClick={() => mutation.mutate()} className="btn-primary" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Closing…' : `Close FY ${fiscalYear}`}
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

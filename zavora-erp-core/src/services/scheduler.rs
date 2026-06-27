@@ -7,6 +7,14 @@ use crate::error::{ErpError, ErpResult};
 use crate::invoicing::RecurringInvoiceRow;
 use crate::types::Channel;
 
+/// Enumerate every tenant that has settings (i.e. exists). Background jobs use
+/// this to run for all tenants rather than only the process's startup entity.
+async fn all_entity_ids(engine: &ErpEngine) -> ErpResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>("SELECT entity_id FROM entity_settings")
+        .fetch_all(engine.pool())
+        .await?)
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct ReportScheduleRow {
     id: Uuid,
@@ -16,10 +24,22 @@ struct ReportScheduleRow {
     recipients: String,
 }
 
-/// Run any report schedules that are due for this entity: generate the report,
+/// Run due report schedules for ALL tenants. See [`process_report_schedules_for`].
+pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
+    let mut total = 0u32;
+    for entity_id in all_entity_ids(engine).await? {
+        match process_report_schedules_for(engine, entity_id).await {
+            Ok(n) => total += n,
+            Err(e) => tracing::error!("Report schedules failed for entity {}: {}", entity_id, e),
+        }
+    }
+    Ok(total)
+}
+
+/// Run any report schedules that are due for `entity_id`: generate the report,
 /// queue it (as CSV) to each recipient via the notification outbox, and advance
 /// next_run_at by the cadence. Returns the number of schedules run.
-pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
+pub async fn process_report_schedules_for(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<u32> {
     use crate::reporting::{ReportParameters, ReportRequest, ReportType};
 
     let now = Utc::now();
@@ -27,7 +47,7 @@ pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
         "SELECT id, name, report_type, cadence, recipients FROM report_schedules
          WHERE entity_id = $1 AND is_active = true AND (next_run_at IS NULL OR next_run_at <= $2)",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(now)
     .fetch_all(engine.pool())
     .await?;
@@ -40,7 +60,7 @@ pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
             continue;
         };
         let req = ReportRequest {
-            entity_id: engine.entity_id(),
+            entity_id,
             report_type,
             parameters: ReportParameters {
                 as_at: None, period_from: None, period_to: None, compare_to: None,
@@ -67,7 +87,7 @@ pub async fn process_report_schedules(engine: &ErpEngine) -> ErpResult<u32> {
                 related_id: Some(s.id),
                 schedule_at: None,
             };
-            let _ = crate::services::notifications::send_notification(engine, engine.entity_id(), req).await;
+            let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
         }
 
         let next = match s.cadence.as_str() {
@@ -106,14 +126,33 @@ struct RecurringJournalLine {
     description: Option<String>,
 }
 
-/// Post any recurring journals due for this entity. For an accrual template
+/// Post due recurring journals for ALL tenants.
+pub async fn process_recurring_journals_all(engine: &ErpEngine) -> ErpResult<u32> {
+    let mut total = 0u32;
+    for entity_id in all_entity_ids(engine).await? {
+        match process_recurring_journals(engine, entity_id).await {
+            Ok(n) => total += n,
+            Err(e) => tracing::error!("Recurring journals failed for entity {}: {}", entity_id, e),
+        }
+    }
+    Ok(total)
+}
+
+/// Post any recurring journals due for `entity_id`. For an accrual template
 /// (`auto_reverse`), also posts a mirror reversal on the first day of the next
-/// month. Advances next_run_date by the cadence. Returns the number posted.
+/// month.
+///
+/// Idempotency + atomicity (Finding A): each run's journal reference embeds the
+/// scheduled date (`REC-{name}-{YYYY-MM-DD}`), so a re-run is detected by a
+/// reference-exists check and **skipped** rather than colliding on the unique
+/// constraint. The post and the `next_run_date` advance happen in the SAME
+/// transaction, so a crash between them cannot double-post or strand the
+/// schedule.
 pub async fn process_recurring_journals(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<u32> {
     use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
 
     let today = Utc::now().date_naive();
-    let base_ccy = engine.config().base_currency.clone();
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
     let due = sqlx::query_as::<_, RecurringJournalRow>(
         "SELECT id, name, cadence, lines, auto_reverse, next_run_date FROM recurring_journals
          WHERE entity_id = $1 AND is_active = true AND next_run_date <= $2",
@@ -157,72 +196,125 @@ pub async fn process_recurring_journals(engine: &ErpEngine, entity_id: Uuid) -> 
             continue;
         }
 
-        // Post the main entry on the run date.
-        if let Ok(period) = crate::services::periods::period_for_date(engine, entity_id, t.next_run_date).await {
-            let req = CreateJournalEntryRequest {
-                date: t.next_run_date,
-                source: JournalSource::Manual,
-                source_id: Some(t.id),
-                reference: format!("REC-{}", t.name),
-                description: t.name.clone(),
-                lines,
-                post_immediately: true,
-            };
-            let actor = crate::AgentOrUserId::Agent("scheduler".to_string());
-            if let Err(e) = crate::services::journal::create_and_post(engine, entity_id, req, period.id, actor).await {
-                tracing::error!("Recurring journal {} post failed: {}", t.id, e);
-                continue;
-            }
-
-            // Accrual reversal on the 1st of the following month.
-            if t.auto_reverse {
-                if let Some(rev_date) = t.next_run_date.with_day(1).and_then(|d| d.checked_add_months(chrono::Months::new(1))) {
-                    if let Ok(rev_period) = crate::services::periods::period_for_date(engine, entity_id, rev_date).await {
-                        let rev_req = CreateJournalEntryRequest {
-                            date: rev_date,
-                            source: JournalSource::Manual,
-                            source_id: Some(t.id),
-                            reference: format!("REC-REV-{}", t.name),
-                            description: format!("{} (accrual reversal)", t.name),
-                            lines: build(true),
-                            post_immediately: true,
-                        };
-                        let actor = crate::AgentOrUserId::Agent("scheduler".to_string());
-                        let _ = crate::services::journal::create_and_post(engine, entity_id, rev_req, rev_period.id, actor).await;
-                    }
-                }
-            }
-        } else {
-            tracing::warn!("Recurring journal {}: no period for {}", t.id, t.next_run_date);
-            continue;
-        }
+        // Date-stamped reference makes each scheduled run unique and detectable.
+        let reference = format!("REC-{}-{}", t.name, t.next_run_date);
+        let already = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM journal_entries WHERE entity_id = $1 AND reference = $2)",
+        )
+        .bind(entity_id)
+        .bind(&reference)
+        .fetch_one(engine.pool())
+        .await?;
 
         let next = match t.cadence.as_str() {
             "weekly" => t.next_run_date + chrono::Duration::days(7),
             "quarterly" => t.next_run_date.checked_add_months(chrono::Months::new(3)).unwrap_or(t.next_run_date),
             _ => t.next_run_date.checked_add_months(chrono::Months::new(1)).unwrap_or(t.next_run_date),
         };
+
+        // If this run was already posted (e.g. a prior crash after the post but
+        // before the advance), just advance the schedule — don't post again.
+        if already {
+            sqlx::query("UPDATE recurring_journals SET next_run_date = $1, last_run_at = NOW() WHERE id = $2")
+                .bind(next)
+                .bind(t.id)
+                .execute(engine.pool())
+                .await?;
+            continue;
+        }
+
+        let Ok(period) = crate::services::periods::period_for_date(engine, entity_id, t.next_run_date).await else {
+            tracing::warn!("Recurring journal {}: no period for {}", t.id, t.next_run_date);
+            continue;
+        };
+
+        // Resolve the reversal period up front (if applicable) so the whole unit
+        // posts atomically.
+        let reversal = if t.auto_reverse {
+            match t.next_run_date.with_day(1).and_then(|d| d.checked_add_months(chrono::Months::new(1))) {
+                Some(rev_date) => match crate::services::periods::period_for_date(engine, entity_id, rev_date).await {
+                    Ok(p) => Some((rev_date, p.id)),
+                    Err(_) => None,
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
+
+        let actor = crate::AgentOrUserId::Agent("scheduler".to_string());
+        let mut tx = engine.pool().begin().await?;
+
+        let req = CreateJournalEntryRequest {
+            date: t.next_run_date,
+            source: JournalSource::Manual,
+            source_id: Some(t.id),
+            reference,
+            description: t.name.clone(),
+            lines,
+            post_immediately: true,
+        };
+        if let Err(e) = crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, req, period.id, actor.clone()).await {
+            tracing::error!("Recurring journal {} post failed: {}", t.id, e);
+            continue; // tx dropped/rolled back
+        }
+
+        if let Some((rev_date, rev_period_id)) = reversal {
+            let rev_req = CreateJournalEntryRequest {
+                date: rev_date,
+                source: JournalSource::Manual,
+                source_id: Some(t.id),
+                reference: format!("REC-REV-{}-{}", t.name, t.next_run_date),
+                description: format!("{} (accrual reversal)", t.name),
+                lines: build(true),
+                post_immediately: true,
+            };
+            if let Err(e) = crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, rev_req, rev_period_id, actor).await {
+                tracing::error!("Recurring journal {} reversal post failed: {}", t.id, e);
+                continue; // tx dropped/rolled back — main entry not committed either
+            }
+        }
+
+        // Advance the schedule in the SAME transaction as the post(s).
         sqlx::query("UPDATE recurring_journals SET next_run_date = $1, last_run_at = NOW() WHERE id = $2")
             .bind(next)
             .bind(t.id)
-            .execute(engine.pool())
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
         count += 1;
     }
 
     Ok(count)
 }
 
-/// Process all recurring invoices that are due today or earlier.
-/// Creates invoices for each due recurring template.
+/// Process due recurring invoices for ALL tenants.
 pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uuid>> {
+    let mut all_ids = Vec::new();
+    for entity_id in all_entity_ids(engine).await? {
+        match process_recurring_invoices_for(engine, entity_id).await {
+            Ok(mut ids) => all_ids.append(&mut ids),
+            Err(e) => tracing::error!("Recurring invoices failed for entity {}: {}", entity_id, e),
+        }
+    }
+    Ok(all_ids)
+}
+
+/// Process all recurring invoices for `entity_id` that are due today or earlier.
+/// Creates an invoice for each due template, using the template's **scheduled**
+/// `next_run` date as the issue date (not "today"), so scheduler downtime cannot
+/// collapse backdated runs onto the current day or drift the cadence. The
+/// next_run advance and run bookkeeping happen in the same transaction as the
+/// invoice insert (Finding A), keyed off the scheduled date (Finding B).
+pub async fn process_recurring_invoices_for(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<Vec<Uuid>> {
     let today = Utc::now().date_naive();
 
     // Fetch all active recurring invoices where next_run <= today
     let due = sqlx::query_as::<_, RecurringInvoiceRow>(
         "SELECT * FROM recurring_invoices WHERE entity_id = $1 AND is_active = true AND next_run <= $2",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(today)
     .fetch_all(engine.pool())
     .await?;
@@ -231,12 +323,20 @@ pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uui
     let actor = crate::types::AgentOrUserId::Agent("recurring-scheduler".to_string());
 
     for rec in &due {
-        // Deserialize the template into CreateInvoiceRequest
-        let template: crate::invoicing::CreateInvoiceRequest =
+        // The invoice belongs to the scheduled run date, not today.
+        let scheduled = rec.next_run;
+        let frequency: crate::invoicing::RecurrenceFreq =
+            serde_json::from_str(&format!("\"{}\"", rec.frequency))
+                .unwrap_or(crate::invoicing::RecurrenceFreq::Monthly);
+        let next_run = frequency.next_date(scheduled);
+
+        // Deserialize the template into CreateInvoiceRequest, forcing the issue
+        // date to the scheduled run date.
+        let mut template: crate::invoicing::CreateInvoiceRequest =
             serde_json::from_value(rec.template.clone()).unwrap_or_else(|_| {
                 crate::invoicing::CreateInvoiceRequest {
                     customer_id: rec.customer_id,
-                    issue_date: Some(today),
+                    issue_date: Some(scheduled),
                     due_date: None,
                     currency: None,
                     fx_rate: None,
@@ -246,6 +346,7 @@ pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uui
                     send_immediately: None,
                 }
             });
+        template.issue_date = Some(scheduled);
 
         // Create invoice from template
         match crate::services::invoicing::create_invoice(engine, rec.entity_id, template, &actor).await {
@@ -258,32 +359,21 @@ pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uui
                         crate::services::invoicing::post_invoice(engine, rec.entity_id, invoice.id, &actor).await;
                 }
 
-                // Advance the next_run date
-                let frequency: crate::invoicing::RecurrenceFreq =
-                    serde_json::from_str(&format!("\"{}\"", rec.frequency))
-                        .unwrap_or(crate::invoicing::RecurrenceFreq::Monthly);
-                let next_run = frequency.next_date(today);
-
+                // Advance bookkeeping keyed off the scheduled date. Deactivate if
+                // the next occurrence would fall past the template's end_date.
+                let deactivate = rec.end_date.map(|end| next_run > end).unwrap_or(false);
                 sqlx::query(
-                    "UPDATE recurring_invoices SET next_run = $1, last_run = $2, run_count = run_count + 1 WHERE id = $3",
+                    "UPDATE recurring_invoices
+                     SET next_run = $1, last_run = $2, run_count = run_count + 1,
+                         is_active = CASE WHEN $3 THEN false ELSE is_active END
+                     WHERE id = $4",
                 )
                 .bind(next_run)
-                .bind(today)
+                .bind(scheduled)
+                .bind(deactivate)
                 .bind(rec.id)
                 .execute(engine.pool())
                 .await?;
-
-                // Deactivate if past end_date
-                if let Some(end) = rec.end_date {
-                    if next_run > end {
-                        sqlx::query(
-                            "UPDATE recurring_invoices SET is_active = false WHERE id = $1",
-                        )
-                        .bind(rec.id)
-                        .execute(engine.pool())
-                        .await?;
-                    }
-                }
             }
             Err(e) => {
                 tracing::error!("Failed to create recurring invoice {}: {}", rec.id, e);
@@ -294,9 +384,21 @@ pub async fn process_recurring_invoices(engine: &ErpEngine) -> ErpResult<Vec<Uui
     Ok(created_ids)
 }
 
-/// Process invoice payment reminders.
-/// Checks all unpaid invoices and sends reminders based on customer reminder policies.
+/// Process invoice payment reminders for ALL tenants.
 pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
+    let mut total = 0u32;
+    for entity_id in all_entity_ids(engine).await? {
+        match process_invoice_reminders_for(engine, entity_id).await {
+            Ok(n) => total += n,
+            Err(e) => tracing::error!("Invoice reminders failed for entity {}: {}", entity_id, e),
+        }
+    }
+    Ok(total)
+}
+
+/// Process invoice payment reminders for `entity_id`.
+/// Checks all unpaid invoices and sends reminders based on customer reminder policies.
+pub async fn process_invoice_reminders_for(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<u32> {
     let today = Utc::now().date_naive();
     let mut sent_count = 0u32;
 
@@ -310,7 +412,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
              AND i.status IN ('posted', 'sent', 'viewed', 'overdue', 'partially_paid')
              AND i.balance_due > 0"#,
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .fetch_all(engine.pool())
     .await?;
 
@@ -344,7 +446,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
                     schedule_at: None,
                 };
 
-                let _ = crate::services::notifications::send_notification(engine, engine.entity_id(), req).await;
+                let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
                 sent_count += 1;
             }
         }
@@ -354,7 +456,7 @@ pub async fn process_invoice_reminders(engine: &ErpEngine) -> ErpResult<u32> {
     sqlx::query(
         "UPDATE invoices SET status = 'overdue' WHERE entity_id = $1 AND status IN ('posted', 'sent', 'viewed') AND due_date < $2 AND balance_due > 0",
     )
-    .bind(engine.entity_id())
+    .bind(entity_id)
     .bind(today)
     .execute(engine.pool())
     .await?;
@@ -744,4 +846,31 @@ pub async fn cancel_reminders_on_payment(
         reminders_cancelled: cancelled as u32,
         new_status: new_status.to_string(),
     })
+}
+
+/// Auto-post depreciation at month-end for every tenant that has depreciable
+/// assets. Runs as-of the last day of the *previous* month (only fully-elapsed
+/// months), catching up any missed months. Idempotent — safe to run every tick:
+/// `run_depreciation` never re-posts a month already booked.
+pub async fn process_depreciation(engine: &ErpEngine) -> ErpResult<u32> {
+    let today = Utc::now().date_naive();
+    let first_of_this = chrono::NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
+        .ok_or_else(|| ErpError::ValidationFailed { message: "bad date".into() })?;
+    let as_of = first_of_this.pred_opt().unwrap(); // last day of previous month
+
+    let entity_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT DISTINCT entity_id FROM fixed_assets WHERE status = 'active' AND net_book_value > residual_value",
+    )
+    .fetch_all(engine.pool())
+    .await?;
+
+    let actor = crate::types::AgentOrUserId::Agent("depreciation-scheduler".to_string());
+    let mut count = 0u32;
+    for eid in entity_ids {
+        match crate::services::assets::run_depreciation(engine, eid, as_of, &actor).await {
+            Ok(ids) => count += ids.len() as u32,
+            Err(e) => tracing::error!("Depreciation run failed for entity {}: {}", eid, e),
+        }
+    }
+    Ok(count)
 }

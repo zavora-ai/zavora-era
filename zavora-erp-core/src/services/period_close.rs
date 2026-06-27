@@ -48,27 +48,16 @@ pub async fn execute_year_end_close(
     let periods = get_fiscal_year_periods(engine, entity_id, req.fiscal_year).await?;
     validate_all_periods_hard_closed(&periods)?;
 
-    // Step 2: Compute P&L account balances (Revenue and Expense) for the fiscal year
-    let pnl_balances = compute_pnl_balances(engine, entity_id, &periods).await?;
-
-    // Step 3: Generate closing Journal Entry
     let last_period = periods
         .last()
         .ok_or_else(|| ErpError::ValidationFailed {
             message: "No periods found for fiscal year".to_string(),
-        })?;
+        })?
+        .clone();
 
-    let closing_entry = build_closing_entry(engine, entity_id, &pnl_balances, last_period, &req).await?;
-    let closing_je = crate::services::journal::create_and_post(
-        engine,
-        entity_id,
-        closing_entry,
-        last_period.id,
-        req.executed_by.clone(),
-    )
-    .await?;
-
-    // Step 4: Generate opening balance JE in period 1 of next fiscal year
+    // Step 2: Resolve next year's first period UP FRONT — before posting anything —
+    // so a missing-periods configuration error cannot leave a half-completed close
+    // (closing entry posted, opening entry not).
     let next_year_periods = get_fiscal_year_periods(engine, entity_id, req.fiscal_year + 1).await?;
     let first_period_next_year = next_year_periods
         .first()
@@ -77,12 +66,53 @@ pub async fn execute_year_end_close(
                 "No fiscal periods found for next year {}. Please generate periods first.",
                 req.fiscal_year + 1
             ),
-        })?;
+        })?
+        .clone();
+
+    // Step 3: Idempotency guard — if a closing entry for this year already exists,
+    // the close has already run. Refuse rather than double-count retained earnings.
+    let closing_reference = format!("YEC-{}", req.fiscal_year);
+    let already_closed = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM journal_entries WHERE entity_id = $1 AND reference = $2)",
+    )
+    .bind(entity_id)
+    .bind(&closing_reference)
+    .fetch_one(engine.pool())
+    .await?;
+    if already_closed {
+        return Err(ErpError::ValidationFailed {
+            message: format!(
+                "Fiscal year {} has already been closed (closing entry {} exists).",
+                req.fiscal_year, closing_reference
+            ),
+        });
+    }
+
+    // Step 4: Compute both entries before opening the transaction (these are
+    // read-only aggregate queries).
+    let pnl_balances = compute_pnl_balances(engine, entity_id, &periods).await?;
+    let net_income = compute_net_income(&pnl_balances);
+    let closing_entry = build_closing_entry(engine, entity_id, &pnl_balances, &last_period, &req).await?;
 
     let bs_balances = compute_balance_sheet_balances(engine, entity_id, &periods).await?;
     let opening_entry =
-        build_opening_entry(engine, entity_id, &bs_balances, first_period_next_year, &req).await?;
-    let opening_je = crate::services::journal::create_and_post(
+        build_opening_entry(engine, entity_id, &bs_balances, &first_period_next_year, &req, net_income).await?;
+
+    // Step 5: Post the closing entry and the opening entry in ONE transaction, so
+    // they either both commit or both roll back. A failure can never leave the
+    // year closed without carried-forward opening balances.
+    let mut tx = engine.pool().begin().await?;
+    let closing_je = crate::services::journal::create_and_post_in_tx(
+        &mut tx,
+        engine,
+        entity_id,
+        closing_entry,
+        last_period.id,
+        req.executed_by.clone(),
+    )
+    .await?;
+    let opening_je = crate::services::journal::create_and_post_in_tx(
+        &mut tx,
         engine,
         entity_id,
         opening_entry,
@@ -90,9 +120,7 @@ pub async fn execute_year_end_close(
         req.executed_by.clone(),
     )
     .await?;
-
-    // Compute net income (Revenue - Expense) for reporting
-    let net_income = compute_net_income(&pnl_balances);
+    tx.commit().await?;
 
     // Emit audit event
     let audit_event = serde_json::json!({
@@ -197,9 +225,9 @@ async fn compute_pnl_balances(
                jl.account_code,
                a.account_type,
                CASE
-                   WHEN a.account_type = 'revenue' THEN
+                   WHEN lower(a.account_type) = 'revenue' THEN
                        COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
-                   WHEN a.account_type = 'expense' THEN
+                   WHEN lower(a.account_type) = 'expense' THEN
                        COALESCE(SUM(jl.functional_debit), 0) - COALESCE(SUM(jl.functional_credit), 0)
                    ELSE 0
                END AS balance
@@ -209,12 +237,12 @@ async fn compute_pnl_balances(
            WHERE je.entity_id = $1
              AND je.period_id = ANY($2)
              AND je.status = 'posted'
-             AND a.account_type IN ('revenue', 'expense')
+             AND lower(a.account_type) IN ('revenue', 'expense')
            GROUP BY jl.account_code, a.account_type
            HAVING CASE
-               WHEN a.account_type = 'revenue' THEN
+               WHEN lower(a.account_type) = 'revenue' THEN
                    COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
-               WHEN a.account_type = 'expense' THEN
+               WHEN lower(a.account_type) = 'expense' THEN
                    COALESCE(SUM(jl.functional_debit), 0) - COALESCE(SUM(jl.functional_credit), 0)
                ELSE 0
            END <> 0"#,
@@ -248,7 +276,7 @@ async fn compute_balance_sheet_balances(
                jl.account_code,
                a.account_type,
                CASE
-                   WHEN a.account_type IN ('asset', 'contra_liability', 'contra_revenue') THEN
+                   WHEN lower(a.account_type) IN ('asset', 'contraliability') THEN
                        COALESCE(SUM(jl.functional_debit), 0) - COALESCE(SUM(jl.functional_credit), 0)
                    ELSE
                        COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
@@ -259,10 +287,10 @@ async fn compute_balance_sheet_balances(
            WHERE je.entity_id = $1
              AND je.date <= $2
              AND je.status = 'posted'
-             AND a.account_type IN ('asset', 'liability', 'equity', 'contra_asset', 'contra_liability')
+             AND lower(a.account_type) IN ('asset', 'liability', 'equity', 'contraasset', 'contraliability')
            GROUP BY jl.account_code, a.account_type
            HAVING CASE
-               WHEN a.account_type IN ('asset', 'contra_liability', 'contra_revenue') THEN
+               WHEN lower(a.account_type) IN ('asset', 'contraliability') THEN
                    COALESCE(SUM(jl.functional_debit), 0) - COALESCE(SUM(jl.functional_credit), 0)
                ELSE
                    COALESCE(SUM(jl.functional_credit), 0) - COALESCE(SUM(jl.functional_debit), 0)
@@ -300,7 +328,7 @@ async fn build_closing_entry(
             continue;
         }
 
-        match acct.account_type.as_str() {
+        match acct.account_type.to_lowercase().as_str() {
             "revenue" => {
                 // Revenue has credit-normal balance; to close, we DR it
                 lines.push(CreateJournalLineRequest {
@@ -395,20 +423,42 @@ async fn build_opening_entry(
     bs_balances: &[AccountBalance],
     first_period: &FiscalPeriod,
     req: &YearEndCloseRequest,
+    net_income: Decimal,
 ) -> ErpResult<CreateJournalEntryRequest> {
-    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+    let cfg = engine.config_for(entity_id).await?;
+    let base_ccy = cfg.base_currency.clone();
+    let retained_earnings = cfg.posting.retained_earnings.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
-    for acct in bs_balances {
+    // The BS balances are computed BEFORE the closing entry posts, so they do not
+    // yet reflect net income moving from P&L into retained earnings. Fold this
+    // year's net income into the retained-earnings carry-forward so the opening
+    // entry balances (assets carried forward = liabilities + equity incl. the
+    // accumulated result). Equity is credit-normal, so net income (profit) is a
+    // positive balance; a loss is negative.
+    let mut carried: Vec<AccountBalance> = bs_balances.to_vec();
+    if net_income != Decimal::ZERO {
+        if let Some(re) = carried.iter_mut().find(|a| a.account_code == retained_earnings) {
+            re.balance += net_income;
+        } else {
+            carried.push(AccountBalance {
+                account_code: retained_earnings.clone(),
+                account_type: "Equity".to_string(),
+                balance: net_income,
+            });
+        }
+    }
+
+    for acct in &carried {
         if acct.balance == Decimal::ZERO {
             continue;
         }
 
-        // Debit-normal accounts (assets, contra_liability): positive balance = debit
-        // Credit-normal accounts (liability, equity, contra_asset): positive balance = credit
+        // Debit-normal accounts (assets, contra-liability): positive balance = debit
+        // Credit-normal accounts (liability, equity, contra-asset): positive balance = credit
         let is_debit_normal = matches!(
-            acct.account_type.as_str(),
-            "asset" | "contra_liability" | "contra_revenue"
+            acct.account_type.to_lowercase().as_str(),
+            "asset" | "contraliability"
         );
 
         if is_debit_normal {
@@ -498,13 +548,13 @@ async fn build_opening_entry(
 fn compute_net_income(pnl_balances: &[AccountBalance]) -> Decimal {
     let total_revenue: Decimal = pnl_balances
         .iter()
-        .filter(|a| a.account_type == "revenue")
+        .filter(|a| a.account_type.eq_ignore_ascii_case("revenue"))
         .map(|a| a.balance)
         .sum();
 
     let total_expense: Decimal = pnl_balances
         .iter()
-        .filter(|a| a.account_type == "expense")
+        .filter(|a| a.account_type.eq_ignore_ascii_case("expense"))
         .map(|a| a.balance)
         .sum();
 

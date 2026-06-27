@@ -56,11 +56,13 @@ pub async fn validate_entry(
 
     for line in &req.lines {
         let fx_rate = line.fx_rate.unwrap_or(Decimal::ONE);
+        // Mirror the poster: round each line's functional amount before summing,
+        // so the validator's balance check matches what posting will actually do.
         if let Some(d) = line.debit {
-            total_func_debits += d * fx_rate;
+            total_func_debits += round_money(d * fx_rate);
         }
         if let Some(c) = line.credit {
-            total_func_credits += c * fx_rate;
+            total_func_credits += round_money(c * fx_rate);
         }
 
         // Rule 4: FX rate required for non-base currency
@@ -72,11 +74,18 @@ pub async fn validate_entry(
         }
     }
 
-    if total_func_debits != total_func_credits {
-        errors.push(format!(
-            "Entry is unbalanced: functional debits={}, credits={}",
-            total_func_debits, total_func_credits
-        ));
+    // Use the same sub-cent rounding tolerance as the poster (Req 2.6, 5.3): a
+    // residual imbalance of at most ROUNDING_TOLERANCE is absorbed by an
+    // adjustment line at post time, so it must not fail validation here. Only a
+    // larger imbalance is a genuine error.
+    match rounding_outcome(total_func_debits, total_func_credits) {
+        RoundingOutcome::Balanced | RoundingOutcome::Adjust { .. } => {}
+        RoundingOutcome::Unbalanced => {
+            errors.push(format!(
+                "Entry is unbalanced: functional debits={}, credits={}",
+                total_func_debits, total_func_credits
+            ));
+        }
     }
 
     // Rule 5: Validate account codes exist and are active
@@ -138,12 +147,22 @@ pub async fn validate_entry(
     })
 }
 
+/// Sources that the year-end close process posts and which must be permitted to
+/// land in a hard-closed period (the closing entry posts into the last period of
+/// the year *after* it has been hard-closed; the opening entry posts into the
+/// first period of the next year). These are system-generated and only emitted by
+/// the controlled year-end-close transaction, never by user input.
+pub fn is_year_end_source(source: &JournalSource) -> bool {
+    matches!(source, JournalSource::YearEndClose | JournalSource::OpeningBalance)
+}
+
 /// Enforce period status rules for journal entry insertion.
 ///
 /// - If the period is **SoftClosed**, only entries with source `Manual` are allowed
 ///   (prior-period adjustments). All other sources are rejected.
-/// - If the period is **HardClosed**, ALL entries are rejected as a defence-in-depth
-///   measure alongside the database trigger.
+/// - If the period is **HardClosed**, all entries are rejected EXCEPT the
+///   system-generated year-end close/opening sources (see [`is_year_end_source`]),
+///   which by design post into a hard-closed year. This mirrors the DB trigger.
 /// - Open or Future periods allow all entries (Future is unlikely in practice).
 pub async fn enforce_period_status(
     engine: &ErpEngine,
@@ -167,11 +186,14 @@ pub async fn enforce_period_status(
 
     match status {
         PeriodStatus::HardClosed => {
-            return Err(ErpError::PeriodClosedDetailed {
-                period_name: period.name.clone(),
-                status: "HardClosed".to_string(),
-                period_id: period.id,
-            });
+            if !is_year_end_source(source) {
+                return Err(ErpError::PeriodClosedDetailed {
+                    period_name: period.name.clone(),
+                    status: "HardClosed".to_string(),
+                    period_id: period.id,
+                });
+            }
+            // Year-end close/opening entries are permitted into a hard-closed period.
         }
         PeriodStatus::SoftClosed => {
             if *source != JournalSource::Manual {
@@ -462,11 +484,13 @@ pub async fn enforce_period_status_in_tx(
     })?;
 
     match period.parsed_status() {
-        PeriodStatus::HardClosed => Err(ErpError::PeriodClosedDetailed {
-            period_name: period.name.clone(),
-            status: "HardClosed".to_string(),
-            period_id: period.id,
-        }),
+        PeriodStatus::HardClosed if !is_year_end_source(source) => {
+            Err(ErpError::PeriodClosedDetailed {
+                period_name: period.name.clone(),
+                status: "HardClosed".to_string(),
+                period_id: period.id,
+            })
+        }
         PeriodStatus::SoftClosed if *source != JournalSource::Manual => {
             Err(ErpError::PeriodClosedDetailed {
                 period_name: period.name.clone(),

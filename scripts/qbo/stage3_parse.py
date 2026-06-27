@@ -46,10 +46,16 @@ def parse_detail(path, group_ztype, top_groups):
                 continue
             # a section header: could be a top group or a leaf account
             if first in top_groups or first in group_ztype:
-                group_stack.append(first)
-                if first in group_ztype:
-                    current_ztype = group_ztype[first]
-                current_account = None  # entering a group
+                # a leaf account can share its parent group's name (e.g. the
+                # "Cost of Goods Sold" account under the "Cost of Goods Sold"
+                # group) — the repeat is the account, not another group.
+                if group_stack and group_stack[-1] == first:
+                    current_account = first
+                else:
+                    group_stack.append(first)
+                    if first in group_ztype:
+                        current_ztype = group_ztype[first]
+                    current_account = None  # entering a group
             else:
                 current_account = first  # leaf account
             continue

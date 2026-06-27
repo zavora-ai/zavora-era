@@ -758,7 +758,7 @@
     "description": "Rock Fountain",
     "split": "Accounts Receivable (A/R)",
     "amount": 125.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    },
    {
@@ -769,7 +769,7 @@
     "description": "Fountain Pump",
     "split": "Accounts Receivable (A/R)",
     "amount": 10.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    }
   ],
@@ -1094,7 +1094,7 @@
     "description": "Rock Fountain",
     "split": "Accounts Receivable (A/R)",
     "amount": 125.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    },
    {
@@ -1105,7 +1105,7 @@
     "description": "Fountain Pump",
     "split": "Accounts Receivable (A/R)",
     "amount": 10.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    }
   ],
@@ -1835,7 +1835,7 @@
     "description": "Rock Fountain",
     "split": "Accounts Receivable (A/R)",
     "amount": 125.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    },
    {
@@ -1846,7 +1846,7 @@
     "description": "Sprinkler Pipes",
     "split": "Accounts Receivable (A/R)",
     "amount": 10.0,
-    "account": null,
+    "account": "Cost of Goods Sold",
     "ztype": "Expense"
    }
   ],

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAssets, createAsset, runDepreciation } from '../../api/client';
+import { useEffect } from 'react';
+import { getAssets, createAsset, runDepreciation, getAccounts } from '../../api/client';
 import type { FixedAsset } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
@@ -46,7 +47,7 @@ export default function AssetsPage() {
     },
     {
       key: 'category', header: 'Category',
-      render: (r) => <span className="badge-info">{r.category}</span>,
+      render: (r) => <span className="badge-info">{String(r.category).replace(/"/g, '').replace(/([a-z])([A-Z])/g, '$1 $2')}</span>,
     },
     {
       key: 'acquisition_date', header: 'Acquired',
@@ -130,16 +131,37 @@ function CreateAssetModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     description: '',
-    category: 'Computer Equipment',
+    category: 'ComputerEquipment',
     acquisition_date: '',
     cost: '',
     residual_value: '0',
     depreciation_method: 'StraightLine',
     useful_life_months: '60',
-    gl_asset_account: '1500',
-    gl_accum_depr_account: '1510',
-    gl_depr_expense: '7100',
+    gl_asset_account: '',
+    gl_accum_depr_account: '',
+    gl_depr_expense: '',
   });
+
+  // Populate the GL account dropdowns from the real chart of accounts — the
+  // previously hardcoded codes did not exist in the seeded chart, so assets
+  // posted depreciation to phantom accounts.
+  const { data: accountsRes } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts });
+  const accounts: any[] = accountsRes?.data ?? [];
+  const assetAccts = accounts.filter(a => a.account_type === 'Asset');
+  const accumAccts = accounts.filter(a => a.account_type === 'ContraAsset');
+  const deprAccts = accounts.filter(a => a.account_type === 'Expense');
+  const pick = (list: any[], re: RegExp) => (list.find(a => re.test(a.name)) ?? list[0])?.code ?? '';
+
+  useEffect(() => {
+    if (!accounts.length || form.gl_asset_account) return;
+    setForm(f => ({
+      ...f,
+      gl_asset_account: pick(assetAccts, /fixed asset|motor|equipment|asset/i),
+      gl_accum_depr_account: pick(accumAccts, /accumulated|accum/i),
+      gl_depr_expense: pick(deprAccts, /depreciation/i),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts.length]);
 
   const mutation = useMutation({
     mutationFn: (data: any) => createAsset(data),
@@ -186,7 +208,14 @@ function CreateAssetModal({ onClose }: { onClose: () => void }) {
     });
   };
 
-  const categories = ['Land & Buildings', 'Motor Vehicles', 'Plant & Machinery', 'Furniture & Fittings', 'Computer Equipment'];
+  const categories = [
+    { value: 'LandAndBuildings', label: 'Land & Buildings' },
+    { value: 'MotorVehicles', label: 'Motor Vehicles' },
+    { value: 'PlantAndMachinery', label: 'Plant & Machinery' },
+    { value: 'FurnitureAndFittings', label: 'Furniture & Fittings' },
+    { value: 'ComputerEquipment', label: 'Computer Equipment' },
+    { value: 'Software', label: 'Software' },
+  ];
   const methods = [
     { value: 'StraightLine', label: 'Straight Line' },
     { value: 'DecliningBalance', label: 'Declining Balance' },
@@ -208,7 +237,7 @@ function CreateAssetModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="label">Category *</label>
             <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
           <div>
@@ -248,26 +277,19 @@ function CreateAssetModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="label">Asset Account</label>
             <select className="input" value={form.gl_asset_account} onChange={(e) => setForm({ ...form, gl_asset_account: e.target.value })}>
-              <option value="1500">1500 — Fixed Assets</option>
-              <option value="1510">1510 — Motor Vehicles</option>
-              <option value="1520">1520 — Computer Equipment</option>
-              <option value="1530">1530 — Furniture & Fittings</option>
+              {assetAccts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Accum. Depr. Account</label>
             <select className="input" value={form.gl_accum_depr_account} onChange={(e) => setForm({ ...form, gl_accum_depr_account: e.target.value })}>
-              <option value="1510">1510 — Accum Depr</option>
-              <option value="1550">1550 — Accum Depr MV</option>
-              <option value="1560">1560 — Accum Depr Comp</option>
+              {accumAccts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Depr. Expense Account</label>
             <select className="input" value={form.gl_depr_expense} onChange={(e) => setForm({ ...form, gl_depr_expense: e.target.value })}>
-              <option value="7100">7100 — Depreciation Expense</option>
-              <option value="7110">7110 — Depr — Vehicles</option>
-              <option value="7120">7120 — Depr — Equipment</option>
+              {deprAccts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
         </div>

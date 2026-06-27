@@ -95,8 +95,14 @@ async fn main() -> anyhow::Result<()> {
             if let Err(e) = zavora_erp_core::services::scheduler::process_report_schedules(&scheduler_engine).await {
                 tracing::error!("Report schedule error: {}", e);
             }
-            if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_journals(&scheduler_engine, scheduler_engine.entity_id()).await {
+            if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_journals_all(&scheduler_engine).await {
                 tracing::error!("Recurring journal error: {}", e);
+            }
+            // Month-end depreciation for all tenants (idempotent; books the prior month).
+            match zavora_erp_core::services::scheduler::process_depreciation(&scheduler_engine).await {
+                Ok(n) if n > 0 => tracing::info!("Depreciation posted for {} asset(s)", n),
+                Ok(_) => {}
+                Err(e) => tracing::error!("Depreciation scheduler error: {}", e),
             }
         }
     });
@@ -142,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/periods", get(routes::periods::list).post(routes::periods::generate))
         .route("/api/v1/periods/{id}/close", post(routes::periods::close))
         .route("/api/v1/periods/{id}/reopen", post(routes::periods::reopen))
+        .route("/api/v1/periods/year-end-close", post(routes::periods::year_end_close))
         // Journal entries
         .route("/api/v1/journal-entries", get(routes::journal::list).post(routes::journal::create))
         .route("/api/v1/journal-entries/validate", post(routes::journal::validate))
