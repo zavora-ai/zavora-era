@@ -1,5 +1,23 @@
 # Implementation Plan: Production Readiness
 
+> ⚠️ **Reconciliation note (2026-06-27): the checkboxes below are stale.** They
+> were never ticked as work landed and now badly understate progress. Do **not**
+> read the `[ ]` marks as the current backlog.
+>
+> - **Live backlog (what's left):** [`../../REMAINING.md`](../../REMAINING.md)
+> - **Completed work:** [`../../CHANGELOG.md`](../../CHANGELOG.md)
+> - **Status snapshot:** [`../PRODUCTION_READINESS.md`](../PRODUCTION_READINESS.md)
+>
+> Reconciled against the codebase, the following are **done** even though shown
+> unchecked: §2 JWT auth, §3 transaction atomicity, §4 per-request tenant scoping,
+> §5 rounding policy, §6 test foundation (49 tests), §8 document numbering, §11
+> void/delete, §12 pagination, §13 user management, §14 settings persistence, §20
+> M-Pesa STK push. Genuinely **outstanding**: §9 CORS lockdown, §15 CI, §16
+> containerization, §17 backups, §19 posting-group matrices, §21 notification
+> real send-out, §22 supplier-CN line items, §23 statutory payroll relief, §24
+> rate limiting, §25 observability, §26 performance. This file is retained for the
+> property-test catalogue and requirement traceability only.
+
 ## Overview
 
 This plan brings Zavora ERP from functional prototype to production-grade deployment across four priority tiers. Tasks are ordered by dependency: P0 blockers first (auth, atomicity, tenant scoping, tests), then P1 operational requirements, P2 feature completions, and P3 polish. Each task builds incrementally on prior work, with property-based tests validating correctness properties from the design.

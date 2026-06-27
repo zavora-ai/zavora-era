@@ -1,5 +1,9 @@
 # Reporting & Document Output — Plan
 
+> **Status (2026-06-27):** Phases 1–3 and 6 are **done**; Phases 4–5 are
+> **partial**. Remaining reporting tail is tracked in
+> [`../REMAINING.md`](../REMAINING.md) §5. Per-phase flags below are current.
+
 Brings Zavora reporting from "core statements, correct" to Business Central /
 NetSuite parity, and closes the transactional-document output gap. The bar is
 **auditable, accountant-grade, and KRA-regulatory-compliant** throughout.
@@ -51,14 +55,17 @@ bills/payroll/inventory/bank awaits seed data in those modules (Phase 4).
 
 ---
 
-## Phase 1 — Componentize + dedicated report pages  ⬜  (foundation)
+## Phase 1 — Componentize + dedicated report pages  ✅  (foundation)
 
-The current `ReportsPage.tsx` is a ~1,100-line monolith with a dropdown selector,
-plus an orphan `reportShared.tsx`. This phase is the structural fix that unblocks
-documents, drill-down, and UI states.
+> **Shipped** (`b96cc32`). The monolith was split into per-report view
+> components + per-statement pages; the orphan `reportShared.tsx` was removed.
 
-- ⬜ Delete the orphan `reportShared.tsx`.
-- ⬜ Shared building blocks under `src/pages/reports/`:
+The original `ReportsPage.tsx` was a ~1,100-line monolith with a dropdown
+selector, plus an orphan `reportShared.tsx`. This phase was the structural fix
+that unblocked documents, drill-down, and UI states.
+
+- ✅ Delete the orphan `reportShared.tsx`.
+- ✅ Shared building blocks under `src/pages/reports/`:
   - `ReportLayout` — branded letterhead (company, logo, KRA PIN), title,
     period/as-at, generated-on footer, print stylesheet.
   - `ReportFilters` — date range / as-at / comparative / party / dimension.
@@ -66,7 +73,7 @@ documents, drill-down, and UI states.
   - One **view component per statement**: `TrialBalanceView`, `BalanceSheetView`,
     `ProfitAndLossView`, `CashFlowView`, `GeneralLedgerView`, `ArAgeingView`,
     `ApAgeingView`, `VatReturnView`, plus statutory/management views.
-- ⬜ Dedicated routes, each its own page:
+- ✅ Dedicated routes, each its own page:
   `/reports` (index/launcher), `/reports/trial-balance`, `/reports/balance-sheet`,
   `/reports/profit-and-loss`, `/reports/cash-flow`, `/reports/general-ledger`,
   `/reports/ar-ageing`, `/reports/ap-ageing`, `/reports/vat`,
@@ -75,8 +82,8 @@ documents, drill-down, and UI states.
   `/reports/income-by-customer`, `/reports/expense-by-vendor`,
   `/reports/inventory-valuation`, `/reports/fixed-asset-register`,
   `/reports/bank-reconciliation`.
-- ⬜ Per-page loading skeletons, empty states, and error + retry.
-- ⬜ Reports index grouped by category (Financial · Receivables/Payables · Tax ·
+- ✅ Per-page loading skeletons, empty states, and error + retry.
+- ✅ Reports index grouped by category (Financial · Receivables/Payables · Tax ·
   Payroll · Management).
 
 **Exit criteria:** monolith retired; every report on its own route; `tsc -b` +
@@ -84,24 +91,25 @@ documents, drill-down, and UI states.
 
 ---
 
-## Phase 2 — Transactional document output  ⬜  (priority gap)
+## Phase 2 — Transactional document output  ✅
 
-Source documents currently cannot be previewed or printed. Reuse the Phase 1
-letterhead + print stylesheet for a consistent branded `DocumentView`.
+> **Shipped** (`12e6293`). Branded preview & print for invoices, estimates,
+> credit notes, bills and receipts, reusing the Phase 1 letterhead + print
+> stylesheet via a shared `DocumentView`.
 
-- ⬜ Shared `DocumentView` + document print stylesheet (logo, KRA PIN, party
+- ✅ Shared `DocumentView` + document print stylesheet (logo, KRA PIN, party
   details, line items, VAT breakdown, totals, terms/footer).
-- ⬜ **Invoice** preview & print/PDF **before posting** (draft watermark) and
+- ✅ **Invoice** preview & print/PDF **before posting** (draft watermark) and
   **after posting** (tax invoice; shows eTIMS control number once transmitted).
   Post or keep editing from the preview.
-- ⬜ **Estimate / quote** preview & print/PDF.
-- ⬜ **Credit note** (customer & supplier) preview & print/PDF, referencing the
+- ✅ **Estimate / quote** preview & print/PDF.
+- ✅ **Credit note** (customer & supplier) preview & print/PDF, referencing the
   original document.
-- ⬜ **Bill / purchase order** preview & print.
-- ⬜ **Payment receipt** preview & print.
+- ✅ **Bill / purchase order** preview & print.
+- ✅ **Payment receipt** preview & print.
 
-**Exit criteria:** every transactional document is previewable + printable in a
-branded layout, pre- and post-posting where applicable.
+**Exit criteria met:** every transactional document is previewable + printable in
+a branded layout, pre- and post-posting where applicable.
 
 ---
 

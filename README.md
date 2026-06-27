@@ -2,6 +2,10 @@
 
 A full-featured double-entry accounting engine built in Rust, targeting Kenyan SMEs with Wave Apps feature parity plus Kenya-specific compliance (KRA iTax, M-Pesa, PAYE/NSSF/NHIF/HELB, WHT).
 
+> **Project status.** Recent changes are logged in [`CHANGELOG.md`](CHANGELOG.md);
+> outstanding work (procurement, posting-group matrices, CI/containerization,
+> observability, …) is tracked in [`REMAINING.md`](REMAINING.md).
+
 ## Architecture
 
 ```
@@ -118,6 +122,15 @@ Date,Description,Debit,Credit,Balance
 2026-06-01,Customer deposit,,1000.00,1000.00
 2026-06-02,Bank charge,50.00,,950.00
 ```
+
+### Fixed Assets
+- `POST /api/v1/assets` — Register an asset
+- `POST /api/v1/assets/depreciation/run` — Depreciation catch-up (optional `?date=`, defaults to today)
+
+Depreciation is an **idempotent catch-up**: each run books every month still due
+(from the asset's `depreciated_through` up to the target month) and cannot
+double-post a period. The hourly scheduler runs it automatically for **all
+tenants** at month rollover, so a manual run is only needed to book early.
 
 ### Payroll
 - `POST /api/v1/payroll/run` — Run payroll
