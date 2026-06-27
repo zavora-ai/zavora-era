@@ -75,11 +75,11 @@ impl Default for PostingSetup {
         Self {
             accounts_receivable: "1200".to_string(),
             accounts_payable: "3010".to_string(),
-            // NOTE: preserves the existing (pre-Phase-1) behaviour. "3050" is not
-            // present in the seeded Kenya CoA — this is a known mismapping that the
-            // posting-setup UI will let an accountant correct (candidates: 1700 /
-            // 9100 for customer, 3600 / 9110 for vendor).
-            unapplied_payments: "3050".to_string(),
+            // Unapplied customer receipts (overpayments / on-account) post here.
+            // Must be a seeded account, else overpayments orphan and break the
+            // trial balance — "9100 Unapplied Customer Payments" is the seeded
+            // liability for this. (Vendor side: "3600 Unapplied Vendor Credits".)
+            unapplied_payments: "9100".to_string(),
             vat_output: "3100".to_string(),
             vat_input: "1300".to_string(),
             wht_payable: "3210".to_string(),
