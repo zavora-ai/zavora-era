@@ -18,6 +18,12 @@ interface Props<T> {
 export default function DataTable<T extends Record<string, any>>({
   columns, data, onRowClick, emptyMessage = 'No data found', loading
 }: Props<T>) {
+  // Defensive: callers occasionally hand us a non-array (e.g. a paginated
+  // envelope, an error body, or a transient value during a token refresh).
+  // Coerce to an array so the table degrades to "empty" instead of crashing
+  // the whole page with `data.map is not a function`.
+  const rows: T[] = Array.isArray(data) ? data : [];
+
   if (loading) {
     return (
       <div className="card">
@@ -43,14 +49,14 @@ export default function DataTable<T extends Record<string, any>>({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {data.length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-6 py-12 text-center text-sm text-gray-500">
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
-              data.map((row, i) => (
+              rows.map((row, i) => (
                 <tr
                   key={row.id || i}
                   onClick={() => onRowClick?.(row)}

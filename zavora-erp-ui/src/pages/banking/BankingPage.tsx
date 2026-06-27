@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement } from '../../api/client';
+import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, getTransactions } from '../../api/client';
 import type { BankAccount } from '../../types';
 
 export default function BankingPage() {
@@ -17,6 +17,18 @@ export default function BankingPage() {
     queryKey: ['bank-accounts'],
     queryFn: () => getBankAccounts().then(r => Array.isArray(r.data) ? r.data : []),
   });
+
+  // Categorisation queue — drives the reconciliation summary cards.
+  const { data: txns = [] } = useQuery<any[]>({
+    queryKey: ['transactions', 'all'],
+    queryFn: () => getTransactions({ limit: 500 }).then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+    }),
+  });
+  const matchedCount = txns.filter(t => t.status === 'categorised').length;
+  const pendingCount = txns.filter(t => t.status === 'uncategorised').length;
+  const excludedCount = txns.filter(t => t.status === 'excluded').length;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteBankAccount(id),
@@ -112,9 +124,27 @@ export default function BankingPage() {
 
       {/* Reconciliation summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <StatCard title="Matched Transactions" value="—" icon={<CheckCircle2 className="w-5 h-5" />} />
-        <StatCard title="Pending Categorisation" value="—" icon={<ArrowLeftRight className="w-5 h-5" />} />
-        <StatCard title="Discrepancies" value="—" icon={<AlertTriangle className="w-5 h-5" />} />
+        <StatCard
+          title="Matched Transactions"
+          value={String(matchedCount)}
+          subtitle="Categorised"
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
+        <StatCard
+          title="Pending Categorisation"
+          value={String(pendingCount)}
+          subtitle={pendingCount > 0 ? 'Needs review' : 'All caught up'}
+          icon={<ArrowLeftRight className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
+        <StatCard
+          title="Excluded"
+          value={String(excludedCount)}
+          subtitle="Not for the books"
+          icon={<AlertTriangle className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
       </div>
 
       {/* Reconciliation features */}

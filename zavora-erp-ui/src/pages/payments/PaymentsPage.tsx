@@ -117,7 +117,10 @@ function UnappliedPaymentsTab() {
 
   const { data: unappliedPayments = [], isLoading } = useQuery<Payment[]>({
     queryKey: ['payments', 'unapplied'],
-    queryFn: () => api.get('/payments', { params: { status: 'unapplied' } }).then((r) => r.data),
+    queryFn: () => api.get('/payments', { params: { status: 'unapplied' } }).then((r) => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+    }),
   });
 
   const columns: Column<Payment>[] = [
