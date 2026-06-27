@@ -29,8 +29,8 @@ export default function InvoicesPage() {
   const invoices: Invoice[] = resp?.data ?? [];
   const invoicesTotal: number = resp?.total_count ?? 0;
 
-  const { data: customers = [] } = useQuery<any[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
-  const customerName = (id?: string) => customers.find((c) => c.id === id)?.name ?? `${id?.slice(0, 8)}…`;
+  const { data: customers = [] } = useQuery<any[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
+  const customerName = (id?: string) => (Array.isArray(customers) ? customers : []).find((c) => c.id === id)?.name ?? `${id?.slice(0, 8)}…`;
   const [writeOffInv, setWriteOffInv] = useState<any | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
@@ -137,7 +137,7 @@ export default function InvoicesPage() {
 // Full-featured Invoice Creation / Edit — Wave Apps parity
 // ============================================================
 function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: () => void; onDone: () => void }) {
-  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
   const expenseAccounts = accounts.filter((a) => a.account_type === 'Expense');
   const [account, setAccount] = useState('');
   const [amount, setAmount] = useState(String(invoice.balance_due));
@@ -182,9 +182,9 @@ function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: ()
 
 function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => r.data) });
-  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
-  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => r.data) });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const isEdit = !!editId;
 

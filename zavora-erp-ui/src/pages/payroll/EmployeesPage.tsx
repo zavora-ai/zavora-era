@@ -13,7 +13,7 @@ export default function EmployeesPage() {
 
   const { data: employees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ['employees'],
-    queryFn: () => getEmployees().then(r => r.data),
+    queryFn: () => getEmployees().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const columns: Column<Employee>[] = [

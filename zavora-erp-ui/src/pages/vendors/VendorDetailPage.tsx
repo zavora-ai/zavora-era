@@ -57,7 +57,7 @@ export default function VendorDetailPage() {
   });
   const { data: creditNotes = [] } = useQuery<SupplierCreditNote[]>({
     queryKey: ['supplier-credit-notes'],
-    queryFn: () => getSupplierCreditNotes().then(r => r.data),
+    queryFn: () => getSupplierCreditNotes().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   if (isLoading) {

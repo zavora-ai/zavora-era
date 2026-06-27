@@ -29,7 +29,7 @@ export default function PeriodsPage() {
 
   const { data: periods = [], isLoading } = useQuery<FiscalPeriod[]>({
     queryKey: ['periods'],
-    queryFn: () => getPeriods().then(r => r.data),
+    queryFn: () => getPeriods().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const closeMutation = useMutation({

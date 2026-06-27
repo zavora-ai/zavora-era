@@ -14,7 +14,7 @@ export default function FxRatesPage() {
 
   const { data: rates = [], isLoading } = useQuery<ExchangeRateEntry[]>({
     queryKey: ['fx-rates'],
-    queryFn: () => getFxRates().then(r => r.data),
+    queryFn: () => getFxRates().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const revalMutation = useMutation({

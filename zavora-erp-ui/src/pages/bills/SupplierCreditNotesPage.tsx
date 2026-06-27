@@ -19,9 +19,9 @@ export default function SupplierCreditNotesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const { data: notes = [], isLoading } = useQuery<SupplierCreditNote[]>({
     queryKey: ['supplier-credit-notes'],
-    queryFn: () => getSupplierCreditNotes().then(r => r.data),
+    queryFn: () => getSupplierCreditNotes().then(r => Array.isArray(r.data) ? r.data : []),
   });
-  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
+  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const vendorName = (id: string) => vendors.find(v => v.id === id)?.name ?? `${id.slice(0, 8)}...`;
 
@@ -67,9 +67,9 @@ interface LineForm {
 
 function CreateModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
+  const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: bills = [] } = useQuery<Bill[]>({ queryKey: ['bills', 'all'], queryFn: () => getBills({ limit: 500 }).then(r => r.data.data ?? r.data) });
-  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
   const [error, setError] = useState<string | null>(null);
 
   const today = new Date().toISOString().split('T')[0];

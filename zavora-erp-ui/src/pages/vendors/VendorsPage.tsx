@@ -11,7 +11,7 @@ import { Plus, AlertTriangle } from 'lucide-react';
 export default function VendorsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
-  const { data: vendors = [], isLoading } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => r.data) });
+  const { data: vendors = [], isLoading } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const columns: Column<Vendor>[] = [
     { key: 'name', header: 'Vendor', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },

@@ -159,7 +159,7 @@ interface JournalLine {
 
 function CreateJournalEntryModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => r.data) });
+  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const today = new Date().toISOString().split('T')[0];
 

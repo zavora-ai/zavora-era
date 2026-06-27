@@ -15,7 +15,7 @@ export default function BankingPage() {
 
   const { data: bankAccounts = [], isLoading } = useQuery<BankAccount[]>({
     queryKey: ['bank-accounts'],
-    queryFn: () => getBankAccounts().then(r => r.data),
+    queryFn: () => getBankAccounts().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const deleteMutation = useMutation({

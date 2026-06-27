@@ -10,7 +10,7 @@ import { Plus, Package, Tag } from 'lucide-react';
 
 export default function ProductsPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: products = [], isLoading } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => r.data) });
+  const { data: products = [], isLoading } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
 
   const columns: Column<Product>[] = [
     {

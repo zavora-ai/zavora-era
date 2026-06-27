@@ -13,7 +13,7 @@ export default function CustomersPage() {
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ['customers'],
-    queryFn: () => getCustomers().then(r => r.data),
+    queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const columns: Column<Customer>[] = [

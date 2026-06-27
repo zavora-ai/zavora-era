@@ -22,7 +22,7 @@ export default function AssetsPage() {
 
   const { data: assets = [], isLoading } = useQuery<FixedAsset[]>({
     queryKey: ['assets'],
-    queryFn: () => getAssets().then(r => r.data),
+    queryFn: () => getAssets().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
   const depreciationMutation = useMutation({
