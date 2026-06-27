@@ -11,7 +11,7 @@ import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
 import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -19,6 +19,7 @@ export default function BillsPage() {
   const [scnBill, setScnBill] = useState<Bill | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
   const { data: resp, isLoading } = useQuery({
@@ -120,7 +121,7 @@ export default function BillsPage() {
         ))}
       </div>
 
-      <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No bills yet. Create your first bill to track payables." />
+      <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/documents/bill/${r.id}`)} emptyMessage="No bills yet. Create your first bill to track payables." />
       <PaginationControls page={page} limit={limit} total={billsTotal} onPage={setPage} />
 
       {showCreate && <CreateBillModal onClose={() => setShowCreate(false)} />}
