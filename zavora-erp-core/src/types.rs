@@ -157,6 +157,34 @@ impl VatTreatment {
     }
 }
 
+#[cfg(test)]
+mod vat_treatment_tests {
+    use super::VatTreatment;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn standard_rate_is_sixteen_percent() {
+        assert_eq!(VatTreatment::Standard16.rate(), dec!(0.16));
+        // 16% VAT on a 1,000 line = 160.
+        assert_eq!(dec!(1_000) * VatTreatment::Standard16.rate(), dec!(160.00));
+    }
+
+    #[test]
+    fn petroleum_rate_is_eight_percent() {
+        assert_eq!(VatTreatment::Petroleum8.rate(), dec!(0.08));
+        assert_eq!(dec!(1_000) * VatTreatment::Petroleum8.rate(), dec!(80.00));
+    }
+
+    #[test]
+    fn zero_rated_and_exempt_carry_no_vat() {
+        // Zero-rated (exports/basic foodstuffs) and exempt (financial/land) both
+        // attract no output VAT — but are distinct treatments for the VAT return.
+        assert!(VatTreatment::ZeroRated.rate().is_zero());
+        assert!(VatTreatment::Exempt.rate().is_zero());
+        assert!(VatTreatment::OutOfScope.rate().is_zero());
+    }
+}
+
 // === WHT category ===
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
