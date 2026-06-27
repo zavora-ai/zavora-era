@@ -95,6 +95,7 @@ def post_journal(date, ref, desc, lines, log):
 
 def main():
     log = defaultdict(int); unresolved = set()
+    inv_by_cust = {}               # customer_id -> [invoice_id]
     open_inv = defaultdict(list)   # customer_id -> [ {id,bal} ]
     open_bill = defaultdict(list)  # vendor_id  -> [ {id,bal} ]
     bank_ids = {}                  # qbo cash account name -> bank_account id
@@ -156,6 +157,22 @@ def main():
             call("POST", f"/invoices/{r['id']}/post", token)
             log["invoice_ok"] += 1
             if total > 0.005: open_inv[cid].append({"id": r["id"], "bal": round(total, 2)})
+            inv_by_cust.setdefault(cid, []).append(r["id"])
+            # COGS leg of inventory sales (DR COGS / CR Inventory Asset) — the invoice
+            # flow only books income; replay the cost side as a balanced journal.
+            cogs = []
+            for l in t["pnl_lines"]:
+                if l["ztype"] == "Expense":
+                    code = code_for("Expense", l["account"])
+                    if code:
+                        d_, c_ = to_dr_cr("Expense", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
+            for l in t["bs_lines"]:
+                if l["account"] == "Inventory Asset":
+                    code = code_for("Asset", l["account"])
+                    if code:
+                        d_, c_ = to_dr_cr("Asset", l["amount"]); cogs.append(jline(code, d_, c_, l["account"]))
+            if cogs:
+                post_journal(date, f"{ref} cogs", "COGS", cogs, log)
 
         elif typ == "Bill":
             vid = resolve_party(VEND, name, "vendor")
@@ -207,6 +224,23 @@ def main():
             if st >= 300: log["billpay_fail"] += 1
             else: log["billpay_ok"] += 1
             if st >= 300 and log["billpay_fail"] <= 8: print(f"  BILLPAY FAIL {ref} {st}: {str(r)[:150]}")
+
+        elif typ == "Credit Memo":
+            cid = resolve_party(CUST, name, "customer")
+            inv = (inv_by_cust.get(cid) or [None])[0]
+            if not inv: log["creditmemo_skip"] += 1; continue
+            lines = []
+            for l in t["pnl_lines"]:
+                code = code_for("Revenue", l["account"])
+                if code:
+                    lines.append({"description": l["account"], "quantity": 1,
+                                  "unit_price": abs(l["amount"]), "account_code": code, "vat_treatment": "ZeroRated"})
+            if not lines: continue
+            st, r = call("POST", f"/invoices/{inv}/credit-note", token,
+                         {"invoice_id": inv, "lines": lines, "reason": "QBO credit memo", "refund": False})
+            if st < 300: log["creditmemo_ok"] += 1
+            else:
+                log["creditmemo_fail"] += 1; print(f"  CM FAIL {ref} {st}: {str(r)[:150]}")
 
         else:
             jl = []
