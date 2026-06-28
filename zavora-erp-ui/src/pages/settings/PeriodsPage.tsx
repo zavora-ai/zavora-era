@@ -135,12 +135,12 @@ export default function PeriodsPage() {
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <div className="flex items-center justify-end gap-1">
-                            {p.status === 'open' && hasRole(ROLES_CLOSE_PERIOD) && (
+                            {(p.status === 'open' || p.status === 'future') && hasRole(ROLES_CLOSE_PERIOD) && (
                               <button
                                 onClick={() => closeMutation.mutate({ id: p.id, close_type: 'Soft' })}
                                 className="btn-secondary text-xs py-1 px-2"
                                 disabled={closeMutation.isPending}
-                                title="Soft close — warns on postings"
+                                title="Soft close — blocks automated postings; manual adjustments still allowed"
                               >
                                 <Lock className="w-3 h-3" /> Soft Close
                               </button>
@@ -168,9 +168,6 @@ export default function PeriodsPage() {
                               <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Permanently locked">
                                 <Lock className="w-3.5 h-3.5" /> Locked
                               </span>
-                            )}
-                            {p.status === 'future' && (
-                              <span className="text-xs text-gray-300">—</span>
                             )}
                           </div>
                         </td>
