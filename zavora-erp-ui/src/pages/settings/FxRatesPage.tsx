@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getFxRates, upsertFxRate, runFxRevaluation } from '../../api/client';
+import { getFxRates, upsertFxRate, deleteFxRate, runFxRevaluation } from '../../api/client';
 import type { ExchangeRateEntry } from '../../types';
 import { formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, Pencil, Trash2 } from 'lucide-react';
 
 export default function FxRatesPage() {
-  const [showCreate, setShowCreate] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<ExchangeRateEntry | null>(null);
   const queryClient = useQueryClient();
 
   const { data: rates = [], isLoading } = useQuery<ExchangeRateEntry[]>({
@@ -26,6 +27,20 @@ export default function FxRatesPage() {
     },
     onError: (e: any) => alert(e?.response?.data?.error || 'FX revaluation failed.'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteFxRate(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fx-rates'] }),
+    onError: (e: any) => alert(e?.response?.data?.error || 'Failed to delete rate.'),
+  });
+
+  const openCreate = () => { setEditing(null); setShowForm(true); };
+  const openEdit = (r: ExchangeRateEntry) => { setEditing(r); setShowForm(true); };
+  const handleDelete = (r: ExchangeRateEntry) => {
+    if (confirm(`Delete the ${r.from_ccy}→${r.to_ccy} rate dated ${formatDate(r.rate_date)}?`)) {
+      deleteMutation.mutate(r.id);
+    }
+  };
 
   const columns: Column<ExchangeRateEntry>[] = [
     {
@@ -59,6 +74,29 @@ export default function FxRatesPage() {
       key: 'source', header: 'Source',
       render: (r) => <span className="text-gray-500">{r.source}</span>,
     },
+    {
+      key: 'actions', header: '',
+      className: 'text-right',
+      render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); openEdit(r); }}
+            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+            title="Edit rate"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDelete(r); }}
+            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+            title="Delete rate"
+            disabled={deleteMutation.isPending}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -76,7 +114,7 @@ export default function FxRatesPage() {
               <RefreshCw className={`w-4 h-4 ${revalMutation.isPending ? 'animate-spin' : ''}`} />
               {revalMutation.isPending ? 'Running...' : 'Run Revaluation'}
             </button>
-            <button onClick={() => setShowCreate(true)} className="btn-primary">
+            <button onClick={openCreate} className="btn-primary">
               <Plus className="w-4 h-4" /> Add Rate
             </button>
           </>
@@ -87,26 +125,34 @@ export default function FxRatesPage() {
         data={rates}
         loading={isLoading}
         emptyMessage="No exchange rates. Add rates for multi-currency support."
+        onRowClick={openEdit}
       />
-      {showCreate && <CreateRateModal onClose={() => setShowCreate(false)} />}
+      {showForm && <RateModal rate={editing} onClose={() => setShowForm(false)} />}
     </div>
   );
 }
 
-function CreateRateModal({ onClose }: { onClose: () => void }) {
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'KES'];
+
+function RateModal({ rate, onClose }: { rate: ExchangeRateEntry | null; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const isEdit = !!rate;
   const [form, setForm] = useState({
-    from_ccy: 'KES',
-    to_ccy: 'USD',
-    rate_date: new Date().toISOString().split('T')[0],
-    rate: '',
-    rate_type: 'Spot',
-    source: 'Manual',
+    // Default foreign → local (KES base): the common case is recording a
+    // foreign currency's value in shillings, and the posting engine looks up
+    // from=foreign, to=base.
+    from_ccy: rate?.from_ccy ?? 'USD',
+    to_ccy: rate?.to_ccy ?? 'KES',
+    rate_date: rate?.rate_date ?? new Date().toISOString().split('T')[0],
+    rate: rate ? String(rate.rate) : '',
+    rate_type: rate?.rate_type ?? 'Spot',
+    source: rate?.source ?? 'Manual',
   });
 
   const mutation = useMutation({
     mutationFn: (data: any) => upsertFxRate(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fx-rates'] }); onClose(); },
+    onError: (e: any) => alert(e?.response?.data?.error || 'Failed to save rate.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -122,28 +168,27 @@ function CreateRateModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Add / Update Exchange Rate">
+    <Modal open={true} onClose={onClose} title={isEdit ? 'Edit Exchange Rate' : 'Add Exchange Rate'}>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">From Currency</label>
             <select className="input font-mono" value={form.from_ccy} onChange={(e) => setForm({ ...form, from_ccy: e.target.value })}>
-              <option value="KES">KES</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="label">To Currency</label>
             <select className="input font-mono" value={form.to_ccy} onChange={(e) => setForm({ ...form, to_ccy: e.target.value })}>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-              <option value="KES">KES</option>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
+
+        <p className="text-xs text-gray-500 -mt-2">
+          1 {form.from_ccy} = <span className="font-mono">{form.rate || '…'}</span> {form.to_ccy}.
+          Record foreign → base (e.g. USD → KES) so posting and revaluation resolve correctly.
+        </p>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -152,7 +197,7 @@ function CreateRateModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="label">Rate *</label>
-            <input type="number" step="0.0001" className="input font-mono" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} placeholder="e.g. 153.2500" required />
+            <input type="number" step="0.0001" className="input font-mono" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} placeholder="e.g. 129.2155" required />
           </div>
         </div>
 
@@ -170,6 +215,12 @@ function CreateRateModal({ onClose }: { onClose: () => void }) {
             <input className="input" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="e.g. CBK, Manual, Reuters" />
           </div>
         </div>
+
+        {isEdit && (
+          <p className="text-xs text-gray-500">
+            Saving updates the rate for this From/To/Date/Type combination (upsert).
+          </p>
+        )}
 
         <div className="flex justify-end gap-3 pt-4 border-t">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>

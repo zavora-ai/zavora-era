@@ -42,6 +42,28 @@ pub async fn upsert(
     }
 }
 
+/// DELETE /fx-rates/{id} — remove a single exchange-rate row, scoped to the tenant.
+pub async fn delete(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_MANAGE, &ctx, "delete FX rate").map_err(err_response)?;
+    let result = sqlx::query("DELETE FROM exchange_rates WHERE id = $1 AND entity_id = $2")
+        .bind(id)
+        .bind(ctx.entity_id)
+        .execute(state.engine.pool())
+        .await;
+    match result {
+        Ok(r) if r.rows_affected() == 0 => Err(err_response(zavora_erp_core::ErpError::NotFound {
+            entity_type: "ExchangeRate".to_string(),
+            id,
+        })),
+        Ok(_) => Ok(Json(serde_json::json!({ "status": "deleted", "id": id }))),
+        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    }
+}
+
 /// POST /fx/revaluation — revalue open foreign-currency balances at the latest
 /// rate as of `date` (default today), posting unrealised FX gain/loss plus an
 /// auto-reversal in the next period.

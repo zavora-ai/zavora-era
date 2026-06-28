@@ -323,6 +323,7 @@ export const runDepreciation = () => api.post('/assets/depreciation/run');
 // === FX Rates ===
 export const getFxRates = () => api.get('/fx-rates');
 export const upsertFxRate = (data: any) => api.post('/fx-rates', data);
+export const deleteFxRate = (id: string) => api.delete(`/fx-rates/${id}`);
 export const runFxRevaluation = () => api.post('/fx/revaluation');
 
 // === Audit ===

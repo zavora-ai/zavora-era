@@ -260,6 +260,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
         // FX Rates
         .route("/api/v1/fx-rates", get(routes::fx::list).post(routes::fx::upsert))
+        .route("/api/v1/fx-rates/{id}", delete(routes::fx::delete))
         .route("/api/v1/fx/revaluation", post(routes::fx::revaluation))
         // Audit
         .route("/api/v1/audit", get(routes::audit::query))
