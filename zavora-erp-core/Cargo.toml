@@ -37,6 +37,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Base64 (PDF attachment transport through the notification stream)
 base64 = "0.22"
 
+# AES-256-GCM for encrypting per-tenant notification provider secrets at rest.
+aes-gcm = "0.10"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 proptest = "1"

@@ -1813,9 +1813,24 @@ pub async fn send_invoice(
     let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex);
     let subject = format!("Invoice {} from {}", invoice.number, org_name);
 
+    // Resolve the tenant's configured channels for InvoiceSent. This is an
+    // explicit user "send" action carrying the invoice PDF, so we honour the
+    // configured channel set but always keep Email (the document is delivered by
+    // email); disabling the event does not block an explicit send.
+    let (_enabled, mut channels) =
+        crate::services::notification_prefs::effective_channels(
+            engine,
+            entity_id,
+            &crate::notifications::NotificationEventType::InvoiceSent,
+        )
+        .await;
+    if !channels.contains(&crate::types::Channel::Email) {
+        channels.push(crate::types::Channel::Email);
+    }
+
     let notif = crate::notifications::SendNotificationRequest {
         event_type: crate::notifications::NotificationEventType::InvoiceSent,
-        channels: vec![crate::types::Channel::Email],
+        channels,
         recipients: vec![recipient.clone()],
         subject: Some(subject),
         body,
@@ -1981,36 +1996,42 @@ pub async fn post_invoice(
         .await?;
 
         if outstanding + invoice.gross_total > credit_limit {
-            // Send notification to Admin users via In-App and Email channels
-            let notification_req = crate::notifications::SendNotificationRequest {
-                event_type: crate::notifications::NotificationEventType::CreditLimitExceeded,
-                channels: vec![
-                    crate::types::Channel::InApp,
-                    crate::types::Channel::Email,
-                ],
-                recipients: vec!["role:Admin".to_string()],
-                subject: Some(format!(
-                    "Credit limit exceeded for customer '{}'",
-                    customer.name
-                )),
-                body: format!(
-                    "Invoice {} (amount {}) would cause customer '{}' to exceed their credit limit of {}. \
-                     Current outstanding: {}. Total if posted: {}.",
-                    invoice.number,
-                    invoice.gross_total,
-                    customer.name,
-                    credit_limit,
-                    outstanding,
-                    outstanding + invoice.gross_total,
-                ),
-                related_type: Some("Invoice".to_string()),
-                related_id: Some(invoice_id),
-                schedule_at: None,
-                attachments: Vec::new(),
-            };
-
-            // Best-effort notification — don't fail the entire operation if notification fails
-            let _ = crate::services::notifications::send_notification(engine, entity_id, notification_req).await;
+            // Consult tenant notification preferences for this (automatic) event.
+            let (enabled, channels) =
+                crate::services::notification_prefs::effective_channels(
+                    engine,
+                    entity_id,
+                    &crate::notifications::NotificationEventType::CreditLimitExceeded,
+                )
+                .await;
+            if enabled && !channels.is_empty() {
+                // Notify Admin users on the configured channels.
+                let notification_req = crate::notifications::SendNotificationRequest {
+                    event_type: crate::notifications::NotificationEventType::CreditLimitExceeded,
+                    channels,
+                    recipients: vec!["role:Admin".to_string()],
+                    subject: Some(format!(
+                        "Credit limit exceeded for customer '{}'",
+                        customer.name
+                    )),
+                    body: format!(
+                        "Invoice {} (amount {}) would cause customer '{}' to exceed their credit limit of {}. \
+                         Current outstanding: {}. Total if posted: {}.",
+                        invoice.number,
+                        invoice.gross_total,
+                        customer.name,
+                        credit_limit,
+                        outstanding,
+                        outstanding + invoice.gross_total,
+                    ),
+                    related_type: Some("Invoice".to_string()),
+                    related_id: Some(invoice_id),
+                    schedule_at: None,
+                    attachments: Vec::new(),
+                };
+                // Best-effort — don't fail the operation if notification fails.
+                let _ = crate::services::notifications::send_notification(engine, entity_id, notification_req).await;
+            }
 
             return Err(ErpError::CreditLimitExceeded {
                 customer_name: customer.name,

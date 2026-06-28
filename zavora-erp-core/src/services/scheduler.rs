@@ -77,18 +77,26 @@ pub async fn process_report_schedules_for(engine: &ErpEngine, entity_id: Uuid) -
 
         let recipients: Vec<String> = s.recipients.split(',').map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
         if !recipients.is_empty() {
-            let req = crate::notifications::SendNotificationRequest {
-                event_type: crate::notifications::NotificationEventType::ScheduledReport,
-                channels: vec![crate::types::Channel::Email],
-                recipients,
-                subject: Some(format!("{} — {}", s.name, now.date_naive())),
-                body: String::from_utf8_lossy(&csv).to_string(),
-                related_type: Some("report_schedule".to_string()),
-                related_id: Some(s.id),
-                schedule_at: None,
-                attachments: Vec::new(),
-            };
-            let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
+            let (enabled, channels) = crate::services::notification_prefs::effective_channels(
+                engine,
+                entity_id,
+                &crate::notifications::NotificationEventType::ScheduledReport,
+            )
+            .await;
+            if enabled && !channels.is_empty() {
+                let req = crate::notifications::SendNotificationRequest {
+                    event_type: crate::notifications::NotificationEventType::ScheduledReport,
+                    channels,
+                    recipients,
+                    subject: Some(format!("{} — {}", s.name, now.date_naive())),
+                    body: String::from_utf8_lossy(&csv).to_string(),
+                    related_type: Some("report_schedule".to_string()),
+                    related_id: Some(s.id),
+                    schedule_at: None,
+                    attachments: Vec::new(),
+                };
+                let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
+            }
         }
 
         let next = match s.cadence.as_str() {

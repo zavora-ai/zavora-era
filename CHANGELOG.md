@@ -11,6 +11,29 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
+- **Per-tenant notification providers (self-service).** Each tenant can now
+  configure its **own** delivery credentials in **Settings → Providers** — SMTP
+  (email), Africa's Talking (SMS), Twilio (WhatsApp) — instead of relying only
+  on the deployment-wide env vars. The worker resolves a tenant's provider per
+  message and falls back to the deployment provider when a tenant hasn't set its
+  own. Secrets (SMTP password, API key, auth token) are **encrypted at rest**
+  (AES-256-GCM via `NOTIF_ENC_KEY`, `crate::crypto`) in a new
+  `notification_providers` table (migration 033), are **write-only** in the UI
+  (the API returns only `has_secret`, never plaintext; leave blank to keep), and
+  Owner/Admin-gated. A **"Send test"** button delivers a one-off message to
+  verify credentials. API: `GET|PUT /notification-providers`,
+  `POST /notification-providers/{channel}/test`.
+- **Notification event preferences (admin).** A new **Settings → Notifications**
+  tab lets Owners/Admins choose, per event type, whether the event fires and on
+  which channels (Email/SMS/WhatsApp/In-App) — overriding the previously
+  hardcoded routing at the notification call sites (`InvoiceSent`,
+  `CreditLimitExceeded`, `PeriodCloseWarning`, `ScheduledReport`, and the other
+  transactional events). Stored as per-tenant overrides
+  (`notification_settings`, migration 032); a missing row uses the built-in
+  default. Automatic events are fully skipped when disabled; an explicit invoice
+  send still delivers by email regardless. Invoice payment **reminders** remain
+  per-customer (`ReminderPolicy`). API: `GET|PUT /notification-settings`;
+  resolved at call sites via `notification_prefs::effective_channels`.
 - **Notification delivery history (admin).** A read-only, Owner/Admin-gated
   delivery-history view surfaces the full notification record across **all**
   channels (email, SMS, WhatsApp, in-app) — status, recipient, error, and

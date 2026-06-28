@@ -83,8 +83,34 @@ impl SmsProvider {
         let username = non_empty_env("AT_USERNAME")?;
         let api_key = non_empty_env("AT_API_KEY")?;
         let sender_id = non_empty_env("AT_SENDER_ID");
+        let base_url = std::env::var("AT_BASE_URL").ok().filter(|v| !v.trim().is_empty());
+        Self::build(username, api_key, sender_id, base_url)
+    }
+
+    /// Build from explicit values (per-tenant config). `username`+`api_key` are
+    /// required; `sender_id`/`base_url` optional. Returns `None` if required
+    /// fields are blank.
+    pub fn from_parts(
+        username: Option<String>,
+        api_key: Option<String>,
+        sender_id: Option<String>,
+        base_url: Option<String>,
+    ) -> Option<Self> {
+        let username = username.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+        let api_key = api_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+        let sender_id = sender_id.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let base_url = base_url.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        Self::build(username, api_key, sender_id, base_url)
+    }
+
+    fn build(
+        username: String,
+        api_key: String,
+        sender_id: Option<String>,
+        base_url: Option<String>,
+    ) -> Option<Self> {
         // Sandbox username uses the sandbox endpoint automatically.
-        let base_url = std::env::var("AT_BASE_URL").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| {
+        let base_url = base_url.unwrap_or_else(|| {
             if username == "sandbox" {
                 "https://api.sandbox.africastalking.com".to_string()
             } else {
@@ -173,11 +199,34 @@ impl WhatsAppProvider {
     pub fn from_env() -> Option<Self> {
         let account_sid = non_empty_env("TWILIO_ACCOUNT_SID")?;
         let auth_token = non_empty_env("TWILIO_AUTH_TOKEN")?;
-        let from = non_empty_env("TWILIO_WHATSAPP_FROM").map(|f| ensure_whatsapp_prefix(&f))?;
-        let base_url = std::env::var("TWILIO_BASE_URL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .unwrap_or_else(|| "https://api.twilio.com".to_string());
+        let from = non_empty_env("TWILIO_WHATSAPP_FROM")?;
+        let base_url = std::env::var("TWILIO_BASE_URL").ok().filter(|v| !v.trim().is_empty());
+        Self::build(account_sid, auth_token, from, base_url)
+    }
+
+    /// Build from explicit values (per-tenant config). All of account_sid,
+    /// auth_token and from are required; returns `None` if any is blank.
+    pub fn from_parts(
+        account_sid: Option<String>,
+        auth_token: Option<String>,
+        from: Option<String>,
+        base_url: Option<String>,
+    ) -> Option<Self> {
+        let account_sid = account_sid.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+        let auth_token = auth_token.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+        let from = from.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+        let base_url = base_url.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        Self::build(account_sid, auth_token, from, base_url)
+    }
+
+    fn build(
+        account_sid: String,
+        auth_token: String,
+        from: String,
+        base_url: Option<String>,
+    ) -> Option<Self> {
+        let from = ensure_whatsapp_prefix(&from);
+        let base_url = base_url.unwrap_or_else(|| "https://api.twilio.com".to_string());
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
             .build()

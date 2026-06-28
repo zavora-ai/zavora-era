@@ -283,3 +283,191 @@ pub async fn delivery_stats(
         "by_channel": by_channel,
     })))
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Notification event preferences (Owner/Admin): per-event enabled + channels.
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Build the settings response: the effective event prefs plus which channels
+/// are actually configured on this deployment (so the UI can hint when a ticked
+/// channel won't deliver).
+async fn settings_payload(
+    state: &AppState,
+    entity_id: Uuid,
+) -> Result<serde_json::Value, zavora_erp_core::ErpError> {
+    let prefs = zavora_erp_core::services::notification_prefs::get_all(&state.engine, entity_id).await?;
+    let channels: Vec<serde_json::Value> =
+        zavora_erp_core::services::notification_prefs::channel_availability()
+            .into_iter()
+            .map(|(ch, configured)| {
+                let key = serde_json::to_value(&ch)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_default();
+                serde_json::json!({ "channel": key, "configured": configured })
+            })
+            .collect();
+    Ok(serde_json::json!({ "events": prefs, "channels": channels }))
+}
+
+/// GET /notification-settings — every configurable event's effective preference
+/// (stored override or built-in default, flagged `is_default`).
+pub async fn get_settings(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_MANAGE, &ctx, "view notification settings")
+        .map_err(|e| err_response(e).into_response())?;
+
+    match settings_payload(&state, ctx.entity_id).await {
+        Ok(payload) => Ok(Json(payload)),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EventPrefInput {
+    pub event_type: String,
+    pub enabled: bool,
+    pub channels: Vec<zavora_erp_core::types::Channel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSettingsInput {
+    pub events: Vec<EventPrefInput>,
+}
+
+/// PUT /notification-settings — upsert one or more event preferences. Each entry
+/// overrides that event's built-in default for this tenant.
+pub async fn update_settings(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<UpdateSettingsInput>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_MANAGE, &ctx, "update notification settings")
+        .map_err(|e| err_response(e).into_response())?;
+
+    for ev in &req.events {
+        zavora_erp_core::services::notification_prefs::upsert(
+            &state.engine,
+            ctx.entity_id,
+            &ev.event_type,
+            ev.enabled,
+            &ev.channels,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|e| err_response(e).into_response())?;
+    }
+
+    // Return the refreshed full set.
+    match settings_payload(&state, ctx.entity_id).await {
+        Ok(payload) => Ok(Json(payload)),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Per-tenant notification providers (Owner/Admin): SMTP / SMS / WhatsApp creds.
+// Secrets are write-only — never returned; the response only flags has_secret.
+// ───────────────────────────────────────────────────────────────────────────
+
+/// GET /notification-providers — the tenant's configured providers, masked.
+pub async fn get_providers(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_MANAGE, &ctx, "view notification providers")
+        .map_err(|e| err_response(e).into_response())?;
+
+    match zavora_erp_core::services::notification_providers::get_masked(state.engine.pool(), ctx.entity_id).await {
+        Ok(list) => Ok(Json(serde_json::json!({
+            "providers": list,
+            // Surface whether the server can store secrets at all, so the UI can
+            // warn when NOTIF_ENC_KEY is missing.
+            "encryption_available": zavora_erp_core::crypto::encryption_available(),
+        }))),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProviderInput {
+    pub channel: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub settings: serde_json::Value,
+    /// New secret; omit or blank to keep the existing one (write-only).
+    #[serde(default)]
+    pub secret: Option<String>,
+}
+
+/// PUT /notification-providers — upsert one channel's provider config.
+pub async fn put_provider(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ProviderInput>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_MANAGE, &ctx, "update notification providers")
+        .map_err(|e| err_response(e).into_response())?;
+
+    let input = zavora_erp_core::services::notification_providers::UpsertProvider {
+        channel: req.channel,
+        enabled: req.enabled,
+        settings: if req.settings.is_null() { serde_json::json!({}) } else { req.settings },
+        secret: req.secret,
+    };
+    match zavora_erp_core::services::notification_providers::upsert(
+        state.engine.pool(),
+        ctx.entity_id,
+        input,
+        ctx.user_id,
+    )
+    .await
+    {
+        Ok(masked) => Ok(Json(serde_json::to_value(masked).unwrap_or_default())),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TestProviderInput {
+    pub recipient: String,
+}
+
+/// POST /notification-providers/{channel}/test — send a one-off test message on
+/// the channel to verify the configured (or env-fallback) provider works.
+pub async fn test_provider(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(channel): Path<String>,
+    Json(req): Json<TestProviderInput>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_MANAGE, &ctx, "test notification provider")
+        .map_err(|e| err_response(e).into_response())?;
+
+    if req.recipient.trim().is_empty() {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: "A recipient (email or phone) is required to send a test.".to_string(),
+        })
+        .into_response());
+    }
+
+    match zavora_erp_core::services::notification_worker::send_test_message(
+        state.engine.pool(),
+        ctx.entity_id,
+        &channel,
+        req.recipient.trim(),
+    )
+    .await
+    {
+        Ok(()) => Ok(Json(serde_json::json!({ "ok": true, "message": "Test sent" }))),
+        Err(msg) => Err(err_response(zavora_erp_core::ErpError::ValidationFailed { message: msg })
+            .into_response()),
+    }
+}

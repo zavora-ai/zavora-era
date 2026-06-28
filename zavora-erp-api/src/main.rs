@@ -203,6 +203,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
         .route("/api/v1/notifications/delivery", get(routes::notifications::delivery_list))
         .route("/api/v1/notifications/delivery/stats", get(routes::notifications::delivery_stats))
+        .route("/api/v1/notification-settings", get(routes::notifications::get_settings).put(routes::notifications::update_settings))
+        .route("/api/v1/notification-providers", get(routes::notifications::get_providers).put(routes::notifications::put_provider))
+        .route("/api/v1/notification-providers/{channel}/test", post(routes::notifications::test_provider))
         .route("/api/v1/notifications/mark-all-read", post(routes::notifications::mark_all_read))
         .route("/api/v1/notifications/{id}/read", axum::routing::patch(routes::notifications::mark_read))
         // Bills

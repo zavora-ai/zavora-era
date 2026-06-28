@@ -374,6 +374,36 @@ export interface DeliveryFilters {
 export const getNotificationDelivery = (params?: DeliveryFilters & PageParams) =>
   api.get('/notifications/delivery', { params });
 export const getNotificationDeliveryStats = () => api.get('/notifications/delivery/stats');
+// Notification event preferences (Owner/Admin): per-event enabled + channels.
+export interface EventPref {
+  event_type: string;
+  enabled: boolean;
+  channels: string[];
+  is_default: boolean;
+}
+export interface ChannelStatus {
+  channel: string;
+  configured: boolean;
+}
+export const getNotificationSettings = () => api.get('/notification-settings');
+export const updateNotificationSettings = (events: Omit<EventPref, 'is_default'>[]) =>
+  api.put('/notification-settings', { events });
+// Per-tenant notification providers (Owner/Admin). Secrets are write-only.
+export interface MaskedProvider {
+  channel: string;
+  enabled: boolean;
+  settings: Record<string, any>;
+  has_secret: boolean;
+}
+export const getNotificationProviders = () => api.get('/notification-providers');
+export const putNotificationProvider = (data: {
+  channel: string;
+  enabled: boolean;
+  settings: Record<string, any>;
+  secret?: string;
+}) => api.put('/notification-providers', data);
+export const testNotificationProvider = (channel: string, recipient: string) =>
+  api.post(`/notification-providers/${channel}/test`, { recipient });
 
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });
