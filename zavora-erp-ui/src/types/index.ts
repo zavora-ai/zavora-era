@@ -113,6 +113,9 @@ export interface Customer {
   reminder_policy: string;
   portal_enabled: boolean;
   is_active: boolean;
+  notes?: string;
+  general_business_group_id?: string;
+  vat_business_group_id?: string;
   created_at: string;
 }
 
@@ -157,6 +160,8 @@ export interface Vendor {
   bank_details?: BankDetails;
   notes?: string;
   is_active: boolean;
+  general_business_group_id?: string;
+  vat_business_group_id?: string;
   created_at: string;
 }
 
