@@ -515,7 +515,7 @@ export interface ExchangeRateEntry {
   to_ccy: string;
   rate_date: string;
   rate_type: string;
-  rate: number;
+  rate: string; // serialised Decimal (string); coerce with Number() before maths
   source: string;
 }
 

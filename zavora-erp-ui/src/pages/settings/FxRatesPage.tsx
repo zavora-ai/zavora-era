@@ -50,7 +50,9 @@ export default function FxRatesPage() {
     },
     {
       key: 'rate', header: 'Rate',
-      render: (r) => <span className="font-mono">{r.rate.toFixed(4)}</span>,
+      // `rate` arrives as a string (backend serialises Decimal as a JSON string),
+      // so coerce before formatting — calling .toFixed on a string throws.
+      render: (r) => <span className="font-mono">{Number(r.rate).toFixed(4)}</span>,
       className: 'text-right',
     },
     {
