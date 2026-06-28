@@ -203,7 +203,11 @@ async fn assign_default_groups(engine: &ErpEngine, entity_id: Uuid) -> ErpResult
         .bind(gen_biz).bind(vat_biz).bind(entity_id).execute(engine.pool()).await?;
     sqlx::query("UPDATE vendors SET general_business_group_id=$1, vat_business_group_id=$2 WHERE entity_id=$3 AND general_business_group_id IS NULL")
         .bind(gen_biz).bind(vat_biz).bind(entity_id).execute(engine.pool()).await?;
-    sqlx::query("UPDATE products SET general_product_group_id=$1, vat_product_group_id=$2 WHERE entity_id=$3 AND general_product_group_id IS NULL AND product_type <> 'Service'")
+    // Only sellable product types get a default product group: Goods -> GOODS,
+    // Service -> SERVICES. Expense items are purchase-only and route via their
+    // own purchase_account, so they are deliberately left group-less (otherwise
+    // they'd inherit the GOODS matrix and mis-route).
+    sqlx::query("UPDATE products SET general_product_group_id=$1, vat_product_group_id=$2 WHERE entity_id=$3 AND general_product_group_id IS NULL AND product_type = 'Goods'")
         .bind(gen_goods).bind(vat_std).bind(entity_id).execute(engine.pool()).await?;
     sqlx::query("UPDATE products SET general_product_group_id=$1, vat_product_group_id=$2 WHERE entity_id=$3 AND general_product_group_id IS NULL AND product_type = 'Service'")
         .bind(gen_services).bind(vat_std).bind(entity_id).execute(engine.pool()).await?;
@@ -271,8 +275,10 @@ async fn seed_groups(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<()> {
         .bind(gen_biz).bind(vat_biz).bind(entity_id).execute(engine.pool()).await?;
     sqlx::query("UPDATE vendors SET general_business_group_id = $1, vat_business_group_id = $2 WHERE entity_id = $3 AND general_business_group_id IS NULL")
         .bind(gen_biz).bind(vat_biz).bind(entity_id).execute(engine.pool()).await?;
-    // Goods vs Services by product_type; default to Goods.
-    sqlx::query("UPDATE products SET general_product_group_id = $1, vat_product_group_id = $2 WHERE entity_id = $3 AND general_product_group_id IS NULL AND product_type <> 'Service'")
+    // Product groups by type: Goods -> GOODS, Service -> SERVICES. Expense
+    // items are purchase-only and route via their own purchase_account, so they
+    // are left group-less (assigning GOODS would mis-route them).
+    sqlx::query("UPDATE products SET general_product_group_id = $1, vat_product_group_id = $2 WHERE entity_id = $3 AND general_product_group_id IS NULL AND product_type = 'Goods'")
         .bind(gen_goods).bind(vat_std).bind(entity_id).execute(engine.pool()).await?;
     sqlx::query("UPDATE products SET general_product_group_id = $1, vat_product_group_id = $2 WHERE entity_id = $3 AND general_product_group_id IS NULL AND product_type = 'Service'")
         .bind(gen_services).bind(vat_std).bind(entity_id).execute(engine.pool()).await?;
