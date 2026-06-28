@@ -182,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
         // Estimates
         .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
         .route("/api/v1/estimates/{id}", get(routes::estimates::get_one).put(routes::estimates::update).delete(routes::estimates::delete))
+        .route("/api/v1/estimates/{id}/document", get(routes::estimates::document))
         .route("/api/v1/estimates/{id}/convert", post(routes::estimates::convert))
         .route("/api/v1/estimates/{id}/send", post(routes::estimates::send))
         .route("/api/v1/estimates/{id}/accept", post(routes::estimates::accept))

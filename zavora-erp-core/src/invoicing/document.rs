@@ -47,6 +47,12 @@ pub struct InvoiceDocument {
     pub amount_paid: Decimal,
     pub balance_due: Decimal,
     pub notes: Option<String>,
+
+    // Labels + flags so one renderer serves invoices, estimates and credit notes.
+    pub number_label: String,  // "Invoice No" | "Estimate No"
+    pub date2_label: String,   // "Due Date"   | "Valid Until"
+    pub summary_label: String, // "Balance Due"| "Total"
+    pub show_payments: bool,   // show Amount Paid / Balance Due rows (false for estimates)
 }
 
 pub struct InvoiceDocLine {
@@ -151,14 +157,37 @@ pub fn render_invoice_html(doc: &InvoiceDocument) -> String {
     } else {
         String::new()
     };
-    let paid_row = if doc.amount_paid > Decimal::ZERO {
-        format!(
-            "<tr><td>Amount Paid</td><td class=\"num paid\">{}</td></tr>",
-            money(cur, doc.amount_paid)
-        )
+
+    // Totals body. Invoices end on a prominent "Balance Due" (after an optional
+    // Amount Paid row); estimates/quotes end on a prominent "Total".
+    let mut total_rows = format!(
+        "<tr><td>Subtotal</td><td class=\"num\">{}</td></tr>{}<tr><td>VAT</td><td class=\"num\">{}</td></tr>",
+        money(cur, doc.subtotal),
+        discount_row,
+        money(cur, doc.tax_total),
+    );
+    if doc.show_payments {
+        total_rows.push_str(&format!(
+            "<tr class=\"total\"><td>Total</td><td class=\"num\">{}</td></tr>",
+            money(cur, doc.gross_total)
+        ));
+        if doc.amount_paid > Decimal::ZERO {
+            total_rows.push_str(&format!(
+                "<tr><td>Amount Paid</td><td class=\"num paid\">{}</td></tr>",
+                money(cur, doc.amount_paid)
+            ));
+        }
+        total_rows.push_str(&format!(
+            "<tr class=\"balance\"><td>{}</td><td class=\"num\">{}</td></tr>",
+            esc(&doc.summary_label),
+            money(cur, doc.balance_due)
+        ));
     } else {
-        String::new()
-    };
+        total_rows.push_str(&format!(
+            "<tr class=\"balance\"><td>Total</td><td class=\"num\">{}</td></tr>",
+            money(cur, doc.gross_total)
+        ));
+    }
 
     let notes = doc
         .notes
@@ -243,9 +272,9 @@ pub fn render_invoice_html(doc: &InvoiceDocument) -> String {
     <div class="doc">
       <div class="doc-title">{title}</div>
       <table class="meta">
-        <tr><td class="k">Invoice No</td><td class="v">{number}</td></tr>
+        <tr><td class="k">{number_label}</td><td class="v">{number}</td></tr>
         <tr><td class="k">Issue Date</td><td class="v">{issue}</td></tr>
-        <tr><td class="k">Due Date</td><td class="v">{due}</td></tr>
+        <tr><td class="k">{date2_label}</td><td class="v">{due}</td></tr>
         <tr><td class="k">Currency</td><td class="v">{currency}</td></tr>
       </table>
     </div>
@@ -260,9 +289,9 @@ pub fn render_invoice_html(doc: &InvoiceDocument) -> String {
       {etims}
     </div>
     <div class="due-box">
-      <div class="due-label">Balance Due</div>
-      <div class="due-amt">{balance}</div>
-      <div class="due-sub">Due {due}</div>
+      <div class="due-label">{summary_label}</div>
+      <div class="due-amt">{hero_amount}</div>
+      <div class="due-sub">{date2_label} {due}</div>
     </div>
   </div>
 
@@ -273,12 +302,7 @@ pub fn render_invoice_html(doc: &InvoiceDocument) -> String {
 
   <div class="totals">
     <table class="tot">
-      <tr><td>Subtotal</td><td class="num">{subtotal}</td></tr>
-      {discount_row}
-      <tr><td>VAT</td><td class="num">{vat}</td></tr>
-      <tr class="total"><td>Total</td><td class="num">{total}</td></tr>
-      {paid_row}
-      <tr class="balance"><td>Balance Due</td><td class="num">{balance}</td></tr>
+      {total_rows}
     </table>
   </div>
 
@@ -300,12 +324,11 @@ pub fn render_invoice_html(doc: &InvoiceDocument) -> String {
         currency = esc(&doc.currency),
         etims = etims,
         rows = rows,
-        subtotal = money(cur, doc.subtotal),
-        discount_row = discount_row,
-        vat = money(cur, doc.tax_total),
-        total = money(cur, doc.gross_total),
-        paid_row = paid_row,
-        balance = money(cur, doc.balance_due),
+        total_rows = total_rows,
+        number_label = esc(&doc.number_label),
+        date2_label = esc(&doc.date2_label),
+        summary_label = esc(&doc.summary_label),
+        hero_amount = money(cur, if doc.show_payments { doc.balance_due } else { doc.gross_total }),
         notes = notes,
         footer = footer,
     )
@@ -350,6 +373,10 @@ mod tests {
             amount_paid: dec!(0),
             balance_due: dec!(2320),
             notes: Some("Pay promptly".into()),
+            number_label: "Invoice No".into(),
+            date2_label: "Due Date".into(),
+            summary_label: "Balance Due".into(),
+            show_payments: true,
         }
     }
 

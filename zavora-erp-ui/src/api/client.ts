@@ -202,6 +202,11 @@ export const createEstimate = (data: any) => api.post('/estimates', data);
 export const updateEstimate = (id: string, data: any) => api.put(`/estimates/${id}`, data);
 export const deleteEstimate = (id: string) => api.delete(`/estimates/${id}`);
 export const getEstimate = (id: string) => api.get(`/estimates/${id}`);
+/** Shared estimate document (same renderer as invoices) for screen + PDF. */
+export const getEstimateDocumentHtml = (id: string) =>
+  api.get(`/estimates/${id}/document`, { params: { format: 'html' }, responseType: 'text' });
+export const getEstimateDocumentPdf = (id: string) =>
+  api.get(`/estimates/${id}/document`, { params: { format: 'pdf' }, responseType: 'blob' });
 export const convertEstimate = (id: string, data?: any) => api.post(`/estimates/${id}/convert`, data || {});
 export const sendEstimate = (id: string) => api.post(`/estimates/${id}/send`, {});
 export const acceptEstimate = (id: string) => api.post(`/estimates/${id}/accept`, {});
