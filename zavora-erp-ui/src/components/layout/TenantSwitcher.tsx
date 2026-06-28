@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, ChevronDown, Plus, Check, Loader2, X } from 'lucide-react';
 import { getMyTenants, switchTenant, createTenant, storeSession, getIdentity } from '../../api/client';
@@ -154,7 +155,7 @@ function CreateTenantModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
@@ -192,6 +193,7 @@ function CreateTenantModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
