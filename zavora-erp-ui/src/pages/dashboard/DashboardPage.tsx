@@ -73,6 +73,14 @@ export default function DashboardPage() {
     ? Math.round(((s.net_income_mtd - s.net_income_prior) / Math.abs(s.net_income_prior)) * 100)
     : null;
 
+  // Net Income is "this month" → open the Profit & Loss report for the current
+  // month so the figures match the card.
+  const asAt = new Date(s.as_at);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const pnlFrom = `${asAt.getFullYear()}-${pad(asAt.getMonth() + 1)}-01`;
+  const pnlTo = `${asAt.getFullYear()}-${pad(asAt.getMonth() + 1)}-${pad(asAt.getDate())}`;
+  const pnlLink = `/reports/profit-and-loss?from=${pnlFrom}&to=${pnlTo}`;
+
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Financial overview" />
@@ -99,7 +107,7 @@ export default function DashboardPage() {
           value={formatCurrency(s.net_income_mtd)}
           trend={priorPct !== null ? { value: `${priorPct >= 0 ? '+' : ''}${priorPct}% vs last month`, positive: s.net_income_mtd >= s.net_income_prior } : undefined}
           icon={<TrendingUp className="w-6 h-6" />}
-          onClick={() => navigate('/reports')}
+          onClick={() => navigate(pnlLink)}
         />
       </div>
 
@@ -114,7 +122,7 @@ export default function DashboardPage() {
           <div className="card p-6 lg:col-span-2">
             <div className="flex items-baseline justify-between mb-1">
               <h3 className="text-sm font-medium text-gray-500">Profit &amp; Loss</h3>
-              <button onClick={() => navigate('/reports')} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              <button onClick={() => navigate(pnlLink)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
                 View report <ArrowRight className="w-3 h-3" />
               </button>
             </div>
