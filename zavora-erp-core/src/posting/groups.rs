@@ -221,13 +221,27 @@ async fn seed_groups(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<()> {
         .bind(gen_biz).bind(entity_id).bind(&ps.accounts_receivable).bind(&ps.accounts_payable).execute(engine.pool()).await?;
     sqlx::query("INSERT INTO general_product_groups (id, entity_id, code, name) VALUES ($1,$2,'GOODS','Goods'),($3,$2,'SERVICES','Services')")
         .bind(gen_goods).bind(entity_id).bind(gen_services).execute(engine.pool()).await?;
-    for prod in [gen_goods, gen_services] {
+    // Seed the matrix per product group rather than with one default for both:
+    //  - GOODS sell to the goods revenue account and carry a real COGS account
+    //    (Cost of Goods Sold) so cost-of-sale matches revenue (IAS 2 / matching).
+    //  - SERVICES sell to the services-revenue default; services consume no
+    //    inventory, so COGS is left blank (the line then falls through to the
+    //    flat setup / direct expense rather than mis-booking a goods COGS).
+    // GOODS sales target 5000 (Sales Revenue, always in the Kenya seed) — kept
+    // distinct from `default_sales` (the tenant's primary, which may be a
+    // services account). `cost_of_goods_sold` comes from the flat PostingSetup.
+    let cells: [(Uuid, &str, &str, &str); 2] = [
+        // (product group, sales, purchase, cogs)
+        (gen_goods, "5000", ps.default_purchase.as_str(), ps.cost_of_goods_sold.as_str()),
+        (gen_services, ps.default_sales.as_str(), ps.default_purchase.as_str(), ""),
+    ];
+    for (prod, sales, purchase, cogs) in cells {
         sqlx::query(
             "INSERT INTO general_posting_matrix (id, entity_id, gen_biz_group_id, gen_prod_group_id, sales_account, purchase_account, cogs_account)
              VALUES ($1,$2,$3,$4,$5,$6,$7)",
         )
         .bind(Uuid::new_v4()).bind(entity_id).bind(gen_biz).bind(prod)
-        .bind(&ps.default_sales).bind(&ps.default_purchase).bind(&ps.default_purchase)
+        .bind(sales).bind(purchase).bind(cogs)
         .execute(engine.pool()).await?;
     }
 
