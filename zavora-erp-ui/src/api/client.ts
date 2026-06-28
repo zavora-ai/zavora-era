@@ -343,6 +343,19 @@ export const captureReceipt = (formData: FormData) =>
 export const confirmReceipt = (data: { capture_id: string; vendor_id: string; adjustments: any }) =>
   api.post('/receipts/confirm', data);
 
+// === Document attachments (source files linked to bills/invoices/etc.) ===
+export const getAttachments = (linked_type: string, linked_id: string) =>
+  api.get('/attachments', { params: { linked_type, linked_id } });
+export const uploadAttachment = (linked_type: string, linked_id: string, file: File) => {
+  const fd = new FormData();
+  fd.append('linked_type', linked_type);
+  fd.append('linked_id', linked_id);
+  fd.append('file', file);
+  return api.post('/attachments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const getAttachment = (id: string) => api.get(`/attachments/${id}`);
+export const deleteAttachment = (id: string) => api.delete(`/attachments/${id}`);
+
 // === Accounts Seed ===
 export const seedAccounts = () => api.post('/accounts/seed');
 

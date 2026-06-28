@@ -278,6 +278,9 @@ async fn main() -> anyhow::Result<()> {
         // Receipts (OCR capture and confirm)
         .route("/api/v1/receipts/capture", post(routes::receipts::capture))
         .route("/api/v1/receipts/confirm", post(routes::receipts::confirm))
+        // Document attachments (link source files to bills/invoices/etc.)
+        .route("/api/v1/attachments", post(routes::attachments::upload).get(routes::attachments::list))
+        .route("/api/v1/attachments/{id}", get(routes::attachments::get_one).delete(routes::attachments::delete))
         // Agent API
         .route("/api/v1/agent/post", post(routes::agent::post_from_agent))
         .route("/api/v1/agent/report", post(routes::agent::run_report))

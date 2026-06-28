@@ -33,6 +33,7 @@ pub mod audit;
 pub mod reports;
 pub mod agent;
 pub mod receipts;
+pub mod attachments;
 pub mod ocr_provider;
 pub mod pdf_text;
 pub mod settings;
