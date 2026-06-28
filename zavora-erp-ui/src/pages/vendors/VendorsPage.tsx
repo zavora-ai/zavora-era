@@ -157,6 +157,19 @@ export function VendorFormModal({ vendor, onClose }: { vendor?: Vendor; onClose:
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Currency</label>
+                <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                  <option value="KES">KES - Kenya Shilling</option>
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="GBP">GBP - British Pound</option>
+                  <option value="ZAR">ZAR - South African Rand</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Default currency for this vendor's bills (foreign suppliers bill in their own currency)</p>
+              </div>
+            </div>
             <PostingGroupFields scope="party" generalId={genGroup} vatId={vatGroup} onGeneral={setGenGroup} onVat={setVatGroup} />
             <hr />
             <div className="grid grid-cols-2 gap-4">
