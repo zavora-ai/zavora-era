@@ -106,6 +106,26 @@ pub async fn process_ocr_result(
     Ok(())
 }
 
+/// Return the suggested vendor (id + name) stored on a capture after OCR, for
+/// display in the review UI. Returns `(None, None)` when no vendor was matched.
+pub async fn suggested_vendor_for(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    capture_id: Uuid,
+) -> ErpResult<(Option<Uuid>, Option<String>)> {
+    let row = sqlx::query_as::<_, (Option<Uuid>, Option<String>)>(
+        r#"SELECT rc.suggested_vendor_id, v.name
+           FROM receipt_captures rc
+           LEFT JOIN vendors v ON v.id = rc.suggested_vendor_id
+           WHERE rc.id = $1 AND rc.entity_id = $2"#,
+    )
+    .bind(capture_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+    Ok(row.unwrap_or((None, None)))
+}
+
 /// Attempt to fuzzy match an OCR-extracted vendor name to existing vendor records.
 ///
 /// Uses normalized string similarity to find the best matching vendor.
@@ -217,7 +237,7 @@ pub async fn confirm_and_create_bill(
     entity_id: Uuid,
     req: ConfirmReceiptRequest,
     confirmed_by: &AgentOrUserId,
-) -> ErpResult<Uuid> {
+) -> ErpResult<crate::ap::Bill> {
     // Fetch the capture
     let capture_row = sqlx::query_as::<_, CaptureRow>(
         "SELECT id, entity_id, image_url, ocr_result, status FROM receipt_captures WHERE id = $1 AND entity_id = $2",
@@ -236,29 +256,42 @@ pub async fn confirm_and_create_bill(
         .ocr_result
         .and_then(|v| serde_json::from_value(v).ok());
 
-    // Build bill from OCR + adjustments
-    let date = req
-        .adjustments
-        .as_ref()
+    let adj = req.adjustments.as_ref();
+
+    // Resolve the confirmed values: adjustments (what the user reviewed) win
+    // over the raw OCR guess.
+    let date = adj
         .and_then(|a| a.date)
         .or_else(|| ocr.as_ref().and_then(|o| o.date))
         .unwrap_or_else(|| Utc::now().date_naive());
 
-    let total = req
-        .adjustments
-        .as_ref()
+    let total = adj
         .and_then(|a| a.total)
         .or_else(|| ocr.as_ref().and_then(|o| o.total))
         .unwrap_or_default();
 
-    let description = req
-        .adjustments
-        .as_ref()
+    let vat_amount = adj
+        .and_then(|a| a.vat_amount)
+        .or_else(|| ocr.as_ref().and_then(|o| o.vat_amount))
+        .unwrap_or_default();
+
+    let description = adj
         .and_then(|a| a.description.clone())
+        .or_else(|| adj.and_then(|a| a.vendor_name.clone()))
         .or_else(|| ocr.as_ref().and_then(|o| o.vendor_name.clone()))
         .unwrap_or_else(|| "Receipt capture".to_string());
 
-    let account_code = req.account_code.unwrap_or_else(|| "7900".to_string());
+    // Optional override; when absent, lines fall back to the vendor's default
+    // expense account (or the tenant posting setup) via resolve_bill_line.
+    let account_code = req.account_code.clone();
+
+    // Build the bill lines. Receipt amounts are VAT-INCLUSIVE, but the bill
+    // engine ADDS VAT on top of unit_price for Standard16 lines. So we post the
+    // NET amount (total - vat) as the line unit_price and let the engine
+    // recompute the VAT — this reproduces the receipt's gross without
+    // double-counting. When VAT is zero we mark the line OutOfScope so no VAT is
+    // added at all.
+    let lines = build_bill_lines(adj, total, vat_amount, &description, account_code.as_deref());
 
     // Create bill
     let bill_req = crate::ap::CreateBillRequest {
@@ -268,16 +301,7 @@ pub async fn confirm_and_create_bill(
         due_date: None,
         currency: None,
         fx_rate: None,
-        lines: vec![crate::invoicing::CreateInvoiceLineRequest {
-            product_id: None,
-            description: Some(description),
-            quantity: rust_decimal::Decimal::ONE,
-            unit_price: Some(total),
-            discount_percent: None,
-            account_code: Some(account_code),
-            vat_treatment: None,
-            dimensions: None,
-        }],
+        lines,
         notes: Some("Created from receipt capture".to_string()),
     };
 
@@ -293,7 +317,92 @@ pub async fn confirm_and_create_bill(
     .execute(engine.pool())
     .await?;
 
-    Ok(bill.id)
+    Ok(bill)
+}
+
+/// Build the bill lines for a confirmed receipt.
+///
+/// Receipt totals are **VAT-inclusive** and the bill engine adds VAT *on top* of
+/// a line's `unit_price` for rated lines. The invariant: the posted bill's gross
+/// must equal the receipt total exactly, at any tax rate.
+///   * Receipt VAT ≈ 16% of net → one `Standard16` line at `unit_price = total -
+///     vat`; the engine re-adds 16% → gross == `total`.
+///   * Any other VAT rate (foreign/8%/etc.) → a net `OutOfScope` line plus a
+///     separate `OutOfScope` "Tax / VAT" line; nothing is recomputed.
+///   * No VAT → one `OutOfScope` line at `total`.
+///
+/// When the reviewer supplied explicit `line_items`, each becomes its own
+/// `OutOfScope` line at its stated amount (already-net descriptive splits).
+fn build_bill_lines(
+    adj: Option<&ReceiptAdjustments>,
+    total: rust_decimal::Decimal,
+    vat_amount: rust_decimal::Decimal,
+    description: &str,
+    account_code: Option<&str>,
+) -> Vec<crate::invoicing::CreateInvoiceLineRequest> {
+    use rust_decimal::Decimal;
+
+    let mk = |desc: String, unit_price: Decimal, vat: crate::types::VatTreatment| {
+        crate::invoicing::CreateInvoiceLineRequest {
+            product_id: None,
+            description: Some(desc),
+            quantity: Decimal::ONE,
+            unit_price: Some(unit_price),
+            discount_percent: None,
+            account_code: account_code.map(|s| s.to_string()),
+            vat_treatment: Some(vat),
+            dimensions: None,
+        }
+    };
+
+    // If the reviewer provided line items, post each as an already-net line.
+    if let Some(items) = adj.and_then(|a| a.line_items.as_ref()) {
+        let usable: Vec<_> = items
+            .iter()
+            .filter(|li| !li.description.trim().is_empty())
+            .collect();
+        if !usable.is_empty() {
+            return usable
+                .iter()
+                .map(|li| {
+                    let amount = li
+                        .amount
+                        .or_else(|| match (li.quantity, li.unit_price) {
+                            (Some(q), Some(p)) => Some(q * p),
+                            _ => li.unit_price,
+                        })
+                        .unwrap_or(Decimal::ZERO);
+                    mk(li.description.clone(), amount, crate::types::VatTreatment::OutOfScope)
+                })
+                .collect();
+        }
+    }
+
+    // Single line(s) derived from the VAT-inclusive receipt total. The cardinal
+    // rule: the posted bill's gross MUST equal the receipt total exactly,
+    // whatever the tax rate. The bill engine adds VAT *on top* of unit_price for
+    // rated lines, so we only use a rated treatment when the receipt's VAT
+    // actually matches that rate (within rounding) — e.g. Kenyan 16%. For any
+    // other rate (foreign invoices, 8%, etc.) we post the net as an OutOfScope
+    // line plus a separate OutOfScope "VAT/Tax" line, so nothing is re-computed
+    // and the gross reconciles to the cent.
+    if vat_amount > Decimal::ZERO && total > vat_amount {
+        let net = total - vat_amount;
+        let standard_vat = (net * crate::types::VatTreatment::Standard16.rate())
+            .round_dp(2);
+        if (standard_vat - vat_amount).abs() <= Decimal::new(1, 2) {
+            // Receipt VAT ≈ 16% of net → let the engine re-add 16%.
+            vec![mk(description.to_string(), net, crate::types::VatTreatment::Standard16)]
+        } else {
+            // Arbitrary tax rate → post net + tax as explicit out-of-scope lines.
+            vec![
+                mk(description.to_string(), net, crate::types::VatTreatment::OutOfScope),
+                mk("Tax / VAT".to_string(), vat_amount, crate::types::VatTreatment::OutOfScope),
+            ]
+        }
+    } else {
+        vec![mk(description.to_string(), total, crate::types::VatTreatment::OutOfScope)]
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -304,4 +413,55 @@ struct CaptureRow {
     image_url: String,
     ocr_result: Option<serde_json::Value>,
     status: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_bill_lines;
+    use crate::types::VatTreatment;
+    use rust_decimal::Decimal;
+
+    /// Reproduce the bill engine's per-line gross: unit_price + VAT-on-top.
+    fn line_gross(unit_price: Decimal, vat: &VatTreatment) -> Decimal {
+        let line_total = unit_price; // qty 1, no discount
+        let vat_amt = (line_total * vat.rate()).round_dp(2);
+        line_total + vat_amt
+    }
+
+    fn total_gross(lines: &[crate::invoicing::CreateInvoiceLineRequest]) -> Decimal {
+        lines
+            .iter()
+            .map(|l| line_gross(l.unit_price.unwrap(), l.vat_treatment.as_ref().unwrap()))
+            .sum()
+    }
+
+    #[test]
+    fn kenyan_16pct_receipt_uses_single_rated_line() {
+        // 1160 incl. 160 VAT == 16% of 1000 net.
+        let lines = build_bill_lines(None, Decimal::new(1160, 0), Decimal::new(160, 0), "Acme", None);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].vat_treatment, Some(VatTreatment::Standard16));
+        assert_eq!(total_gross(&lines), Decimal::new(1160, 0));
+    }
+
+    #[test]
+    fn foreign_tax_rate_reconciles_via_out_of_scope_lines() {
+        // US invoice: total 162.37, tax 10.47 (~6.9%, NOT 16%). Must still total
+        // exactly 162.37 — the regression that posted 176.20 before the fix.
+        let total = Decimal::new(162_37, 2);
+        let vat = Decimal::new(10_47, 2);
+        let lines = build_bill_lines(None, total, vat, "StripesShop", None);
+        assert_eq!(lines.len(), 2, "net + tax as out-of-scope lines");
+        assert!(lines.iter().all(|l| l.vat_treatment == Some(VatTreatment::OutOfScope)));
+        assert_eq!(total_gross(&lines), total);
+    }
+
+    #[test]
+    fn no_vat_posts_single_out_of_scope_line() {
+        let total = Decimal::new(500, 0);
+        let lines = build_bill_lines(None, total, Decimal::ZERO, "Cash sale", None);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].vat_treatment, Some(VatTreatment::OutOfScope));
+        assert_eq!(total_gross(&lines), total);
+    }
 }

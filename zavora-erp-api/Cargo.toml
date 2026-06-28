@@ -23,6 +23,13 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 dotenvy = { workspace = true }
+# HTTP client for the optional, env-gated OCR sidecar provider (XbergHttp).
+# multipart sends the receipt image to `xberg serve`; rustls-tls avoids a system
+# OpenSSL build dependency. Kept out of zavora-erp-core so the domain crate stays
+# free of network deps.
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+base64 = "0.22"
+async-trait = "0.1"
 
 [dev-dependencies]
 proptest = "1"
