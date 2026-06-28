@@ -44,6 +44,7 @@ import InventoryPage from './pages/inventory/InventoryPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
+import NotificationDeliveryPage from './pages/settings/NotificationDeliveryPage';
 import ReceiptCapturePage from './pages/receipts/ReceiptCapturePage';
 import InvoicePreview from './pages/documents/InvoicePreview';
 import EstimatePreview from './pages/documents/EstimatePreview';
@@ -137,6 +138,7 @@ export default function App() {
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="notifications" element={<NotificationDeliveryPage />} />
             <Route path="documents/invoice/:id" element={<InvoicePreview />} />
             <Route path="documents/estimate/:id" element={<EstimatePreview />} />
             <Route path="documents/credit-note/:id" element={<CreditNotePreview />} />

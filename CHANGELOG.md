@@ -11,6 +11,27 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
+- **Notification delivery history (admin).** A read-only, Owner/Admin-gated
+  delivery-history view surfaces the full notification record across **all**
+  channels (email, SMS, WhatsApp, in-app) — status, recipient, error, and
+  timestamps — not just the in-app inbox. `GET /notifications/delivery`
+  (paginated; filter by channel/status/event/recipient/date) and
+  `GET /notifications/delivery/stats` (counts by status and channel) back a new
+  **Notifications** admin page (stats cards, filters, status badges with inline
+  failure reasons). Makes the email/SMS/WhatsApp send-out observable and
+  debuggable. Indexes added in migration 031.
+- **Notification delivery — all channels wired (P2).** The notification worker
+  now performs real send-out on every channel, not just Email. SMS via
+  **Africa's Talking** (Kenyan gateway; `AT_USERNAME`/`AT_API_KEY`/optional
+  `AT_SENDER_ID`) and WhatsApp via **Twilio** (`TWILIO_ACCOUNT_SID`/
+  `TWILIO_AUTH_TOKEN`/`TWILIO_WHATSAPP_FROM`) join the existing SMTP email and
+  InApp channels. Providers are built once at startup from the environment and
+  are **env-gated with graceful degradation** — an unconfigured channel logs a
+  clear "not configured" error and never blocks the others; the worker logs
+  which channels are live. Phone numbers are normalised to Kenyan E.164
+  (`07.. / 7.. / 254.. / +..` → `+254..`), and HTML notification bodies are
+  reduced to plain text for SMS/WhatsApp. This unblocks scheduled/emailed
+  reports and all reminder flows. (`services::messaging`.)
 - **User-driven tenant lifecycle.** The in-app tenant switcher now supports the
   full lifecycle on top of signup: **create**, **switch**, **archive (close)**,
   **restore**, and **leave**. Archiving is a reversible soft-close

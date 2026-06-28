@@ -13,6 +13,7 @@ use uuid::Uuid;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
 use crate::notifications::SendNotificationRequest;
+use crate::services::messaging::{SmsProvider, WhatsAppProvider};
 use crate::types::Channel;
 
 const STREAM_KEY: &str = "erp:notifications";
@@ -20,6 +21,15 @@ const GROUP_NAME: &str = "notification-workers";
 const CONSUMER_NAME: &str = "worker-1";
 const MAX_RETRIES: u32 = 3;
 const RETRY_DELAY_SECS: u64 = 2;
+
+/// Delivery transports built once at worker startup and shared across messages.
+/// Each is `None` when its channel is not configured for this deployment, in
+/// which case delivery on that channel reports a clear "not configured" error.
+struct Transports {
+    smtp: Option<AsyncSmtpTransport<Tokio1Executor>>,
+    sms: Option<SmsProvider>,
+    whatsapp: Option<WhatsAppProvider>,
+}
 
 /// SMTP configuration loaded from environment variables.
 struct SmtpConfig {
@@ -75,8 +85,17 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
         }
     }
 
-    // Build SMTP transport once (reused across messages).
-    let smtp_transport = build_smtp_transport();
+    // Build delivery transports once (reused across messages).
+    let smtp = build_smtp_transport();
+    let sms = SmsProvider::from_env();
+    let whatsapp = WhatsAppProvider::from_env();
+    tracing::info!(
+        smtp = smtp.is_some(),
+        sms = sms.is_some(),
+        whatsapp = whatsapp.is_some(),
+        "Notification delivery channels configured"
+    );
+    let transports = Transports { smtp, sms, whatsapp };
 
     tracing::info!("Notification worker ready, listening on '{STREAM_KEY}'");
 
@@ -110,7 +129,7 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
         }
 
         for (message_id, entity_id, request) in &entries {
-            process_message(&pool, &smtp_transport, entity_id, request).await;
+            process_message(&pool, &transports, entity_id, request).await;
 
             // ACK the message regardless of per-recipient outcome (retries are
             // handled within process_message).
@@ -132,7 +151,7 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
 /// insert a row, attempt delivery with retries, and update status.
 async fn process_message(
     pool: &PgPool,
-    smtp_transport: &Option<AsyncSmtpTransport<Tokio1Executor>>,
+    transports: &Transports,
     entity_id: &Uuid,
     req: &SendNotificationRequest,
 ) {
@@ -178,7 +197,7 @@ async fn process_message(
             let mut delivered = false;
 
             for attempt in 1..=MAX_RETRIES {
-                match deliver(smtp_transport, channel, recipient, req).await {
+                match deliver(transports, channel, recipient, req).await {
                     Ok(()) => {
                         delivered = true;
                         break;
@@ -243,26 +262,38 @@ async fn process_message(
 /// Attempt delivery for a single (channel, recipient) pair.
 /// Returns `Ok(())` on success or `Err(error_message)` on failure.
 async fn deliver(
-    smtp_transport: &Option<AsyncSmtpTransport<Tokio1Executor>>,
+    transports: &Transports,
     channel: &Channel,
     recipient: &str,
     req: &SendNotificationRequest,
 ) -> Result<(), String> {
     match channel {
-        Channel::Email => deliver_email(smtp_transport, recipient, req).await,
+        Channel::Email => deliver_email(&transports.smtp, recipient, req).await,
         Channel::InApp => {
             // InApp notifications are "delivered" by virtue of existing in the
             // notifications table. No external action needed.
             Ok(())
         }
-        Channel::Sms => {
-            tracing::warn!("SMS delivery not yet configured for {recipient}");
-            Err("channel not configured".to_string())
-        }
-        Channel::WhatsApp => {
-            tracing::warn!("WhatsApp delivery not yet configured for {recipient}");
-            Err("channel not configured".to_string())
-        }
+        Channel::Sms => match &transports.sms {
+            Some(provider) => {
+                let body = crate::services::messaging::html_to_text(&req.body);
+                provider.send(recipient, &body).await
+            }
+            None => {
+                tracing::warn!("SMS delivery not configured for {recipient}");
+                Err("SMS channel not configured".to_string())
+            }
+        },
+        Channel::WhatsApp => match &transports.whatsapp {
+            Some(provider) => {
+                let body = crate::services::messaging::html_to_text(&req.body);
+                provider.send(recipient, &body).await
+            }
+            None => {
+                tracing::warn!("WhatsApp delivery not configured for {recipient}");
+                Err("WhatsApp channel not configured".to_string())
+            }
+        },
     }
 }
 

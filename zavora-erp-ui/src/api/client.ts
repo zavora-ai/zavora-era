@@ -362,6 +362,18 @@ export const getNotifications = (params?: { unread_only?: boolean } & PageParams
 export const getUnreadCount = () => api.get('/notifications/unread-count');
 export const markNotificationRead = (id: string) => api.patch(`/notifications/${id}/read`);
 export const markAllNotificationsRead = () => api.post('/notifications/mark-all-read', {});
+// Admin delivery history (Owner/Admin): all channels with status/recipient/error.
+export interface DeliveryFilters {
+  channel?: string;
+  status?: string;
+  event_type?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+}
+export const getNotificationDelivery = (params?: DeliveryFilters & PageParams) =>
+  api.get('/notifications/delivery', { params });
+export const getNotificationDeliveryStats = () => api.get('/notifications/delivery/stats');
 
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });

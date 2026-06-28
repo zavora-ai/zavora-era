@@ -19,6 +19,7 @@ pub mod assets;
 pub mod inventory;
 pub mod notifications;
 pub mod notification_worker;
+pub mod messaging;
 pub mod scheduler;
 pub mod ocr;
 pub mod ocr_provider;

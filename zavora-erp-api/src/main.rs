@@ -201,6 +201,8 @@ async fn main() -> anyhow::Result<()> {
         // Notifications (in-app inbox)
         .route("/api/v1/notifications", get(routes::notifications::list))
         .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
+        .route("/api/v1/notifications/delivery", get(routes::notifications::delivery_list))
+        .route("/api/v1/notifications/delivery/stats", get(routes::notifications::delivery_stats))
         .route("/api/v1/notifications/mark-all-read", post(routes::notifications::mark_all_read))
         .route("/api/v1/notifications/{id}/read", axum::routing::patch(routes::notifications::mark_read))
         // Bills
