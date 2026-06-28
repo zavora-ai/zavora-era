@@ -87,6 +87,13 @@ pub struct ConfirmReceiptRequest {
     pub capture_id: Uuid,
     pub vendor_id: Uuid,
     pub account_code: Option<String>,
+    /// Document currency (e.g. USD/EUR for a foreign invoice). Defaults to the
+    /// tenant base currency when omitted.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Exchange rate to base currency for `currency`. Defaults to 1.0.
+    #[serde(default)]
+    pub fx_rate: Option<Decimal>,
     pub adjustments: Option<ReceiptAdjustments>,
 }
 

@@ -306,8 +306,10 @@ pub async fn confirm_and_create_bill(
         vendor_invoice_number: None,
         issue_date: Some(date),
         due_date: None,
-        currency: None,
-        fx_rate: None,
+        // Foreign-currency receipts (e.g. Amazon Ads in USD/EUR): carry the
+        // confirmed currency + rate so the bill posts at functional value.
+        currency: req.currency.clone(),
+        fx_rate: req.fx_rate,
         lines,
         notes: Some("Created from receipt capture".to_string()),
     };

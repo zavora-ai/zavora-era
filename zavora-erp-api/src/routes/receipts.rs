@@ -183,6 +183,10 @@ pub struct ConfirmRequest {
     pub capture_id: Uuid,
     pub vendor_id: Uuid,
     pub account_code: Option<String>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<rust_decimal::Decimal>,
     pub adjustments: Option<ReceiptAdjustments>,
 }
 
@@ -201,6 +205,8 @@ pub async fn confirm(
         capture_id: req.capture_id,
         vendor_id: req.vendor_id,
         account_code: req.account_code,
+        currency: req.currency,
+        fx_rate: req.fx_rate,
         adjustments: req.adjustments,
     };
 
