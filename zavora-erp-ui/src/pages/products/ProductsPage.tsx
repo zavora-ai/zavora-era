@@ -43,7 +43,7 @@ export default function ProductsPage() {
       )
     },
     { key: 'product_type', header: 'Type', render: (r) => <span className={r.product_type === 'Service' ? 'badge-info' : r.product_type === 'Goods' ? 'badge-success' : 'badge-warning'}>{r.product_type}</span> },
-    { key: 'unit_price', header: 'Price', render: (r) => r.unit_price ? formatCurrency(r.unit_price) : <span className="text-gray-400">Variable</span>, className: 'text-right' },
+    { key: 'unit_price', header: 'Price', render: (r) => (r.unit_price != null && Number(r.unit_price) > 0) ? formatCurrency(Number(r.unit_price), r.currency) : <span className="text-gray-400">Variable</span>, className: 'text-right' },
     { key: 'uom', header: 'Unit' },
     { key: 'vat_treatment', header: 'Tax', render: (r) => r.vat_treatment === 'Standard16' ? 'VAT 16%' : r.vat_treatment === 'ZeroRated' ? 'Zero Rated' : 'Exempt' },
     { key: 'sales_account', header: 'Income Acct', render: (r) => <span className="font-mono text-xs">{r.sales_account}</span> },
@@ -192,8 +192,8 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
           <div>
             <label className="label">Default Price</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{form.currency}</span>
-              <input type="number" step="0.01" className="input pl-12" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 pointer-events-none">{form.currency}</span>
+              <input type="number" step="0.01" className="input pl-14" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
             </div>
             <p className="text-xs text-gray-400 mt-1">Can be changed per invoice</p>
           </div>

@@ -1,11 +1,14 @@
 import { format, parseISO, isValid } from 'date-fns';
 
-export function formatCurrency(amount: number, currency = 'KES'): string {
+export function formatCurrency(amount: number | string, currency = 'KES'): string {
+  // Decimal values arrive from the API as strings (serde serialises Decimal as a
+  // JSON string); coerce defensively so callers can't accidentally pass a string.
+  const n = typeof amount === 'string' ? Number(amount) : amount;
   return new Intl.NumberFormat('en-KE', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(amount);
+  }).format(Number.isFinite(n) ? n : 0);
 }
 
 export function formatNumber(n: number): string {
