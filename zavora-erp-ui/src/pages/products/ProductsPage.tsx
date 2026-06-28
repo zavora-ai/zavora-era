@@ -191,10 +191,7 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="label">Default Price</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 pointer-events-none">{form.currency}</span>
-              <input type="number" step="0.01" className="input pl-14" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
-            </div>
+            <input type="number" step="0.01" className="input" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
             <p className="text-xs text-gray-400 mt-1">Can be changed per invoice</p>
           </div>
           <div>
