@@ -135,6 +135,18 @@ export const saveReportSchedule = (data: { id?: string; name: string; report_typ
   api.post('/report-schedules', data);
 export const deleteReportSchedule = (id: string) => api.delete(`/report-schedules/${id}`);
 export const getConsolidationEntities = () => api.get('/consolidation/entities');
+// === Posting groups (BC-style matrices) ===
+export const getPostingGroups = () => api.get('/posting-groups');
+export const createPostingGroup = (data: { kind: string; code: string; name: string }) =>
+  api.post('/posting-groups/group', data);
+export const assignPostingGroups = (data: { kind: 'customer' | 'vendor' | 'product'; id: string; general_group_id?: string; vat_group_id?: string }) =>
+  api.post('/posting-groups/assign', data);
+export const upsertGeneralMatrix = (data: { gen_biz_group_id: string; gen_prod_group_id: string; sales_account?: string; purchase_account?: string; cogs_account?: string }) =>
+  api.post('/posting-groups/general-matrix', data);
+export const upsertVatMatrix = (data: { vat_biz_group_id: string; vat_prod_group_id: string; vat_rate: number; vat_output_account?: string; vat_input_account?: string }) =>
+  api.post('/posting-groups/vat-matrix', data);
+export const upsertBusinessControl = (data: { gen_biz_group_id: string; receivables_account?: string; payables_account?: string }) =>
+  api.post('/posting-groups/business-control', data);
 export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
   api.post('/consolidation/trial-balance', data);
 export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>
@@ -350,6 +362,48 @@ export const getNotifications = (params?: { unread_only?: boolean } & PageParams
 export const getUnreadCount = () => api.get('/notifications/unread-count');
 export const markNotificationRead = (id: string) => api.patch(`/notifications/${id}/read`);
 export const markAllNotificationsRead = () => api.post('/notifications/mark-all-read', {});
+// Admin delivery history (Owner/Admin): all channels with status/recipient/error.
+export interface DeliveryFilters {
+  channel?: string;
+  status?: string;
+  event_type?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+}
+export const getNotificationDelivery = (params?: DeliveryFilters & PageParams) =>
+  api.get('/notifications/delivery', { params });
+export const getNotificationDeliveryStats = () => api.get('/notifications/delivery/stats');
+// Notification event preferences (Owner/Admin): per-event enabled + channels.
+export interface EventPref {
+  event_type: string;
+  enabled: boolean;
+  channels: string[];
+  is_default: boolean;
+}
+export interface ChannelStatus {
+  channel: string;
+  configured: boolean;
+}
+export const getNotificationSettings = () => api.get('/notification-settings');
+export const updateNotificationSettings = (events: Omit<EventPref, 'is_default'>[]) =>
+  api.put('/notification-settings', { events });
+// Per-tenant notification providers (Owner/Admin). Secrets are write-only.
+export interface MaskedProvider {
+  channel: string;
+  enabled: boolean;
+  settings: Record<string, any>;
+  has_secret: boolean;
+}
+export const getNotificationProviders = () => api.get('/notification-providers');
+export const putNotificationProvider = (data: {
+  channel: string;
+  enabled: boolean;
+  settings: Record<string, any>;
+  secret?: string;
+}) => api.put('/notification-providers', data);
+export const testNotificationProvider = (channel: string, recipient: string) =>
+  api.post(`/notification-providers/${channel}/test`, { recipient });
 
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });

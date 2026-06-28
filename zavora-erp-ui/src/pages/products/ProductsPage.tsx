@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProducts, createProduct } from '../../api/client';
+import { getProducts, createProduct, assignPostingGroups } from '../../api/client';
+import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Product } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
@@ -67,10 +68,18 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
     sku: '',
     opening_stock: '',
   });
+  const [genGroup, setGenGroup] = useState('');
+  const [vatGroup, setVatGroup] = useState('');
 
   const mutation = useMutation({
     mutationFn: (data: any) => createProduct(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); onClose(); },
+    onSuccess: async (resp: any) => {
+      const id = resp?.data?.id ?? resp?.data;
+      if (id && (genGroup || vatGroup)) {
+        try { await assignPostingGroups({ kind: 'product', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
+      }
+      queryClient.invalidateQueries({ queryKey: ['products'] }); onClose();
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -176,10 +185,12 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Accounts */}
+        <PostingGroupFields scope="product" generalId={genGroup} vatId={vatGroup} onGeneral={setGenGroup} onVat={setVatGroup} />
+
+        {/* Accounts (fallback when no posting-group match) */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="label">Income Account <span className="text-gray-400 font-normal">(when sold)</span></label>
+            <label className="label">Income Account <span className="text-gray-400 font-normal">(fallback when sold)</span></label>
             <select className="input" value={form.sales_account} onChange={(e) => setForm({ ...form, sales_account: e.target.value })}>
               <option value="5000">5000 — Sales Revenue</option>
               <option value="5100">5100 — Service Revenue</option>

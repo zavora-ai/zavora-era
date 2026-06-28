@@ -5,7 +5,6 @@ use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::notifications::{NotificationEventType, SendNotificationRequest};
 use crate::period::*;
-use crate::types::Channel;
 
 /// Generate fiscal periods for a year.
 pub async fn generate_periods(
@@ -147,24 +146,32 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
     updated.closed_at = Some(now);
     updated.closed_by = Some(serde_json::to_value(&req.closed_by).unwrap_or_default());
 
-    // On soft close, send PeriodCloseWarning notification to Accountant and Admin users
+    // On soft close, warn Accountant and Admin users — channels per tenant prefs.
     if req.close_type == PeriodCloseType::Soft {
-        let notification = SendNotificationRequest {
-            event_type: NotificationEventType::PeriodCloseWarning,
-            channels: vec![Channel::InApp, Channel::Email],
-            recipients: vec!["role:Accountant".to_string(), "role:Admin".to_string()],
-            subject: Some(format!("Period '{}' has been soft-closed", updated.name)),
-            body: format!(
-                "Fiscal period '{}' has been soft-closed. Only manual journal entries (prior-period adjustments) are allowed until the period is hard-closed or reopened.",
-                updated.name
-            ),
-            related_type: Some("fiscal_period".to_string()),
-            related_id: Some(updated.id),
-            schedule_at: None,
-            attachments: Vec::new(),
-        };
-        // Best-effort notification — don't fail the close operation on notification errors
-        let _ = super::notifications::send_notification(engine, entity_id, notification).await;
+        let (enabled, channels) = crate::services::notification_prefs::effective_channels(
+            engine,
+            entity_id,
+            &NotificationEventType::PeriodCloseWarning,
+        )
+        .await;
+        if enabled && !channels.is_empty() {
+            let notification = SendNotificationRequest {
+                event_type: NotificationEventType::PeriodCloseWarning,
+                channels,
+                recipients: vec!["role:Accountant".to_string(), "role:Admin".to_string()],
+                subject: Some(format!("Period '{}' has been soft-closed", updated.name)),
+                body: format!(
+                    "Fiscal period '{}' has been soft-closed. Only manual journal entries (prior-period adjustments) are allowed until the period is hard-closed or reopened.",
+                    updated.name
+                ),
+                related_type: Some("fiscal_period".to_string()),
+                related_id: Some(updated.id),
+                schedule_at: None,
+                attachments: Vec::new(),
+            };
+            // Best-effort — don't fail the close operation on notification errors.
+            let _ = super::notifications::send_notification(engine, entity_id, notification).await;
+        }
     }
 
     // Record PeriodClosed audit event

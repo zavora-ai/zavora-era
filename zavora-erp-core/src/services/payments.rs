@@ -21,11 +21,33 @@ struct PaymentAccounts {
 }
 
 impl PaymentAccounts {
-    async fn resolve(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<Self> {
+    /// Resolve the GL accounts for a payment. When a `party_id` is supplied the
+    /// receivable (customer payment) or payable (vendor payment) control account
+    /// is routed by that party's business posting group, so the AR/AP credited at
+    /// payment matches the AR/AP debited at invoice/bill time. Falls back to the
+    /// flat posting setup when the party has no group control account.
+    async fn resolve(
+        engine: &ErpEngine,
+        entity_id: Uuid,
+        party_id: Option<Uuid>,
+        payment_type: &PaymentType,
+    ) -> ErpResult<Self> {
         let p = engine.posting_for(entity_id).await?;
+        let mut ar = p.accounts_receivable.clone();
+        let mut ap = p.accounts_payable.clone();
+        if let Some(pid) = party_id {
+            match payment_type {
+                PaymentType::CustomerPayment => {
+                    if let Some(a) = crate::posting::groups::resolve_receivables(engine, entity_id, pid).await { ar = a; }
+                }
+                PaymentType::VendorPayment => {
+                    if let Some(a) = crate::posting::groups::resolve_payables(engine, entity_id, pid).await { ap = a; }
+                }
+            }
+        }
         Ok(Self {
-            ar: p.accounts_receivable.clone(),
-            ap: p.accounts_payable.clone(),
+            ar,
+            ap,
             unapplied_payments: p.unapplied_payments.clone(),
             wht_payable: p.wht_payable.clone(),
             realised_fx_gain: p.realised_fx_gain.clone(),
@@ -205,6 +227,7 @@ pub async fn record_payment(
         &mut tx,
         engine,
         entity_id,
+        req.party_id,
         &number,
         payment_date,
         &currency,
@@ -264,6 +287,7 @@ pub async fn record_payment(
             post_fx_gain_loss_entry(
                 engine,
                 entity_id,
+                req.party_id,
                 &number,
                 payment_date,
                 &currency,
@@ -446,6 +470,7 @@ async fn post_payment_journal_entry(
     tx: &mut crate::services::journal::PgTx<'_>,
     engine: &ErpEngine,
     entity_id: Uuid,
+    party_id: Uuid,
     payment_number: &str,
     payment_date: chrono::NaiveDate,
     currency: &str,
@@ -458,7 +483,7 @@ async fn post_payment_journal_entry(
     wht_amount: Decimal,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
-    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
+    let acct = PaymentAccounts::resolve(engine, entity_id, Some(party_id), payment_type).await?;
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     match payment_type {
@@ -907,7 +932,7 @@ pub async fn apply_unapplied_payment(
     }
 
     // 6. Create JE: DR Unapplied Payments / CR AR or AP (Requirement 24.3)
-    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
+    let acct = PaymentAccounts::resolve(engine, entity_id, Some(row.party_id), &payment_type).await?;
     let receivable_payable_code = match payment_type {
         PaymentType::CustomerPayment => acct.ar.clone(),
         PaymentType::VendorPayment => acct.ap.clone(),
@@ -1106,6 +1131,7 @@ async fn fetch_document_fx_rate(
 async fn post_fx_gain_loss_entry(
     engine: &ErpEngine,
     entity_id: Uuid,
+    party_id: Uuid,
     payment_number: &str,
     payment_date: chrono::NaiveDate,
     _currency: &str,
@@ -1124,7 +1150,7 @@ async fn post_fx_gain_loss_entry(
     let fx_difference = functional_at_payment_rate - functional_at_invoice_rate;
 
     // Determine the AR/AP account for the offsetting entry
-    let acct = PaymentAccounts::resolve(engine, entity_id).await?;
+    let acct = PaymentAccounts::resolve(engine, entity_id, Some(party_id), payment_type).await?;
     let ar_ap_code = match payment_type {
         PaymentType::CustomerPayment => acct.ar.clone(),
         PaymentType::VendorPayment => acct.ap.clone(),

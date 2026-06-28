@@ -154,7 +154,9 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
   const today = new Date().toISOString().split('T')[0];
 
   function emptyLine() {
-    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '7900', dimensions: {} as Record<string, string> };
+    // Blank account: product lines derive it from the posting-group matrix; a
+    // product-less expense line falls back to the vendor/default expense account.
+    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '', dimensions: {} as Record<string, string> };
   }
 
   const [form, setForm] = useState({
@@ -222,7 +224,8 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
       if (product) {
         lines[i].description = product.description || product.name;
         lines[i].unit_price = product.unit_price || 0;
-        lines[i].account_code = product.purchase_account || '7900';
+        // leave account_code blank so the posting-group matrix can derive it.
+        lines[i].account_code = '';
         lines[i].tax_rate = product.vat_treatment === 'Standard16' ? 16 : product.vat_treatment === 'ZeroRated' ? 0 : 0;
       }
     }
@@ -241,7 +244,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
       product_id: p.id,
       description: lines[i].description || p.name,
       unit_price: p.unit_price,
-      account_code: p.purchase_account || p.sales_account || '7900',
+      account_code: '',
       tax_rate: p.vat_treatment === 'Standard16' ? 16 : p.vat_treatment === 'ZeroRated' ? 0 : 0,
     };
     setForm({ ...form, lines });
@@ -274,7 +277,9 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
-        account_code: l.account_code || defaultAccount,
+        // product lines: blank → matrix derives the purchase account; manual
+        // (product-less) lines fall back to the vendor/default expense account.
+        account_code: l.account_code || (l.product_id ? undefined : defaultAccount),
         vat_treatment: l.tax_rate === 16 ? 'Standard16' : l.tax_rate === 0 ? 'ZeroRated' : 'Exempt',
         dimensions: l.dimensions && Object.keys(l.dimensions).length ? l.dimensions : undefined,
       })),

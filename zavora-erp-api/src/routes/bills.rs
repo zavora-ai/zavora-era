@@ -146,10 +146,14 @@ pub async fn post_bill(
                 }
             }
 
-            // DR VAT Input (recoverable input tax).
+            // DR VAT Input (recoverable input tax). Input-VAT account is routed by
+            // the vendor's VAT posting group, falling back to the flat setup.
             if b.tax_total > zero {
+                let vat_account = zavora_erp_core::posting::groups::resolve_vat_input(&state.engine, ctx.entity_id, b.vendor_id, None)
+                    .await
+                    .unwrap_or_else(|| posting.vat_input.clone());
                 lines.push(JLine {
-                    account_code: posting.vat_input.clone(),
+                    account_code: vat_account,
                     debit: Some(b.tax_total),
                     credit: None,
                     currency: base_ccy.clone(),
@@ -162,8 +166,11 @@ pub async fn post_bill(
             // CR Accounts Payable for the net owed to the vendor and CR WHT
             // Payable for the amount withheld. gross_total is already net of WHT
             // (subtotal + tax - wht), so AP + WHT == subtotal + tax == debits.
+            let ap_account = zavora_erp_core::posting::groups::resolve_payables(&state.engine, ctx.entity_id, b.vendor_id)
+                .await
+                .unwrap_or_else(|| posting.accounts_payable.clone());
             lines.push(JLine {
-                account_code: posting.accounts_payable.clone(),
+                account_code: ap_account,
                 debit: None,
                 credit: Some(b.gross_total),
                 currency: base_ccy.clone(),

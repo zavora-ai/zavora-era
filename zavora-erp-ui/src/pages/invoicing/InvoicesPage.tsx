@@ -381,7 +381,9 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
 
   function emptyLine() {
-    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '5000', dimensions: {} as Record<string, string> };
+    // account_code left blank: the server derives it from posting groups (matrix)
+    // → product account → default. A value here would override that.
+    return { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 16, account_code: '', dimensions: {} as Record<string, string> };
   }
 
   const applyProductToLine = (i: number, p: QuickProduct) => {
@@ -391,7 +393,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
       product_id: p.id,
       description: lines[i].description || p.name,
       unit_price: p.unit_price,
-      account_code: p.sales_account,
+      // leave account_code blank so the posting-group matrix can derive it.
       tax_rate: p.vat_treatment === 'Standard16' ? 16 : p.vat_treatment === 'ZeroRated' ? 0 : 0,
     };
     setForm({ ...form, lines });
@@ -458,7 +460,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
-        account_code: l.account_code,
+        account_code: l.account_code || undefined,
         vat_treatment: l.tax_rate === 16 ? 'Standard16' : l.tax_rate === 0 ? 'ZeroRated' : 'Exempt',
         dimensions: l.dimensions && Object.keys(l.dimensions).length ? l.dimensions : undefined,
       })),

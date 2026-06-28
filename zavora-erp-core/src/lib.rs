@@ -61,6 +61,7 @@ pub mod tenant;
 pub mod posting;
 pub mod auth;
 pub mod money;
+pub mod crypto;
 pub mod etims;
 
 // Service layer — business logic implementations

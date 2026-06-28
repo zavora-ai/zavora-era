@@ -52,10 +52,14 @@ pub async fn create_invoice(
             .unwrap_or(crate::types::PaymentTerms::Net30);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
+    // Ensure this tenant has its default posting groups + matrices (idempotent;
+    // a no-op once seeded). Lets the matrix drive line account derivation below.
+    let _ = crate::posting::groups::ensure_default_posting_groups(engine, entity_id).await;
+
     // Resolve invoice lines (auto-fill from products if product_id specified)
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -242,10 +246,11 @@ pub async fn create_credit_note(
             })
             .collect()
     } else {
-        // Partial credit note — resolve specified lines
+        // Partial credit note — resolve specified lines (mirror the original
+        // invoice's accounts; the matrix isn't re-applied here).
         let mut lines = Vec::new();
         for line_req in &req.lines {
-            let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+            let mut line = resolve_invoice_line(engine, entity_id, line_req, None).await?;
             line.compute_totals();
             lines.push(line);
         }
@@ -331,10 +336,15 @@ pub async fn create_credit_note(
 
     // Create reversal GL entry: DR Revenue / DR VAT Output / CR AR
     let mut journal_lines = Vec::new();
+    let posting = engine.posting_for(entity_id).await?;
 
-    // CR Accounts Receivable (reduce AR)
+    // CR Accounts Receivable (reduce AR) — routed by the customer's business
+    // posting group, falling back to the flat setup.
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, original.customer_id)
+        .await
+        .unwrap_or_else(|| posting.accounts_receivable.clone());
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
+        account_code: ar_account,
         debit: None,
         credit: Some(gross_total),
         currency: original.currency.clone(),
@@ -356,8 +366,11 @@ pub async fn create_credit_note(
         });
 
         if line.vat_amount > Decimal::ZERO {
+            let vat_account = crate::posting::groups::resolve_vat_output(engine, entity_id, original.customer_id, line.product_id)
+                .await
+                .unwrap_or_else(|| posting.vat_output.clone());
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
+                account_code: vat_account,
                 debit: Some(line.vat_amount),
                 credit: None,
                 currency: original.currency.clone(),
@@ -565,7 +578,7 @@ pub async fn create_estimate(
     // Resolve lines
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -674,7 +687,7 @@ pub async fn update_estimate_draft(
 
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -869,6 +882,7 @@ pub(crate) async fn resolve_invoice_line(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: &CreateInvoiceLineRequest,
+    customer_id: Option<Uuid>,
 ) -> ErpResult<InvoiceLine> {
     let id = Uuid::new_v4();
 
@@ -891,6 +905,23 @@ pub(crate) async fn resolve_invoice_line(
                 .unwrap_or(crate::types::VatTreatment::Standard16)
         });
 
+        // Posting-group derivation: (customer business group × product general
+        // group) → sales account from the matrix. An explicit account_code on the
+        // line still wins (override); otherwise fall back to the product account.
+        let derived_sales = if req.account_code.is_none() {
+            let cust_biz = match customer_id {
+                Some(cid) => crate::posting::groups::customer_general_biz(engine, entity_id, cid).await,
+                None => None,
+            };
+            let prod_group = crate::posting::groups::product_general_group(engine, entity_id, product_id).await;
+            crate::posting::groups::resolve_general(engine, entity_id, cust_biz, prod_group)
+                .await?
+                .map(|g| g.sales_account)
+                .filter(|a| !a.is_empty())
+        } else {
+            None
+        };
+
         Ok(InvoiceLine {
             id,
             product_id: Some(product_id),
@@ -898,7 +929,7 @@ pub(crate) async fn resolve_invoice_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(product.unit_price.unwrap_or(Decimal::ZERO)),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or(product.sales_account),
+            account_code: req.account_code.clone().or(derived_sales).unwrap_or(product.sales_account),
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
@@ -1029,7 +1060,7 @@ pub async fn update_invoice_draft(
 
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -1782,9 +1813,24 @@ pub async fn send_invoice(
     let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex);
     let subject = format!("Invoice {} from {}", invoice.number, org_name);
 
+    // Resolve the tenant's configured channels for InvoiceSent. This is an
+    // explicit user "send" action carrying the invoice PDF, so we honour the
+    // configured channel set but always keep Email (the document is delivered by
+    // email); disabling the event does not block an explicit send.
+    let (_enabled, mut channels) =
+        crate::services::notification_prefs::effective_channels(
+            engine,
+            entity_id,
+            &crate::notifications::NotificationEventType::InvoiceSent,
+        )
+        .await;
+    if !channels.contains(&crate::types::Channel::Email) {
+        channels.push(crate::types::Channel::Email);
+    }
+
     let notif = crate::notifications::SendNotificationRequest {
         event_type: crate::notifications::NotificationEventType::InvoiceSent,
-        channels: vec![crate::types::Channel::Email],
+        channels,
         recipients: vec![recipient.clone()],
         subject: Some(subject),
         body,
@@ -1950,36 +1996,42 @@ pub async fn post_invoice(
         .await?;
 
         if outstanding + invoice.gross_total > credit_limit {
-            // Send notification to Admin users via In-App and Email channels
-            let notification_req = crate::notifications::SendNotificationRequest {
-                event_type: crate::notifications::NotificationEventType::CreditLimitExceeded,
-                channels: vec![
-                    crate::types::Channel::InApp,
-                    crate::types::Channel::Email,
-                ],
-                recipients: vec!["role:Admin".to_string()],
-                subject: Some(format!(
-                    "Credit limit exceeded for customer '{}'",
-                    customer.name
-                )),
-                body: format!(
-                    "Invoice {} (amount {}) would cause customer '{}' to exceed their credit limit of {}. \
-                     Current outstanding: {}. Total if posted: {}.",
-                    invoice.number,
-                    invoice.gross_total,
-                    customer.name,
-                    credit_limit,
-                    outstanding,
-                    outstanding + invoice.gross_total,
-                ),
-                related_type: Some("Invoice".to_string()),
-                related_id: Some(invoice_id),
-                schedule_at: None,
-                attachments: Vec::new(),
-            };
-
-            // Best-effort notification — don't fail the entire operation if notification fails
-            let _ = crate::services::notifications::send_notification(engine, entity_id, notification_req).await;
+            // Consult tenant notification preferences for this (automatic) event.
+            let (enabled, channels) =
+                crate::services::notification_prefs::effective_channels(
+                    engine,
+                    entity_id,
+                    &crate::notifications::NotificationEventType::CreditLimitExceeded,
+                )
+                .await;
+            if enabled && !channels.is_empty() {
+                // Notify Admin users on the configured channels.
+                let notification_req = crate::notifications::SendNotificationRequest {
+                    event_type: crate::notifications::NotificationEventType::CreditLimitExceeded,
+                    channels,
+                    recipients: vec!["role:Admin".to_string()],
+                    subject: Some(format!(
+                        "Credit limit exceeded for customer '{}'",
+                        customer.name
+                    )),
+                    body: format!(
+                        "Invoice {} (amount {}) would cause customer '{}' to exceed their credit limit of {}. \
+                         Current outstanding: {}. Total if posted: {}.",
+                        invoice.number,
+                        invoice.gross_total,
+                        customer.name,
+                        credit_limit,
+                        outstanding,
+                        outstanding + invoice.gross_total,
+                    ),
+                    related_type: Some("Invoice".to_string()),
+                    related_id: Some(invoice_id),
+                    schedule_at: None,
+                    attachments: Vec::new(),
+                };
+                // Best-effort — don't fail the operation if notification fails.
+                let _ = crate::services::notifications::send_notification(engine, entity_id, notification_req).await;
+            }
 
             return Err(ErpError::CreditLimitExceeded {
                 customer_name: customer.name,
@@ -2004,10 +2056,15 @@ pub async fn post_invoice(
     let mut tx = engine.pool().begin().await?;
 
     let mut journal_lines = Vec::new();
+    let posting = engine.posting_for(entity_id).await?;
 
-    // DR Accounts Receivable (total including tax)
+    // DR Accounts Receivable (total including tax). Receivables account is routed
+    // by the customer's business posting group, falling back to the flat setup.
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, invoice.customer_id)
+        .await
+        .unwrap_or_else(|| posting.accounts_receivable.clone());
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
+        account_code: ar_account,
         debit: Some(invoice.gross_total),
         credit: None,
         currency: invoice.currency.clone(),
@@ -2037,10 +2094,14 @@ pub async fn post_invoice(
             dimensions: serde_json::from_value(line.dimensions.clone()).ok(),
         });
 
-        // CR VAT Output (if applicable)
+        // CR VAT Output (if applicable). Output-VAT account is routed by the
+        // customer × product VAT posting groups, falling back to the flat setup.
         if line.vat_amount > Decimal::ZERO {
+            let vat_account = crate::posting::groups::resolve_vat_output(engine, entity_id, invoice.customer_id, line.product_id)
+                .await
+                .unwrap_or_else(|| posting.vat_output.clone());
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
+                account_code: vat_account,
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: invoice.currency.clone(),
@@ -2199,7 +2260,9 @@ pub async fn write_off_invoice(
         });
     }
 
-    let ar_account = engine.posting_for(entity_id).await?.accounts_receivable.clone();
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, invoice.customer_id)
+        .await
+        .unwrap_or(engine.posting_for(entity_id).await?.accounts_receivable.clone());
     let today = Utc::now().date_naive();
     let lines = vec![
         CreateJournalLineRequest {
@@ -2278,6 +2341,19 @@ pub async fn resolve_bill_line(
                 .unwrap_or(crate::types::VatTreatment::Standard16)
         });
 
+        // Posting-group derivation: (vendor business group × product general
+        // group) → purchase account from the matrix. Explicit account_code wins.
+        let derived_purchase = if req.account_code.is_none() {
+            let vend_biz = crate::posting::groups::vendor_general_biz(engine, entity_id, vendor.id).await;
+            let prod_group = crate::posting::groups::product_general_group(engine, entity_id, product_id).await;
+            crate::posting::groups::resolve_general(engine, entity_id, vend_biz, prod_group)
+                .await?
+                .map(|g| g.purchase_account)
+                .filter(|a| !a.is_empty())
+        } else {
+            None
+        };
+
         Ok(InvoiceLine {
             id,
             product_id: Some(product_id),
@@ -2285,7 +2361,7 @@ pub async fn resolve_bill_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(product.unit_price.unwrap_or(Decimal::ZERO)),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or(product.purchase_account),
+            account_code: req.account_code.clone().or(derived_purchase).unwrap_or(product.purchase_account),
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,

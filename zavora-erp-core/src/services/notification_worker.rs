@@ -13,6 +13,7 @@ use uuid::Uuid;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
 use crate::notifications::SendNotificationRequest;
+use crate::services::messaging::{SmsProvider, WhatsAppProvider};
 use crate::types::Channel;
 
 const STREAM_KEY: &str = "erp:notifications";
@@ -21,12 +22,23 @@ const CONSUMER_NAME: &str = "worker-1";
 const MAX_RETRIES: u32 = 3;
 const RETRY_DELAY_SECS: u64 = 2;
 
+/// Delivery transports built once at worker startup and shared across messages.
+/// Each is `None` when its channel is not configured for this deployment, in
+/// which case delivery on that channel reports a clear "not configured" error.
+struct Transports {
+    smtp: Option<AsyncSmtpTransport<Tokio1Executor>>,
+    sms: Option<SmsProvider>,
+    whatsapp: Option<WhatsAppProvider>,
+}
+
 /// SMTP configuration loaded from environment variables.
 struct SmtpConfig {
     host: String,
     port: u16,
     user: Option<String>,
     pass: Option<String>,
+    /// From-address override (per-tenant); falls back to SMTP_FROM/default.
+    from: Option<String>,
 }
 
 impl SmtpConfig {
@@ -43,8 +55,43 @@ impl SmtpConfig {
                 .unwrap_or(587),
             user: std::env::var("SMTP_USER").ok(),
             pass: std::env::var("SMTP_PASS").ok(),
+            from: std::env::var("SMTP_FROM").ok().filter(|v| !v.trim().is_empty()),
         })
     }
+
+    /// Build from a tenant's resolved email provider settings + decrypted secret.
+    /// Expects `settings.host`, optional `settings.port`, `settings.user`,
+    /// `settings.from`; the secret is the SMTP password. Returns `None` if no host.
+    fn from_provider(p: &crate::services::notification_providers::ResolvedProvider) -> Option<Self> {
+        let s = &p.settings;
+        let host = s.get("host").and_then(|v| v.as_str()).map(str::trim).filter(|h| !h.is_empty())?;
+        let port = s.get("port").and_then(|v| v.as_u64()).map(|v| v as u16).unwrap_or(587);
+        let user = s.get("user").and_then(|v| v.as_str()).map(String::from).filter(|v| !v.is_empty());
+        let from = s.get("from").and_then(|v| v.as_str()).map(String::from).filter(|v| !v.is_empty());
+        Some(Self {
+            host: host.to_string(),
+            port,
+            user,
+            pass: p.secret.clone(),
+            from,
+        })
+    }
+}
+
+/// Build an async SMTP transport from a config. Returns `None` on builder error.
+fn smtp_transport_from(config: &SmtpConfig) -> Option<AsyncSmtpTransport<Tokio1Executor>> {
+    let builder = match AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("Failed to create SMTP transport for '{}': {e}", config.host);
+            return None;
+        }
+    };
+    let mut transport = builder.port(config.port);
+    if let (Some(user), Some(pass)) = (config.user.clone(), config.pass.clone()) {
+        transport = transport.credentials(Credentials::new(user, pass));
+    }
+    Some(transport.build())
 }
 
 /// Start the notification worker. This function runs forever, consuming
@@ -75,8 +122,17 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
         }
     }
 
-    // Build SMTP transport once (reused across messages).
-    let smtp_transport = build_smtp_transport();
+    // Build delivery transports once (reused across messages).
+    let smtp = build_smtp_transport();
+    let sms = SmsProvider::from_env();
+    let whatsapp = WhatsAppProvider::from_env();
+    tracing::info!(
+        smtp = smtp.is_some(),
+        sms = sms.is_some(),
+        whatsapp = whatsapp.is_some(),
+        "Notification delivery channels configured"
+    );
+    let transports = Transports { smtp, sms, whatsapp };
 
     tracing::info!("Notification worker ready, listening on '{STREAM_KEY}'");
 
@@ -110,7 +166,7 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
         }
 
         for (message_id, entity_id, request) in &entries {
-            process_message(&pool, &smtp_transport, entity_id, request).await;
+            process_message(&pool, &transports, entity_id, request).await;
 
             // ACK the message regardless of per-recipient outcome (retries are
             // handled within process_message).
@@ -132,7 +188,7 @@ pub async fn run(mut redis_conn: redis::aio::MultiplexedConnection, pool: PgPool
 /// insert a row, attempt delivery with retries, and update status.
 async fn process_message(
     pool: &PgPool,
-    smtp_transport: &Option<AsyncSmtpTransport<Tokio1Executor>>,
+    transports: &Transports,
     entity_id: &Uuid,
     req: &SendNotificationRequest,
 ) {
@@ -178,7 +234,7 @@ async fn process_message(
             let mut delivered = false;
 
             for attempt in 1..=MAX_RETRIES {
-                match deliver(smtp_transport, channel, recipient, req).await {
+                match deliver(pool, transports, entity_id, channel, recipient, req).await {
                     Ok(()) => {
                         delivered = true;
                         break;
@@ -241,47 +297,111 @@ async fn process_message(
 }
 
 /// Attempt delivery for a single (channel, recipient) pair.
-/// Returns `Ok(())` on success or `Err(error_message)` on failure.
+///
+/// Resolves the **tenant's own** provider first (per-message), falling back to
+/// the deployment/env transports when the tenant hasn't configured (or has
+/// disabled) that channel. Returns `Ok(())` on success or `Err(msg)` on failure.
 async fn deliver(
-    smtp_transport: &Option<AsyncSmtpTransport<Tokio1Executor>>,
+    pool: &PgPool,
+    transports: &Transports,
+    entity_id: &Uuid,
     channel: &Channel,
     recipient: &str,
     req: &SendNotificationRequest,
 ) -> Result<(), String> {
+    use crate::services::notification_providers as np;
+
+    // Resolve a per-tenant provider for the external channels.
+    let channel_key = match channel {
+        Channel::Email => "email",
+        Channel::Sms => "sms",
+        Channel::WhatsApp => "whatsapp",
+        Channel::InApp => "in_app",
+    };
+    let tenant = match channel {
+        Channel::InApp => None,
+        _ => np::resolve(pool, *entity_id, channel_key).await.unwrap_or(None),
+    };
+
     match channel {
-        Channel::Email => deliver_email(smtp_transport, recipient, req).await,
-        Channel::InApp => {
-            // InApp notifications are "delivered" by virtue of existing in the
-            // notifications table. No external action needed.
-            Ok(())
+        Channel::Email => {
+            // Tenant SMTP if configured, else the env transport.
+            if let Some(ref p) = tenant {
+                if let Some(cfg) = SmtpConfig::from_provider(p) {
+                    let from = cfg.from.clone();
+                    if let Some(transport) = smtp_transport_from(&cfg) {
+                        return deliver_email_with(&transport, from.as_deref(), recipient, req).await;
+                    }
+                }
+            }
+            let from = std::env::var("SMTP_FROM").ok();
+            match &transports.smtp {
+                Some(t) => deliver_email_with(t, from.as_deref(), recipient, req).await,
+                None => {
+                    tracing::warn!("SMTP not configured (tenant or deployment) for {recipient}");
+                    Err("SMTP not configured".to_string())
+                }
+            }
         }
+        Channel::InApp => Ok(()),
         Channel::Sms => {
-            tracing::warn!("SMS delivery not yet configured for {recipient}");
-            Err("channel not configured".to_string())
+            let body = crate::services::messaging::html_to_text(&req.body);
+            // Tenant Africa's Talking creds if configured, else env provider.
+            let tenant_provider = tenant.as_ref().and_then(|p| {
+                crate::services::messaging::SmsProvider::from_parts(
+                    p.settings.get("username").and_then(|v| v.as_str()).map(String::from),
+                    p.secret.clone(),
+                    p.settings.get("sender_id").and_then(|v| v.as_str()).map(String::from),
+                    p.settings.get("base_url").and_then(|v| v.as_str()).map(String::from),
+                )
+            });
+            if let Some(provider) = tenant_provider {
+                return provider.send(recipient, &body).await;
+            }
+            match &transports.sms {
+                Some(provider) => provider.send(recipient, &body).await,
+                None => {
+                    tracing::warn!("SMS delivery not configured for {recipient}");
+                    Err("SMS channel not configured".to_string())
+                }
+            }
         }
         Channel::WhatsApp => {
-            tracing::warn!("WhatsApp delivery not yet configured for {recipient}");
-            Err("channel not configured".to_string())
+            let body = crate::services::messaging::html_to_text(&req.body);
+            let tenant_provider = tenant.as_ref().and_then(|p| {
+                crate::services::messaging::WhatsAppProvider::from_parts(
+                    p.settings.get("account_sid").and_then(|v| v.as_str()).map(String::from),
+                    p.secret.clone(),
+                    p.settings.get("from").and_then(|v| v.as_str()).map(String::from),
+                    p.settings.get("base_url").and_then(|v| v.as_str()).map(String::from),
+                )
+            });
+            if let Some(provider) = tenant_provider {
+                return provider.send(recipient, &body).await;
+            }
+            match &transports.whatsapp {
+                Some(provider) => provider.send(recipient, &body).await,
+                None => {
+                    tracing::warn!("WhatsApp delivery not configured for {recipient}");
+                    Err("WhatsApp channel not configured".to_string())
+                }
+            }
         }
     }
 }
 
-/// Send an email via SMTP.
-async fn deliver_email(
-    smtp_transport: &Option<AsyncSmtpTransport<Tokio1Executor>>,
+/// Send an email through a resolved SMTP transport, with an optional
+/// from-address override (per-tenant); falls back to `SMTP_FROM` then a default.
+async fn deliver_email_with(
+    transport: &AsyncSmtpTransport<Tokio1Executor>,
+    from_override: Option<&str>,
     recipient: &str,
     req: &SendNotificationRequest,
 ) -> Result<(), String> {
-    let transport = match smtp_transport {
-        Some(t) => t,
-        None => {
-            tracing::warn!("SMTP not configured, cannot deliver email to {recipient}");
-            return Err("SMTP not configured".to_string());
-        }
-    };
-
-    let from_addr = std::env::var("SMTP_FROM")
-        .unwrap_or_else(|_| "noreply@zavora.app".to_string());
+    let from_addr = from_override
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("SMTP_FROM").ok())
+        .unwrap_or_else(|| "noreply@zavora.app".to_string());
 
     let subject = req
         .subject
@@ -340,23 +460,7 @@ async fn deliver_email(
 /// Returns `None` if SMTP is not configured (SMTP_HOST not set).
 fn build_smtp_transport() -> Option<AsyncSmtpTransport<Tokio1Executor>> {
     let config = SmtpConfig::from_env()?;
-
-    let builder = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host);
-    let builder = match builder {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!("Failed to create SMTP transport for '{}': {e}", config.host);
-            return None;
-        }
-    };
-
-    let mut transport = builder.port(config.port);
-
-    if let (Some(user), Some(pass)) = (config.user, config.pass) {
-        transport = transport.credentials(Credentials::new(user, pass));
-    }
-
-    Some(transport.build())
+    smtp_transport_from(&config)
 }
 
 /// Parse Redis XREADGROUP response into a list of (message_id, entity_id, request).
@@ -484,4 +588,48 @@ fn channel_to_str(channel: &Channel) -> &'static str {
         Channel::Sms => "sms",
         Channel::InApp => "in_app",
     }
+}
+
+/// Send a one-off **test message** on a single channel for a tenant, using the
+/// same provider-resolution + delivery path as real notifications (tenant
+/// provider first, env fallback). Used by the admin "Send test" button so an
+/// admin can verify credentials without waiting for a real event.
+///
+/// `channel` is one of `"email" | "sms" | "whatsapp"`. Returns `Ok(())` on a
+/// successful provider send, or `Err(msg)` describing why it failed.
+pub async fn send_test_message(
+    pool: &PgPool,
+    entity_id: Uuid,
+    channel: &str,
+    recipient: &str,
+) -> Result<(), String> {
+    let ch = match channel {
+        "email" => Channel::Email,
+        "sms" => Channel::Sms,
+        "whatsapp" => Channel::WhatsApp,
+        other => return Err(format!("unknown channel '{other}'")),
+    };
+
+    // Build env-fallback transports once (same as the worker does at startup).
+    let transports = Transports {
+        smtp: build_smtp_transport(),
+        sms: SmsProvider::from_env(),
+        whatsapp: WhatsAppProvider::from_env(),
+    };
+
+    let req = SendNotificationRequest {
+        event_type: crate::notifications::NotificationEventType::ScheduledReport,
+        channels: vec![ch.clone()],
+        recipients: vec![recipient.to_string()],
+        subject: Some("Zavora ERP — test notification".to_string()),
+        body: "<p>This is a <strong>test</strong> notification from Zavora ERP. \
+               If you received it, this channel is configured correctly.</p>"
+            .to_string(),
+        related_type: None,
+        related_id: None,
+        schedule_at: None,
+        attachments: Vec::new(),
+    };
+
+    deliver(pool, &transports, &entity_id, &ch, recipient, &req).await
 }

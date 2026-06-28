@@ -201,6 +201,11 @@ async fn main() -> anyhow::Result<()> {
         // Notifications (in-app inbox)
         .route("/api/v1/notifications", get(routes::notifications::list))
         .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
+        .route("/api/v1/notifications/delivery", get(routes::notifications::delivery_list))
+        .route("/api/v1/notifications/delivery/stats", get(routes::notifications::delivery_stats))
+        .route("/api/v1/notification-settings", get(routes::notifications::get_settings).put(routes::notifications::update_settings))
+        .route("/api/v1/notification-providers", get(routes::notifications::get_providers).put(routes::notifications::put_provider))
+        .route("/api/v1/notification-providers/{channel}/test", post(routes::notifications::test_provider))
         .route("/api/v1/notifications/mark-all-read", post(routes::notifications::mark_all_read))
         .route("/api/v1/notifications/{id}/read", axum::routing::patch(routes::notifications::mark_read))
         // Bills
@@ -251,6 +256,13 @@ async fn main() -> anyhow::Result<()> {
         // Audit
         .route("/api/v1/audit", get(routes::audit::query))
         .route("/api/v1/audit/{object_type}/{object_id}", get(routes::audit::for_object))
+        // Posting groups (BC/NetSuite-style matrices)
+        .route("/api/v1/posting-groups", get(routes::posting_groups::get_all))
+        .route("/api/v1/posting-groups/group", post(routes::posting_groups::create_group))
+        .route("/api/v1/posting-groups/assign", post(routes::posting_groups::assign))
+        .route("/api/v1/posting-groups/business-control", post(routes::posting_groups::upsert_business_control))
+        .route("/api/v1/posting-groups/general-matrix", post(routes::posting_groups::upsert_general))
+        .route("/api/v1/posting-groups/vat-matrix", post(routes::posting_groups::upsert_vat))
         // Reports
         .route("/api/v1/reports", post(routes::reports::generate))
         .route("/api/v1/reports/export", post(routes::reports::export))

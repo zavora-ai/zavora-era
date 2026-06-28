@@ -22,6 +22,7 @@ pub mod wht;
 pub mod report_schedules;
 pub mod supplier_credit_notes;
 pub mod payments;
+pub mod posting_groups;
 pub mod transactions;
 pub mod bank;
 pub mod payroll;

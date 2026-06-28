@@ -26,9 +26,10 @@ _Last reconciled against the codebase: 2026-06-28._
   `gross_total` (no line items); bill/CN posting is header-level (one expense
   line), so per-line GL and per-line **dimension capture on the AP side** are
   missing.
-- 🟡 **P2 — Notification delivery.** Events queue to the outbox and the in-app
-  inbox works, but real send-out (SMTP / SMS / WhatsApp) is scaffolded, not wired
-  to a live provider. Scheduled/emailed reports depend on this.
+- ✅ **P2 — Notification delivery.** _(done — moved to CHANGELOG 2026-06-28.)_
+  All channels wired: Email (SMTP/lettre), SMS (Africa's Talking), WhatsApp
+  (Twilio), InApp. Each is env-gated and degrades gracefully when unconfigured;
+  the worker logs which channels are live. Scheduled/emailed reports now deliver.
 - ✅ **P2 — OCR receipt capture.** _(done — moved to CHANGELOG 2026-06-28.)_
   Multipart upload → image stored → pluggable OCR provider → review (per-field
   confidence) → confirm → VAT-inclusive bill. Default provider is manual review
