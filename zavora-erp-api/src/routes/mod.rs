@@ -34,6 +34,7 @@ pub mod reports;
 pub mod agent;
 pub mod receipts;
 pub mod ocr_provider;
+pub mod pdf_text;
 pub mod settings;
 pub mod users;
 pub mod auth_signup;

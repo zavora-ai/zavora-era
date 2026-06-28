@@ -196,11 +196,13 @@ fn ocr_from_text_lines(lines: Vec<(String, f32)>, raw_text: Option<String>) -> O
 
     let overall = lines.iter().map(|(_, c)| c).sum::<f32>() / lines.len() as f32;
 
-    // Vendor: first line that looks like a name (has letters), not a pure
-    // number/date/label line.
+    // Vendor: the first line that looks like a company name — has letters, is not
+    // a money/date line, and is not a generic document heading or a label
+    // ("Invoice", "Bill to", "Page 1 of 2", …). Real merchant names lead the
+    // document but sit just under such headings.
     let (vendor_name, vendor_conf) = lines
         .iter()
-        .find(|(t, _)| t.chars().any(|c| c.is_alphabetic()) && parse_money(t).is_none())
+        .find(|(t, _)| is_vendor_candidate(t))
         .map(|(t, c)| (Some(clean_vendor(t)), Some(*c)))
         .unwrap_or((None, None));
 
@@ -223,7 +225,12 @@ fn ocr_from_text_lines(lines: Vec<(String, f32)>, raw_text: Option<String>) -> O
             if max_amount.map(|(m, _)| amount > m).unwrap_or(true) {
                 max_amount = Some((amount, *conf));
             }
-            if (lower.contains("vat") || lower.contains("tax")) && vat.is_none() {
+            // VAT amount: a "vat"/"tax" line carrying a real amount — but never a
+            // registration line ("VAT number", "PIN", "Tax ID") or a bare rate
+            // ("VAT (16%)"), whose digits are not money.
+            let is_reg_line = lower.contains("number") || lower.contains("reg")
+                || lower.contains("pin") || lower.contains(" id") || lower.contains("no.");
+            if (lower.contains("vat") || lower.contains("tax")) && !is_reg_line && vat.is_none() {
                 vat = Some((amount, *conf));
             }
             // "grand total"/"total" wins over an interim "subtotal".
@@ -251,6 +258,39 @@ fn ocr_from_text_lines(lines: Vec<(String, f32)>, raw_text: Option<String>) -> O
     }
 }
 
+/// True when a line could be a merchant/vendor name: it has letters, is not a
+/// money or pure-number/id line, and is not a generic document heading or label.
+fn is_vendor_candidate(t: &str) -> bool {
+    let trimmed = t.trim();
+    if trimmed.len() < 3 || parse_money(trimmed).is_some() {
+        return false;
+    }
+    // Must contain at least two letters (skip "1", "$", dotted separators).
+    if trimmed.chars().filter(|c| c.is_alphabetic()).count() < 2 {
+        return false;
+    }
+    // Reject date lines ("Nov 30, 2025 …") and punctuation-heavy separator lines
+    // (the dotted rules some invoices print between fields).
+    if parse_any_date(trimmed).is_some() {
+        return false;
+    }
+    let punct = trimmed.chars().filter(|c| matches!(c, '.' | '·' | '-' | '_' | '*')).count();
+    if punct * 3 > trimmed.len() {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    // Generic headings / field labels that precede or surround the real name.
+    const HEADINGS: [&str; 14] = [
+        "invoice", "receipt", "statement", "bill to", "bill from", "page ",
+        "date", "order", "customer", "description", "details", "subtotal",
+        "amount", "tax ",
+    ];
+    if HEADINGS.iter().any(|h| lower.starts_with(h) || lower == h.trim()) {
+        return false;
+    }
+    true
+}
+
 /// Strip common OCR noise from a candidate vendor-name line (leading symbols
 /// like the logo glyph "%", surrounding whitespace).
 fn clean_vendor(s: &str) -> String {
@@ -260,27 +300,40 @@ fn clean_vendor(s: &str) -> String {
 }
 
 
-/// Parse a monetary amount from a text line, tolerating thousands separators,
-/// currency words/symbols, and trailing labels. Returns the last number-like
-/// token on the line (amounts usually sit at the end of a receipt line).
+/// Parse a monetary amount from a text line. Returns the last value that looks
+/// like a **currency amount** — i.e. it has a decimal part (e.g. `8.00`,
+/// `1,525.99`). Requiring the decimal is what keeps invoice numbers
+/// (`5427409035`), VAT/PIN registration ids (`EU372063981`), quantities (`1`),
+/// and percentages (`16`) from being misread as money on real invoices, which
+/// is the single most common OCR extraction error.
 fn parse_money(text: &str) -> Option<rust_decimal::Decimal> {
     use std::str::FromStr;
 
-    // Find candidate numeric tokens (digits, commas, dots).
     let mut best: Option<rust_decimal::Decimal> = None;
     let mut current = String::new();
     let flush = |cur: &mut String, best: &mut Option<rust_decimal::Decimal>| {
         if cur.is_empty() {
             return;
         }
-        let cleaned: String = cur.replace(',', "");
-        // Require at least one digit and avoid bare dots.
-        if cleaned.chars().any(|c| c.is_ascii_digit()) {
+        let token = std::mem::take(cur);
+        let cleaned = token.replace(',', "");
+        // Must be a decimal amount: one dot with 1–2 trailing digits, and a
+        // sane integer length (≤ 9 digits) so a long id with a stray dot can't
+        // slip through.
+        let mut parts = cleaned.split('.');
+        let int_part = parts.next().unwrap_or("");
+        let frac_part = parts.next();
+        let extra = parts.next();
+        let is_amount = extra.is_none()
+            && matches!(frac_part, Some(f) if (1..=2).contains(&f.len()) && f.chars().all(|c| c.is_ascii_digit()))
+            && !int_part.is_empty()
+            && int_part.len() <= 9
+            && int_part.chars().all(|c| c.is_ascii_digit());
+        if is_amount {
             if let Ok(d) = rust_decimal::Decimal::from_str(&cleaned) {
                 *best = Some(d);
             }
         }
-        cur.clear();
     };
 
     for ch in text.chars() {
@@ -397,10 +450,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_money_handles_separators() {
+    fn parse_money_requires_a_decimal_amount() {
         assert_eq!(parse_money("TOTAL 1,234.56"), Some(Decimal::new(1234_56, 2)));
-        assert_eq!(parse_money("Ksh 99"), Some(Decimal::new(99, 0)));
+        assert_eq!(parse_money("Ksh 99.00"), Some(Decimal::new(99_00, 2)));
         assert_eq!(parse_money("no digits here"), None);
+        // The bugs this guards against on real invoices: an invoice number, a
+        // VAT/PIN registration id, a bare percentage, and a quantity must NOT be
+        // read as money (they have no decimal part).
+        assert_eq!(parse_money("Invoice number: 5427409035"), None);
+        assert_eq!(parse_money("VAT number: EU372063981"), None);
+        assert_eq!(parse_money("VAT (16%)"), None);
+        assert_eq!(parse_money("Qty 1"), None);
     }
 
     #[test]

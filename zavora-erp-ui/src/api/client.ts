@@ -300,6 +300,12 @@ export const getBankRecs = (bankAccountId?: string) =>
 export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
 export const deleteBankAccount = (id: string) => api.delete(`/bank-accounts/${id}`);
 export const importStatement = (data: any) => api.post('/bank/import', data);
+// PDF / Excel bank-statement extraction (review-before-commit). Returns candidate rows.
+export const extractBankStatement = (file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post('/bank/import/extract', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 export const reconcileStatement = (id: string) => api.post(`/bank/reconcile/${id}`);
 export const confirmMatch = (data: any) => api.post('/bank/confirm-match', data);
 

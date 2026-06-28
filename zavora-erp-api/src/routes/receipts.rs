@@ -94,13 +94,25 @@ pub async fn capture(
         .await
         .map_err(er)?;
 
-    // Run OCR synchronously via the configured provider.
-    let ocr_input = OcrInput { bytes, mime_type, filename };
-    let result = state
-        .ocr
-        .extract(&ocr_input)
-        .await
-        .unwrap_or_else(|_| zavora_erp_core::services::ocr_provider::empty_result());
+    // Run OCR synchronously. For digital PDFs (most supplier invoices), pull the
+    // text layer locally with Pdfium and apply the receipt heuristics — no sidecar
+    // needed. Fall back to the configured provider for images and scanned PDFs (an
+    // empty local text layer).
+    let is_pdf = mime_type.contains("pdf") || filename.to_lowercase().ends_with(".pdf");
+    let local_pdf_text = if is_pdf { crate::routes::pdf_text::extract_pdf_text(&bytes) } else { None };
+    let result = match local_pdf_text {
+        Some(text) => zavora_erp_core::services::ocr_provider::ocr_from_xberg_rest(
+            &serde_json::json!({ "content": text, "detected_languages": ["eng"] }),
+        ),
+        None => {
+            let ocr_input = OcrInput { bytes, mime_type, filename };
+            state
+                .ocr
+                .extract(&ocr_input)
+                .await
+                .unwrap_or_else(|_| zavora_erp_core::services::ocr_provider::empty_result())
+        }
+    };
 
     // Persist the result + vendor match + status, and audit it.
     ocr::process_ocr_result(&state.engine, entity_id, capture_id, result.clone())
