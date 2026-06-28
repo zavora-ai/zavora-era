@@ -177,8 +177,11 @@ pub async fn create_supplier_credit_note(
 
     // Reversing journal entry: DR AP / CR expense (per line) / CR VAT input.
     let mut je_lines: Vec<CreateJournalLineRequest> = Vec::new();
+    let ap_account = crate::posting::groups::resolve_payables(engine, entity_id, req.vendor_id)
+        .await
+        .unwrap_or_else(|| posting.accounts_payable.clone());
     je_lines.push(CreateJournalLineRequest {
-        account_code: posting.accounts_payable.clone(),
+        account_code: ap_account,
         debit: Some(gross_total),
         credit: None,
         currency: currency.clone(),
@@ -197,8 +200,11 @@ pub async fn create_supplier_credit_note(
             dimensions: None,
         });
         if line.vat_amount > Decimal::ZERO {
+            let vat_account = crate::posting::groups::resolve_vat_input(engine, entity_id, req.vendor_id, line.product_id)
+                .await
+                .unwrap_or_else(|| posting.vat_input.clone());
             je_lines.push(CreateJournalLineRequest {
-                account_code: posting.vat_input.clone(),
+                account_code: vat_account,
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: currency.clone(),

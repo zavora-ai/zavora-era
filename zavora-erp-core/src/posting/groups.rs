@@ -99,6 +99,54 @@ pub async fn product_general_group(engine: &ErpEngine, entity_id: Uuid, product_
         .bind(product_id).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten()
 }
 
+pub async fn customer_vat_biz(engine: &ErpEngine, entity_id: Uuid, customer_id: Uuid) -> Option<Uuid> {
+    sqlx::query_scalar("SELECT vat_business_group_id FROM customers WHERE id = $1 AND entity_id = $2")
+        .bind(customer_id).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten()
+}
+pub async fn vendor_vat_biz(engine: &ErpEngine, entity_id: Uuid, vendor_id: Uuid) -> Option<Uuid> {
+    sqlx::query_scalar("SELECT vat_business_group_id FROM vendors WHERE id = $1 AND entity_id = $2")
+        .bind(vendor_id).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten()
+}
+pub async fn product_vat_group(engine: &ErpEngine, entity_id: Uuid, product_id: Uuid) -> Option<Uuid> {
+    sqlx::query_scalar("SELECT vat_product_group_id FROM products WHERE id = $1 AND entity_id = $2")
+        .bind(product_id).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten()
+}
+
+/// Receivables (A/R) account for a customer, via its general business group's
+/// control account. `None` → caller falls back to the per-customer / flat account.
+pub async fn resolve_receivables(engine: &ErpEngine, entity_id: Uuid, customer_id: Uuid) -> Option<String> {
+    let biz = customer_general_biz(engine, entity_id, customer_id).await?;
+    let acct: Option<String> = sqlx::query_scalar(
+        "SELECT receivables_account FROM general_business_groups WHERE id = $1 AND entity_id = $2",
+    ).bind(biz).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten();
+    acct.filter(|a| !a.is_empty())
+}
+
+/// Payables (A/P) account for a vendor, via its general business group.
+pub async fn resolve_payables(engine: &ErpEngine, entity_id: Uuid, vendor_id: Uuid) -> Option<String> {
+    let biz = vendor_general_biz(engine, entity_id, vendor_id).await?;
+    let acct: Option<String> = sqlx::query_scalar(
+        "SELECT payables_account FROM general_business_groups WHERE id = $1 AND entity_id = $2",
+    ).bind(biz).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten();
+    acct.filter(|a| !a.is_empty())
+}
+
+/// Output VAT account for a sale (customer VAT business × product VAT product).
+pub async fn resolve_vat_output(engine: &ErpEngine, entity_id: Uuid, customer_id: Uuid, product_id: Option<Uuid>) -> Option<String> {
+    let prod = match product_id { Some(p) => product_vat_group(engine, entity_id, p).await, None => None };
+    let biz = customer_vat_biz(engine, entity_id, customer_id).await;
+    resolve_vat(engine, entity_id, biz, prod).await.ok().flatten()
+        .map(|v| v.vat_output_account).filter(|a| !a.is_empty())
+}
+
+/// Input VAT account for a purchase (vendor VAT business × product VAT product).
+pub async fn resolve_vat_input(engine: &ErpEngine, entity_id: Uuid, vendor_id: Uuid, product_id: Option<Uuid>) -> Option<String> {
+    let prod = match product_id { Some(p) => product_vat_group(engine, entity_id, p).await, None => None };
+    let biz = vendor_vat_biz(engine, entity_id, vendor_id).await;
+    resolve_vat(engine, entity_id, biz, prod).await.ok().flatten()
+        .map(|v| v.vat_input_account).filter(|a| !a.is_empty())
+}
+
 /// Idempotently seed a tenant's default posting groups + matrices from its flat
 /// `PostingSetup`, and assign sane defaults to any unassigned masters. A no-op
 /// once groups exist, so it is safe to call on every startup and after signup.
@@ -117,6 +165,22 @@ pub async fn ensure_default_posting_groups(engine: &ErpEngine, entity_id: Uuid) 
     // Always assign defaults to any master missing a group (covers masters
     // created after the initial seed). Idempotent: only touches NULL rows.
     assign_default_groups(engine, entity_id).await?;
+    // Backfill the DOMESTIC group's A/R and A/P control accounts from the flat
+    // posting setup for tenants seeded before migration 030. Only touches NULL
+    // rows, so a tenant that has customised these is never overwritten.
+    let ps = engine.posting_for(entity_id).await?;
+    sqlx::query(
+        "UPDATE general_business_groups
+            SET receivables_account = COALESCE(receivables_account, $1),
+                payables_account    = COALESCE(payables_account, $2)
+          WHERE entity_id = $3 AND code = 'DOMESTIC'
+            AND (receivables_account IS NULL OR payables_account IS NULL)",
+    )
+    .bind(&ps.accounts_receivable)
+    .bind(&ps.accounts_payable)
+    .bind(entity_id)
+    .execute(engine.pool())
+    .await?;
     Ok(())
 }
 
@@ -153,8 +217,8 @@ async fn seed_groups(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<()> {
     let gen_biz = Uuid::new_v4();
     let gen_goods = Uuid::new_v4();
     let gen_services = Uuid::new_v4();
-    sqlx::query("INSERT INTO general_business_groups (id, entity_id, code, name) VALUES ($1,$2,'DOMESTIC','Domestic')")
-        .bind(gen_biz).bind(entity_id).execute(engine.pool()).await?;
+    sqlx::query("INSERT INTO general_business_groups (id, entity_id, code, name, receivables_account, payables_account) VALUES ($1,$2,'DOMESTIC','Domestic',$3,$4)")
+        .bind(gen_biz).bind(entity_id).bind(&ps.accounts_receivable).bind(&ps.accounts_payable).execute(engine.pool()).await?;
     sqlx::query("INSERT INTO general_product_groups (id, entity_id, code, name) VALUES ($1,$2,'GOODS','Goods'),($3,$2,'SERVICES','Services')")
         .bind(gen_goods).bind(entity_id).bind(gen_services).execute(engine.pool()).await?;
     for prod in [gen_goods, gen_services] {

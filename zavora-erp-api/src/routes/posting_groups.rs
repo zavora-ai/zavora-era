@@ -26,7 +26,7 @@ pub async fn get_all(
     let vat_business = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, code, name FROM vat_business_groups WHERE entity_id=$1 ORDER BY code) t", e).await;
     let vat_product = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, code, name FROM vat_product_groups WHERE entity_id=$1 ORDER BY code) t", e).await;
     let vat_matrix = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, vat_biz_group_id, vat_prod_group_id, vat_rate, vat_output_account, vat_input_account FROM vat_posting_matrix WHERE entity_id=$1) t", e).await;
-    let general_business = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, code, name FROM general_business_groups WHERE entity_id=$1 ORDER BY code) t", e).await;
+    let general_business = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, code, name, receivables_account, payables_account FROM general_business_groups WHERE entity_id=$1 ORDER BY code) t", e).await;
     let general_product = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, code, name FROM general_product_groups WHERE entity_id=$1 ORDER BY code) t", e).await;
     let general_matrix = rows(pool, "SELECT to_jsonb(t) FROM (SELECT id, gen_biz_group_id, gen_prod_group_id, sales_account, purchase_account, cogs_account FROM general_posting_matrix WHERE entity_id=$1) t", e).await;
 
@@ -86,6 +86,31 @@ pub async fn assign(
     };
     let sql = format!("UPDATE {table} SET {gen_col}=$1, {vat_col}=$2 WHERE id=$3 AND entity_id=$4");
     sqlx::query(&sql).bind(r.general_group_id).bind(r.vat_group_id).bind(r.id).bind(ctx.entity_id)
+        .execute(state.engine.pool()).await
+        .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)).into_response())?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct BizControlReq {
+    pub gen_biz_group_id: Uuid,
+    pub receivables_account: Option<String>,
+    pub payables_account: Option<String>,
+}
+
+/// POST /posting-groups/business-control — set the A/R and A/P control accounts
+/// for a general business posting group (BC "specific posting groups"). Empty
+/// string clears the account so posting falls back to the flat setup.
+pub async fn upsert_business_control(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(r): Json<BizControlReq>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
+    let norm = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
+    sqlx::query(
+        "UPDATE general_business_groups SET receivables_account=$1, payables_account=$2 WHERE id=$3 AND entity_id=$4",
+    ).bind(norm(r.receivables_account)).bind(norm(r.payables_account)).bind(r.gen_biz_group_id).bind(ctx.entity_id)
         .execute(state.engine.pool()).await
         .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)).into_response())?;
     Ok(Json(serde_json::json!({ "ok": true })))

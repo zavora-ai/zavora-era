@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPostingGroups, createPostingGroup, upsertGeneralMatrix, upsertVatMatrix, getAccounts } from '../../api/client';
+import { getPostingGroups, createPostingGroup, upsertGeneralMatrix, upsertVatMatrix, upsertBusinessControl, getAccounts } from '../../api/client';
 import type { Account } from '../../types';
 import { Plus, Info } from 'lucide-react';
 
 interface Group { id: string; code: string; name: string }
+interface BizGroup extends Group { receivables_account?: string; payables_account?: string }
 interface GenCell { gen_biz_group_id: string; gen_prod_group_id: string; sales_account?: string; purchase_account?: string; cogs_account?: string }
 interface VatCell { vat_biz_group_id: string; vat_prod_group_id: string; vat_rate: string | number; vat_output_account?: string; vat_input_account?: string }
 interface PostingGroups {
   vat_business: Group[]; vat_product: Group[]; vat_matrix: VatCell[];
-  general_business: Group[]; general_product: Group[]; general_matrix: GenCell[];
+  general_business: BizGroup[]; general_product: Group[]; general_matrix: GenCell[];
 }
 
 export default function PostingGroupsTab() {
@@ -20,6 +21,7 @@ export default function PostingGroupsTab() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['posting-groups'] });
   const genMut = useMutation({ mutationFn: upsertGeneralMatrix, onSuccess: invalidate });
   const vatMut = useMutation({ mutationFn: upsertVatMatrix, onSuccess: invalidate });
+  const ctrlMut = useMutation({ mutationFn: upsertBusinessControl, onSuccess: invalidate });
   const groupMut = useMutation({ mutationFn: createPostingGroup, onSuccess: invalidate });
 
   if (isLoading || !data) return <div className="p-6 text-sm text-gray-400">Loading posting groups…</div>;
@@ -62,6 +64,32 @@ export default function PostingGroupsTab() {
           so you don't pick an account on every line. A line can still override the derived account.
         </span>
       </div>
+
+      {/* Control accounts per business group (A/R, A/P) */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-semibold text-gray-900">Control Accounts <span className="text-gray-400 font-normal text-sm">(receivables / payables per business group)</span></h3>
+          <AddGroup kind="general_business" label="Business group" />
+        </div>
+        <p className="text-xs text-gray-500 mb-2">Customers and vendors post their A/R and A/P to the control account of their business group, so you can keep e.g. domestic and export balances on separate accounts. Blank = default account.</p>
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-gray-50 text-xs uppercase text-gray-500">
+              <th className="px-3 py-2 text-left">Business group</th>
+              <th className="px-3 py-2 text-left">Receivables (A/R)</th><th className="px-3 py-2 text-left">Payables (A/P)</th>
+            </tr></thead>
+            <tbody className="divide-y">
+              {data.general_business.map(b => (
+                <tr key={b.id}>
+                  <td className="px-3 py-1.5 font-medium">{b.code} <span className="text-gray-400 font-normal">{b.name}</span></td>
+                  <td className="px-3 py-1.5"><AccountSelect value={b.receivables_account} onChange={(v) => ctrlMut.mutate({ gen_biz_group_id: b.id, receivables_account: v, payables_account: b.payables_account })} /></td>
+                  <td className="px-3 py-1.5"><AccountSelect value={b.payables_account} onChange={(v) => ctrlMut.mutate({ gen_biz_group_id: b.id, receivables_account: b.receivables_account, payables_account: v })} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* General matrix */}
       <section>

@@ -336,10 +336,15 @@ pub async fn create_credit_note(
 
     // Create reversal GL entry: DR Revenue / DR VAT Output / CR AR
     let mut journal_lines = Vec::new();
+    let posting = engine.posting_for(entity_id).await?;
 
-    // CR Accounts Receivable (reduce AR)
+    // CR Accounts Receivable (reduce AR) — routed by the customer's business
+    // posting group, falling back to the flat setup.
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, original.customer_id)
+        .await
+        .unwrap_or_else(|| posting.accounts_receivable.clone());
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
+        account_code: ar_account,
         debit: None,
         credit: Some(gross_total),
         currency: original.currency.clone(),
@@ -361,8 +366,11 @@ pub async fn create_credit_note(
         });
 
         if line.vat_amount > Decimal::ZERO {
+            let vat_account = crate::posting::groups::resolve_vat_output(engine, entity_id, original.customer_id, line.product_id)
+                .await
+                .unwrap_or_else(|| posting.vat_output.clone());
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
+                account_code: vat_account,
                 debit: Some(line.vat_amount),
                 credit: None,
                 currency: original.currency.clone(),
@@ -2027,10 +2035,15 @@ pub async fn post_invoice(
     let mut tx = engine.pool().begin().await?;
 
     let mut journal_lines = Vec::new();
+    let posting = engine.posting_for(entity_id).await?;
 
-    // DR Accounts Receivable (total including tax)
+    // DR Accounts Receivable (total including tax). Receivables account is routed
+    // by the customer's business posting group, falling back to the flat setup.
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, invoice.customer_id)
+        .await
+        .unwrap_or_else(|| posting.accounts_receivable.clone());
     journal_lines.push(CreateJournalLineRequest {
-        account_code: engine.posting_for(entity_id).await?.accounts_receivable.clone(),
+        account_code: ar_account,
         debit: Some(invoice.gross_total),
         credit: None,
         currency: invoice.currency.clone(),
@@ -2060,10 +2073,14 @@ pub async fn post_invoice(
             dimensions: serde_json::from_value(line.dimensions.clone()).ok(),
         });
 
-        // CR VAT Output (if applicable)
+        // CR VAT Output (if applicable). Output-VAT account is routed by the
+        // customer × product VAT posting groups, falling back to the flat setup.
         if line.vat_amount > Decimal::ZERO {
+            let vat_account = crate::posting::groups::resolve_vat_output(engine, entity_id, invoice.customer_id, line.product_id)
+                .await
+                .unwrap_or_else(|| posting.vat_output.clone());
             journal_lines.push(CreateJournalLineRequest {
-                account_code: engine.posting_for(entity_id).await?.vat_output.clone(),
+                account_code: vat_account,
                 debit: None,
                 credit: Some(line.vat_amount),
                 currency: invoice.currency.clone(),
@@ -2222,7 +2239,9 @@ pub async fn write_off_invoice(
         });
     }
 
-    let ar_account = engine.posting_for(entity_id).await?.accounts_receivable.clone();
+    let ar_account = crate::posting::groups::resolve_receivables(engine, entity_id, invoice.customer_id)
+        .await
+        .unwrap_or(engine.posting_for(entity_id).await?.accounts_receivable.clone());
     let today = Utc::now().date_naive();
     let lines = vec![
         CreateJournalLineRequest {

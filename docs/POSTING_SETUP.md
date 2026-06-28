@@ -52,14 +52,20 @@ correctable in the Posting Accounts screen. Recommended targets: `1700`
 (Unapplied Customer Payments) / `9100`, and `3600` / `9110` for vendor credits.
 Splitting customer vs vendor unapplied accounts is part of Phase 2.
 
+> **Posting groups build on this.** The dimension-aware layer (business/product/VAT
+> groups → revenue, COGS, A/R, A/P, VAT output/input by trade context) is documented
+> in **[POSTING_GROUPS.md](./POSTING_GROUPS.md)**. This flat setup remains the
+> guaranteed fallback whenever a group account is unset.
+
 ## Roadmap
 
 - **Phase 1 (done):** flat posting setup + resolver wired into all posting paths.
 - **Phase 3 (done):** editable in Settings → Posting Accounts, live reload.
-- **Phase 2 (next):** posting-group dimensions (Customer / Vendor / Product /
+- **Phase 2 (done):** posting-group dimensions (Customer / Vendor / Product /
   VAT Business / VAT Product) resolved through setup matrices, so accounts vary
   by trade context (local/export) and item category, including VAT rate +
-  output/input account per VAT combination.
+  output/input account per VAT combination — see
+  [POSTING_GROUPS.md](./POSTING_GROUPS.md).
 - **Phase 4:** migrate master-record account fields (`customer.ar_account`,
   `vendor.ap_account`, `product.sales_account/purchase_account`, inventory GL
   accounts) onto posting-group references with backward compatibility.

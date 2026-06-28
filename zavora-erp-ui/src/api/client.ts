@@ -145,6 +145,8 @@ export const upsertGeneralMatrix = (data: { gen_biz_group_id: string; gen_prod_g
   api.post('/posting-groups/general-matrix', data);
 export const upsertVatMatrix = (data: { vat_biz_group_id: string; vat_prod_group_id: string; vat_rate: number; vat_output_account?: string; vat_input_account?: string }) =>
   api.post('/posting-groups/vat-matrix', data);
+export const upsertBusinessControl = (data: { gen_biz_group_id: string; receivables_account?: string; payables_account?: string }) =>
+  api.post('/posting-groups/business-control', data);
 export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
   api.post('/consolidation/trial-balance', data);
 export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>

@@ -255,6 +255,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/posting-groups", get(routes::posting_groups::get_all))
         .route("/api/v1/posting-groups/group", post(routes::posting_groups::create_group))
         .route("/api/v1/posting-groups/assign", post(routes::posting_groups::assign))
+        .route("/api/v1/posting-groups/business-control", post(routes::posting_groups::upsert_business_control))
         .route("/api/v1/posting-groups/general-matrix", post(routes::posting_groups::upsert_general))
         .route("/api/v1/posting-groups/vat-matrix", post(routes::posting_groups::upsert_vat))
         // Reports
