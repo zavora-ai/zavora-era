@@ -188,6 +188,11 @@ export const deleteInvoice = (id: string) => api.delete(`/invoices/${id}`);
 export const postInvoice = (id: string) => api.post(`/invoices/${id}/post`);
 export const sendInvoice = (id: string, data?: any) => api.post(`/invoices/${id}/send`, data || {});
 export const getInvoiceTemplates = () => api.get('/invoice-templates');
+/** Fetch the shared invoice document (source of truth for screen + PDF). */
+export const getInvoiceDocumentHtml = (id: string) =>
+  api.get(`/invoices/${id}/document`, { params: { format: 'html' }, responseType: 'text' });
+export const getInvoiceDocumentPdf = (id: string) =>
+  api.get(`/invoices/${id}/document`, { params: { format: 'pdf' }, responseType: 'blob' });
 export const writeOffInvoice = (id: string, data: { expense_account: string; amount?: number; reason?: string }) =>
   api.post(`/invoices/${id}/write-off`, data);
 

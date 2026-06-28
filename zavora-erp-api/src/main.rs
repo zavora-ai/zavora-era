@@ -171,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
         // Invoices
         .route("/api/v1/invoices", get(routes::invoices::list).post(routes::invoices::create))
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_one).put(routes::invoices::update).delete(routes::invoices::delete))
+        .route("/api/v1/invoices/{id}/document", get(routes::invoices::document))
         .route("/api/v1/invoices/{id}/post", post(routes::invoices::post_invoice))
         .route("/api/v1/invoices/{id}/send", post(routes::invoices::send))
         .route("/api/v1/invoices/{id}/write-off", post(routes::invoices::write_off))

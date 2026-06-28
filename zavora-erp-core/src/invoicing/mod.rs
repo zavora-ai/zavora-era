@@ -5,6 +5,8 @@ pub mod credit_note;
 pub mod template;
 pub mod line;
 pub mod pdf;
+pub mod document;
+pub mod htmlpdf;
 
 pub use invoice::*;
 pub use estimate::*;

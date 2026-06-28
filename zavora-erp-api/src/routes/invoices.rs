@@ -421,3 +421,57 @@ pub async fn delete_recurring(
     }
     Ok(Json(serde_json::json!({ "status": "deleted", "id": id })))
 }
+
+#[derive(serde::Deserialize)]
+pub struct DocumentQuery {
+    /// "html" (default) for the on-screen/iframe document, or "pdf" for download.
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+/// GET /invoices/{id}/document?format=html|pdf
+///
+/// The single source of truth for the invoice document. `html` returns the same
+/// markup shown on screen; `pdf` returns that exact HTML printed to PDF (headless
+/// Chrome, with a hand-built fallback). The emailed attachment uses the same
+/// renderer, so screen == download == email.
+pub async fn document(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    axum::extract::Query(q): axum::extract::Query<DocumentQuery>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let want_pdf = q.format.as_deref() == Some("pdf");
+
+    if want_pdf {
+        match svc::invoice_document_pdf(&state.engine, ctx.entity_id, id).await {
+            Ok((bytes, number)) => {
+                // Name the file by the invoice number (e.g. INV-2026-0004.pdf),
+                // keeping only filename-safe characters.
+                let safe: String = number
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+                    .collect();
+                let filename = if safe.is_empty() { format!("invoice-{id}") } else { safe };
+                (
+                    [
+                        (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
+                        (
+                            axum::http::header::CONTENT_DISPOSITION,
+                            format!("inline; filename=\"{filename}.pdf\""),
+                        ),
+                    ],
+                    bytes,
+                )
+                    .into_response()
+            }
+            Err(e) => err_response(e).into_response(),
+        }
+    } else {
+        match svc::invoice_document_html(&state.engine, ctx.entity_id, id).await {
+            Ok(html) => axum::response::Html(html).into_response(),
+            Err(e) => err_response(e).into_response(),
+        }
+    }
+}

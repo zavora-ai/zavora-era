@@ -1162,6 +1162,186 @@ pub async fn mark_invoice_sent(
     Ok(())
 }
 
+/// Build the shared invoice document model from the database. This is the single
+/// source of truth used for the on-screen preview, the downloaded PDF, and the
+/// emailed PDF — so all three are identical.
+pub async fn build_invoice_document(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<crate::invoicing::document::InvoiceDocument> {
+    use crate::invoicing::document::{InvoiceDocLine, InvoiceDocument};
+
+    let invoice = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    let lines = sqlx::query_as::<_, InvoiceLineRow>(
+        "SELECT * FROM invoice_lines WHERE invoice_id = $1",
+    )
+    .bind(invoice_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let template = load_template(engine, entity_id, invoice.template_id).await?;
+    let (primary_color, footer_text) = match &template {
+        Some(t) => (t.primary_color.clone(), t.footer_text.clone()),
+        None => ("#1a56db".to_string(), None),
+    };
+
+    // Org/branding from settings.
+    let (org_name, kra_pin, vat_number, branding_json): (Option<String>, Option<String>, Option<String>, Option<serde_json::Value>) =
+        sqlx::query_as(
+            "SELECT organization_name, kra_pin, NULL::text, branding FROM entity_settings WHERE entity_id = $1",
+        )
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?
+        .unwrap_or((None, None, None, None));
+
+    // Branding may carry richer fields (logo, address, email, phone, vat).
+    let branding = branding_json.unwrap_or_default();
+    let bget = |k: &str| branding.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let logo_url = bget("logo_url");
+    let org_address = bget("address");
+    let org_email = bget("email");
+    let org_phone = bget("phone");
+    let org_vat = vat_number.or_else(|| bget("vat_number"));
+    let footer_text = footer_text.or_else(|| bget("footer_text"));
+    let org_name = bget("company_name").or(org_name).unwrap_or_else(|| "Your Company".to_string());
+
+    // Customer address (stored as JSON).
+    let customer_address = customer.as_ref().and_then(|c| {
+        c.address.as_ref().and_then(|a| {
+            let parts: Vec<String> = ["line1", "line2", "city", "country"]
+                .iter()
+                .filter_map(|k| a.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()))
+                .collect();
+            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+        })
+    });
+
+    let is_credit = invoice.invoice_type == "credit_note";
+    let is_draft = invoice.status == "draft";
+    let title = if is_credit { "CREDIT NOTE" } else if is_draft { "PROFORMA INVOICE" } else { "TAX INVOICE" };
+
+    let etims_number = if invoice.etims_status == "transmitted" { invoice.etims_invoice_number.clone() } else { None };
+
+    Ok(InvoiceDocument {
+        org_name,
+        org_kra_pin: kra_pin,
+        org_vat_number: org_vat,
+        org_address,
+        org_email,
+        org_phone,
+        logo_url,
+        primary_color,
+        footer_text,
+        title: title.to_string(),
+        number: invoice.number.clone(),
+        issue_date: invoice.issue_date.to_string(),
+        due_date: invoice.due_date.to_string(),
+        currency: invoice.currency.clone(),
+        etims_number,
+        customer_name: customer.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| invoice.customer_id.to_string()),
+        customer_address,
+        customer_kra_pin: customer.as_ref().and_then(|c| c.kra_pin.clone()),
+        lines: lines.iter().map(|l| InvoiceDocLine {
+            description: l.description.clone(),
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            vat_amount: l.vat_amount,
+            line_total: l.line_total,
+        }).collect(),
+        subtotal: invoice.subtotal,
+        discount_total: invoice.discount_total,
+        tax_total: invoice.tax_total,
+        gross_total: invoice.gross_total,
+        amount_paid: invoice.amount_paid,
+        balance_due: invoice.balance_due,
+        notes: invoice.notes.clone(),
+    })
+}
+
+/// Render the shared invoice document as HTML (source of truth for on-screen).
+pub async fn invoice_document_html(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<String> {
+    let doc = build_invoice_document(engine, entity_id, invoice_id).await?;
+    Ok(crate::invoicing::document::render_invoice_html(&doc))
+}
+
+/// Render the shared invoice document as PDF. Prefers headless-Chrome conversion
+/// of the exact HTML (so it matches the screen); falls back to the lightweight
+/// hand-built PDF if Chrome is unavailable. Returns (pdf_bytes, accent_hex).
+pub async fn invoice_document_pdf(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<(Vec<u8>, String)> {
+    let doc = build_invoice_document(engine, entity_id, invoice_id).await?;
+    let accent = doc.primary_color.clone();
+    let number = doc.number.clone();
+    let html = crate::invoicing::document::render_invoice_html(&doc);
+
+    // Chrome conversion can block; run it on a blocking thread.
+    let html_clone = html.clone();
+    let pdf = tokio::task::spawn_blocking(move || crate::invoicing::htmlpdf::html_to_pdf(&html_clone))
+        .await
+        .ok()
+        .flatten();
+
+    let bytes = match pdf {
+        Some(b) => b,
+        None => {
+            // Fallback: hand-built PDF from the same data.
+            tracing::warn!("Chrome unavailable; using fallback PDF renderer for invoice {invoice_id}");
+            let fb = crate::invoicing::pdf::InvoicePdfData {
+                org_name: doc.org_name.clone(),
+                invoice_number: doc.number.clone(),
+                invoice_type_label: doc.title.clone(),
+                issue_date: doc.issue_date.clone(),
+                due_date: doc.due_date.clone(),
+                currency: doc.currency.clone(),
+                customer_name: doc.customer_name.clone(),
+                customer_email: None,
+                lines: doc.lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    line_total: l.line_total,
+                }).collect(),
+                subtotal: doc.subtotal,
+                discount_total: doc.discount_total,
+                tax_total: doc.tax_total,
+                gross_total: doc.gross_total,
+                amount_paid: doc.amount_paid,
+                balance_due: doc.balance_due,
+                notes: doc.notes.clone(),
+                footer_text: doc.footer_text.clone(),
+                accent_rgb: crate::invoicing::pdf::parse_hex_color(&accent),
+            };
+            crate::invoicing::pdf::render_invoice_pdf(&fb)
+        }
+    };
+    Ok((bytes, number))
+}
+
 /// Send an invoice to its customer by email — a formatted HTML message with the
 /// invoice PDF attached — and stamp `sent_at`. The PDF is rendered with the
 /// chosen template (request `template_id` → invoice's template → entity default
@@ -1234,45 +1414,12 @@ pub async fn send_invoice(
     .flatten()
     .unwrap_or_else(|| "Your Company".to_string());
 
-    // Build the PDF.
-    let lines = sqlx::query_as::<_, InvoiceLineRow>(
-        "SELECT * FROM invoice_lines WHERE invoice_id = $1",
-    )
-    .bind(invoice_id)
-    .fetch_all(engine.pool())
-    .await?;
-
-    let (accent_hex, footer_text) = match &template {
-        Some(t) => (t.primary_color.clone(), t.footer_text.clone()),
-        None => ("#1a56db".to_string(), None),
+    // Build the shared document PDF (same renderer as on-screen + download).
+    let (pdf_bytes, _accent_hex) = invoice_document_pdf(engine, entity_id, invoice_id).await?;
+    let accent_hex = match &template {
+        Some(t) => t.primary_color.clone(),
+        None => "#1a56db".to_string(),
     };
-
-    let pdf_data = crate::invoicing::pdf::InvoicePdfData {
-        org_name: org_name.clone(),
-        invoice_number: invoice.number.clone(),
-        invoice_type_label: if invoice.invoice_type == "credit_note" { "Credit Note".to_string() } else { "Tax Invoice".to_string() },
-        issue_date: invoice.issue_date.to_string(),
-        due_date: invoice.due_date.to_string(),
-        currency: invoice.currency.clone(),
-        customer_name: customer.name.clone(),
-        customer_email: Some(recipient.clone()),
-        lines: lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
-            description: l.description.clone(),
-            quantity: l.quantity,
-            unit_price: l.unit_price,
-            line_total: l.line_total,
-        }).collect(),
-        subtotal: invoice.subtotal,
-        discount_total: invoice.discount_total,
-        tax_total: invoice.tax_total,
-        gross_total: invoice.gross_total,
-        amount_paid: invoice.amount_paid,
-        balance_due: invoice.balance_due,
-        notes: invoice.notes.clone(),
-        footer_text,
-        accent_rgb: crate::invoicing::pdf::parse_hex_color(&accent_hex),
-    };
-    let pdf_bytes = crate::invoicing::pdf::render_invoice_pdf(&pdf_data);
     let pdf_b64 = {
         use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
         B64.encode(&pdf_bytes)
