@@ -1460,6 +1460,185 @@ pub async fn estimate_document_pdf(
     Ok((bytes, number))
 }
 
+/// Build the shared document model for the **next invoice a recurring template
+/// will generate** — a proforma preview using the template lines, the customer,
+/// and the next scheduled run date. Totals are computed the same way as a real
+/// invoice (line total pre-VAT, VAT per line treatment).
+pub async fn build_recurring_document(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    recurring_id: Uuid,
+) -> ErpResult<crate::invoicing::document::InvoiceDocument> {
+    use crate::invoicing::document::{InvoiceDocLine, InvoiceDocument};
+    use crate::invoicing::recurring::RecurringInvoiceRow;
+    use crate::types::VatTreatment;
+
+    let rec = sqlx::query_as::<_, RecurringInvoiceRow>(
+        "SELECT * FROM recurring_invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(recurring_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "RecurringInvoice".to_string(), id: recurring_id })?;
+
+    let template: crate::invoicing::CreateInvoiceRequest =
+        serde_json::from_value(rec.template.clone())
+            .map_err(|e| ErpError::ValidationFailed { message: format!("Invalid recurring template: {e}") })?;
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(rec.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    // Compute lines + totals (pre-VAT line total, VAT per line treatment).
+    let mut doc_lines = Vec::new();
+    let (mut subtotal, mut tax_total) = (Decimal::ZERO, Decimal::ZERO);
+    for l in &template.lines {
+        let unit = l.unit_price.unwrap_or(Decimal::ZERO);
+        let gross = l.quantity * unit;
+        let disc = l.discount_percent.unwrap_or(Decimal::ZERO) / Decimal::new(100, 0);
+        let line_total = (gross - gross * disc).round_dp(2);
+        let rate = l.vat_treatment.clone().unwrap_or(VatTreatment::Standard16).rate();
+        let vat_amount = (line_total * rate).round_dp(2);
+        subtotal += line_total;
+        tax_total += vat_amount;
+        doc_lines.push(InvoiceDocLine {
+            description: l.description.clone().unwrap_or_default(),
+            quantity: l.quantity,
+            unit_price: unit,
+            vat_amount,
+            line_total,
+        });
+    }
+    let gross_total = subtotal + tax_total;
+
+    // Branding from settings.
+    let (org_name, kra_pin, _vat, branding_json): (Option<String>, Option<String>, Option<String>, Option<serde_json::Value>) =
+        sqlx::query_as("SELECT organization_name, kra_pin, NULL::text, branding FROM entity_settings WHERE entity_id = $1")
+            .bind(entity_id)
+            .fetch_optional(engine.pool())
+            .await?
+            .unwrap_or((None, None, None, None));
+    let branding = branding_json.unwrap_or_default();
+    let bget = |k: &str| branding.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let org_name = bget("company_name").or(org_name).unwrap_or_else(|| "Your Company".to_string());
+
+    let customer_address = customer.as_ref().and_then(|c| {
+        c.address.as_ref().and_then(|a| {
+            let parts: Vec<String> = ["line1", "line2", "city", "country"]
+                .iter()
+                .filter_map(|k| a.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()))
+                .collect();
+            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+        })
+    });
+
+    Ok(InvoiceDocument {
+        org_name,
+        org_kra_pin: kra_pin,
+        org_vat_number: bget("vat_number"),
+        org_address: bget("address"),
+        org_email: bget("email"),
+        org_phone: bget("phone"),
+        logo_url: bget("logo_url"),
+        primary_color: "#1a56db".to_string(),
+        footer_text: bget("footer_text"),
+        title: "RECURRING INVOICE — PREVIEW".to_string(),
+        number: "Next scheduled".to_string(),
+        issue_date: rec.next_run.to_string(),
+        due_date: rec.frequency.clone(),
+        currency: template.currency.clone().unwrap_or_else(|| "KES".to_string()),
+        etims_number: None,
+        customer_name: customer.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| rec.customer_id.to_string()),
+        customer_address,
+        customer_kra_pin: customer.as_ref().and_then(|c| c.kra_pin.clone()),
+        lines: doc_lines,
+        subtotal,
+        discount_total: Decimal::ZERO,
+        tax_total,
+        gross_total,
+        amount_paid: Decimal::ZERO,
+        balance_due: gross_total,
+        notes: template.notes.clone(),
+        number_label: "Reference".to_string(),
+        date2_label: "Frequency".to_string(),
+        summary_label: "Invoice Total".to_string(),
+        show_payments: false,
+    })
+}
+
+/// Recurring-template preview document as HTML.
+pub async fn recurring_document_html(engine: &ErpEngine, entity_id: Uuid, recurring_id: Uuid) -> ErpResult<String> {
+    let doc = build_recurring_document(engine, entity_id, recurring_id).await?;
+    Ok(crate::invoicing::document::render_invoice_html(&doc))
+}
+
+/// Recurring-template preview document as PDF.
+pub async fn recurring_document_pdf(engine: &ErpEngine, entity_id: Uuid, recurring_id: Uuid) -> ErpResult<(Vec<u8>, String)> {
+    let doc = build_recurring_document(engine, entity_id, recurring_id).await?;
+    let html = crate::invoicing::document::render_invoice_html(&doc);
+    let html_clone = html.clone();
+    let pdf = tokio::task::spawn_blocking(move || crate::invoicing::htmlpdf::html_to_pdf(&html_clone))
+        .await
+        .ok()
+        .flatten();
+    let bytes = match pdf {
+        Some(b) => b,
+        None => {
+            let fb = crate::invoicing::pdf::InvoicePdfData {
+                org_name: doc.org_name.clone(),
+                invoice_number: doc.number.clone(),
+                invoice_type_label: doc.title.clone(),
+                issue_date: doc.issue_date.clone(),
+                due_date: doc.due_date.clone(),
+                currency: doc.currency.clone(),
+                customer_name: doc.customer_name.clone(),
+                customer_email: None,
+                lines: doc.lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    line_total: l.line_total,
+                }).collect(),
+                subtotal: doc.subtotal,
+                discount_total: doc.discount_total,
+                tax_total: doc.tax_total,
+                gross_total: doc.gross_total,
+                amount_paid: doc.amount_paid,
+                balance_due: doc.balance_due,
+                notes: doc.notes.clone(),
+                footer_text: doc.footer_text.clone(),
+                accent_rgb: crate::invoicing::pdf::parse_hex_color(&doc.primary_color),
+            };
+            crate::invoicing::pdf::render_invoice_pdf(&fb)
+        }
+    };
+    Ok((bytes, "recurring-preview".to_string()))
+}
+
+/// Invoices actually generated by a recurring template (most recent first).
+pub async fn recurring_invoice_history(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    recurring_id: Uuid,
+) -> ErpResult<Vec<crate::invoicing::recurring::RecurringInvoiceHistoryItem>> {
+    let rows = sqlx::query_as::<_, crate::invoicing::recurring::RecurringInvoiceHistoryItem>(
+        r#"SELECT id, number, issue_date, status, gross_total, balance_due
+           FROM invoices
+           WHERE entity_id = $1 AND recurring_invoice_id = $2
+           ORDER BY issue_date DESC, created_at DESC"#,
+    )
+    .bind(entity_id)
+    .bind(recurring_id)
+    .fetch_all(engine.pool())
+    .await?;
+    Ok(rows)
+}
+
 /// Render the shared invoice document as PDF. Prefers headless-Chrome conversion
 /// of the exact HTML (so it matches the screen); falls back to the lightweight
 /// hand-built PDF if Chrome is unavailable. Returns (pdf_bytes, accent_hex).

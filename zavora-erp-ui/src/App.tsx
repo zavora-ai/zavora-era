@@ -50,6 +50,7 @@ import EstimatePreview from './pages/documents/EstimatePreview';
 import CreditNotePreview from './pages/documents/CreditNotePreview';
 import BillPreview from './pages/documents/BillPreview';
 import PaymentReceiptPreview from './pages/documents/PaymentReceiptPreview';
+import RecurringPreview from './pages/documents/RecurringPreview';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -141,6 +142,7 @@ export default function App() {
             <Route path="documents/credit-note/:id" element={<CreditNotePreview />} />
             <Route path="documents/bill/:id" element={<BillPreview />} />
             <Route path="documents/receipt/:id" element={<PaymentReceiptPreview />} />
+            <Route path="documents/recurring/:id" element={<RecurringPreview />} />
           </Route>
         </Routes>
       </BrowserRouter>

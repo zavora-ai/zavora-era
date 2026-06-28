@@ -354,6 +354,14 @@ pub async fn process_recurring_invoices_for(engine: &ErpEngine, entity_id: Uuid)
             Ok(invoice) => {
                 created_ids.push(invoice.id);
 
+                // Link the generated invoice back to its recurring template so the
+                // template can show its real history.
+                let _ = sqlx::query("UPDATE invoices SET recurring_invoice_id = $1 WHERE id = $2")
+                    .bind(rec.id)
+                    .bind(invoice.id)
+                    .execute(engine.pool())
+                    .await;
+
                 // If auto_send, post it
                 if rec.auto_send {
                     let _ =
