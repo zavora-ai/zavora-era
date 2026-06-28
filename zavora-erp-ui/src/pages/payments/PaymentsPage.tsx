@@ -9,6 +9,7 @@ import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
 import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
+import Attachments from '../../components/shared/Attachments';
 import { Plus, ArrowRightLeft } from 'lucide-react';
 
 type TabKey = 'all' | 'unapplied';
@@ -65,6 +66,7 @@ export default function PaymentsPage() {
 
 function AllPaymentsTab() {
   const { page, limit, offset, setPage } = usePagination();
+  const [viewing, setViewing] = useState<Payment | null>(null);
   const { data: resp, isLoading } = useQuery({
     queryKey: ['payments', offset, limit],
     queryFn: () => getPayments({ limit, offset }).then((r) => r.data),
@@ -116,9 +118,41 @@ function AllPaymentsTab() {
 
   return (
     <>
-      <DataTable columns={columns} data={payments} loading={isLoading} emptyMessage="No payments recorded." />
+      <DataTable columns={columns} data={payments} loading={isLoading} onRowClick={(r) => setViewing(r)} emptyMessage="No payments recorded." />
       <PaginationControls page={page} limit={limit} total={total} onPage={setPage} />
+      {viewing && <PaymentDetailModal payment={viewing} onClose={() => setViewing(null)} />}
     </>
+  );
+}
+
+/** Read-only payment summary + attachments (receipt, WHT certificate, remittance advice). */
+function PaymentDetailModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
+  const method = (() => {
+    const m: any = payment.method;
+    if (m?.Mpesa) return 'M-Pesa';
+    if (m?.BankTransfer) return 'Bank Transfer';
+    if (m?.Card) return 'Card';
+    if (m === 'Cash') return 'Cash';
+    return 'Other';
+  })();
+  return (
+    <Modal open={true} onClose={onClose} title={`Payment ${payment.number}`}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div><span className="text-gray-500">Date</span><p className="font-medium">{formatDate(payment.payment_date)}</p></div>
+          <div><span className="text-gray-500">Type</span><p className="font-medium">{payment.payment_type === 'customer_payment' ? 'Customer receipt' : 'Vendor payment'}</p></div>
+          <div><span className="text-gray-500">Amount</span><p className="font-medium">{formatCurrency(payment.amount, payment.currency)}{payment.currency !== 'KES' && <span className="text-xs text-gray-400"> · ≈ {formatCurrency(Number(payment.amount) * Number(payment.fx_rate || 1), 'KES')}</span>}</p></div>
+          <div><span className="text-gray-500">Method</span><p className="font-medium">{method}</p></div>
+          <div className="col-span-2"><span className="text-gray-500">Reference</span><p className="font-medium">{payment.reference || '—'}</p></div>
+        </div>
+        <div className="border-t pt-4">
+          <Attachments linkedType="payment" linkedId={payment.id} label="Attachments (receipt, WHT certificate, remittance advice)" />
+        </div>
+        <div className="flex justify-end pt-2 border-t">
+          <button type="button" onClick={onClose} className="btn-secondary">Close</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

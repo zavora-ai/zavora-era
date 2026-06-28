@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
+import Attachments from '../../components/shared/Attachments';
 import {
   ArrowLeft, Send, CheckCircle, CreditCard,
   Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck, FileText
@@ -336,6 +337,11 @@ export default function InvoiceDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Attachments */}
+      <div className="card p-5 mt-6">
+        <Attachments linkedType="invoice" linkedId={id!} label="Attachments (invoice copy, customer PO, WHT certificate)" />
       </div>
 
       {/* Notes */}
