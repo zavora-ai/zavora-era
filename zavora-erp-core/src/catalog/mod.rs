@@ -55,6 +55,10 @@ pub struct ProductRow {
     pub inventory_item_id: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub general_product_group_id: Option<Uuid>,
+    #[serde(default)]
+    pub vat_product_group_id: Option<Uuid>,
 }
 
 /// Request to create a product.

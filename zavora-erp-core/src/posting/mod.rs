@@ -64,6 +64,9 @@ pub struct PostingSetup {
     pub inventory_asset: String,
     /// Cost of goods sold.
     pub cost_of_goods_sold: String,
+    /// Goods-Received-Not-Invoiced clearing. Credited when stock is received
+    /// without a vendor bill (standalone receipt); the later bill debits it.
+    pub inventory_clearing: String,
 
     // --- Fixed assets ---
     /// Fixed-asset (cost) control account.
@@ -109,11 +112,16 @@ impl Default for PostingSetup {
             // "Rounding" GL account via the posting-setup UI.
             rounding_adjustment: "7900".to_string(),
             default_bank: "1020".to_string(),
-            default_sales: "5000".to_string(),
-            default_purchase: "6000".to_string(),
+            // Services-first defaults (Zavora): sales → Service Revenue, purchases →
+            // Software/Cloud/Subscriptions. Goods sellers can repoint these in Settings.
+            default_sales: "5100".to_string(),
+            default_purchase: "7350".to_string(),
             default_expense: "7900".to_string(),
             inventory_asset: "1300".to_string(),
             cost_of_goods_sold: "6000".to_string(),
+            // Goods received not invoiced — a current liability/accrual. Defaults
+            // to AP control; a tenant can point this at a dedicated GRNI account.
+            inventory_clearing: "3010".to_string(),
             fixed_asset: "2500".to_string(),
             accumulated_depreciation: "2600".to_string(),
             depreciation_expense: "7600".to_string(),

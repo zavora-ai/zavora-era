@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProducts, createProduct, assignPostingGroups } from '../../api/client';
+import { getProducts, createProduct, assignPostingGroups, getSettings } from '../../api/client';
 import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Product } from '../../types';
 import { formatCurrency } from '../../utils/format';
@@ -60,9 +60,9 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
     uom: 'Each',
     // Accounts
     sales_account: '5100',
-    purchase_account: '6000',
+    purchase_account: '7350',
     // Tax
-    vat_treatment: 'Standard16',
+    vat_treatment: 'Exempt',
     // Inventory
     track_inventory: false,
     sku: '',
@@ -70,6 +70,18 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
   });
   const [genGroup, setGenGroup] = useState('');
   const [vatGroup, setVatGroup] = useState('');
+
+  // Default the tax treatment from the company's VAT registration: VAT-registered
+  // businesses default new items to Standard 16%, others to Exempt (so a company
+  // that isn't VAT-registered never accidentally charges output VAT). Respects a
+  // manual choice once the user picks a rate.
+  const { data: cfg } = useQuery({ queryKey: ['settings'], queryFn: () => getSettings().then((r) => r.data) });
+  const vatTouched = useRef(false);
+  useEffect(() => {
+    if (cfg && !vatTouched.current) {
+      setForm((f) => ({ ...f, vat_treatment: cfg.tax_config?.vat_registered ? 'Standard16' : 'Exempt' }));
+    }
+  }, [cfg]);
 
   const mutation = useMutation({
     mutationFn: (data: any) => createProduct(data),
@@ -177,7 +189,7 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
               { value: 'Exempt', label: 'Exempt', desc: 'Financial services, land' },
             ].map(opt => (
               <label key={opt.value} className={`p-3 rounded-lg border cursor-pointer transition-colors ${form.vat_treatment === opt.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input type="radio" name="vat" value={opt.value} checked={form.vat_treatment === opt.value} onChange={(e) => setForm({ ...form, vat_treatment: e.target.value })} className="sr-only" />
+                <input type="radio" name="vat" value={opt.value} checked={form.vat_treatment === opt.value} onChange={(e) => { vatTouched.current = true; setForm({ ...form, vat_treatment: e.target.value }); }} className="sr-only" />
                 <p className="text-sm font-medium">{opt.label}</p>
                 <p className="text-xs text-gray-500">{opt.desc}</p>
               </label>

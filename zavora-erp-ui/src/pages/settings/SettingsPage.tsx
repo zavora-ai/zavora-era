@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Controlled form state for each tab
-  const [company, setCompany] = useState({ company_name: '', kra_pin: '', vat_number: '', primary_color: '#1a56db' });
+  const [company, setCompany] = useState({ company_name: '', registration_number: '', kra_pin: '', vat_number: '', address: '', phone: '', primary_color: '#1a56db', base_currency: 'KES', fiscal_year_end: '12-31' });
   const [tax, setTax] = useState({ vat_registered: false, wht_enabled: false, paye_enabled: false });
   const [payments, setPayments] = useState({ mpesa_enabled: false, mpesa_paybill: '', flutterwave_enabled: false, bank_transfer_enabled: false });
   const [seq, setSeq] = useState<DocumentSequences | null>(null);
@@ -29,9 +29,14 @@ export default function SettingsPage() {
     if (!config) return;
     setCompany({
       company_name: config.branding?.company_name ?? '',
+      registration_number: config.branding?.registration_number ?? '',
       kra_pin: config.branding?.kra_pin ?? '',
       vat_number: config.branding?.vat_number ?? '',
+      address: config.branding?.address ?? '',
+      phone: config.branding?.phone ?? '',
       primary_color: config.branding?.primary_color ?? '#1a56db',
+      base_currency: config.base_currency ?? 'KES',
+      fiscal_year_end: config.fiscal_year_end ? `${config.fiscal_year_end.month}-${config.fiscal_year_end.day}` : '12-31',
     });
     setTax({
       vat_registered: config.tax_config?.vat_registered ?? false,
@@ -63,7 +68,19 @@ export default function SettingsPage() {
   const handleSave = () => {
     const patch: any = {};
     if (tab === 'company') {
-      patch.branding = company;
+      const [m, d] = company.fiscal_year_end.split('-').map(Number);
+      patch.branding = {
+        ...config?.branding,
+        company_name: company.company_name,
+        registration_number: company.registration_number || undefined,
+        kra_pin: company.kra_pin || undefined,
+        vat_number: company.vat_number || undefined,
+        address: company.address || undefined,
+        phone: company.phone || undefined,
+        primary_color: company.primary_color,
+      };
+      patch.base_currency = company.base_currency;
+      patch.fiscal_year_end = { month: m, day: d };
     } else if (tab === 'tax') {
       patch.tax_config = tax;
     } else if (tab === 'payments') {
@@ -111,14 +128,40 @@ export default function SettingsPage() {
       <div className="card p-6">
         {tab === 'company' && (
           <div className="space-y-4 max-w-xl">
-            <div><label className="label">Company Name</label><input className="input" value={company.company_name} onChange={(e) => setCompany({ ...company, company_name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="label">Base Currency</label><input className="input" defaultValue={config?.base_currency || 'KES'} disabled /></div>
-              <div><label className="label">Fiscal Year End</label><input className="input" defaultValue="December 31" disabled /></div>
+              <div><label className="label">Company Name</label><input className="input" value={company.company_name} onChange={(e) => setCompany({ ...company, company_name: e.target.value })} /></div>
+              <div><label className="label">Registration Number</label><input className="input" value={company.registration_number} onChange={(e) => setCompany({ ...company, registration_number: e.target.value })} placeholder="e.g. PVT-XXXXXXX" /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Base Currency</label>
+                <select className="input" value={company.base_currency} onChange={(e) => setCompany({ ...company, base_currency: e.target.value })}>
+                  <option value="KES">KES — Kenyan Shilling</option>
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="GBP">GBP — Pound Sterling</option>
+                  <option value="TZS">TZS — Tanzanian Shilling</option>
+                  <option value="UGX">UGX — Ugandan Shilling</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Fiscal Year End</label>
+                <select className="input" value={company.fiscal_year_end} onChange={(e) => setCompany({ ...company, fiscal_year_end: e.target.value })}>
+                  <option value="12-31">December 31</option>
+                  <option value="6-30">June 30</option>
+                  <option value="3-31">March 31</option>
+                  <option value="9-30">September 30</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-amber-600">Set the base currency and year-end before posting transactions — changing them later does not restate existing entries.</p>
+            <div className="grid grid-cols-2 gap-4">
               <div><label className="label">KRA PIN</label><input className="input" value={company.kra_pin} onChange={(e) => setCompany({ ...company, kra_pin: e.target.value })} placeholder="P00XXXXXXX" /></div>
-              <div><label className="label">VAT Number</label><input className="input" value={company.vat_number} onChange={(e) => setCompany({ ...company, vat_number: e.target.value })} /></div>
+              <div><label className="label">VAT Number</label><input className="input" value={company.vat_number} onChange={(e) => setCompany({ ...company, vat_number: e.target.value })} placeholder="Only if VAT-registered" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">Registered Address</label><input className="input" value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} placeholder="P.O. Box / street, town" /></div>
+              <div><label className="label">Phone</label><input className="input" value={company.phone} onChange={(e) => setCompany({ ...company, phone: e.target.value })} placeholder="+254..." /></div>
             </div>
             <div><label className="label">Primary Color</label><input type="color" value={company.primary_color} onChange={(e) => setCompany({ ...company, primary_color: e.target.value })} className="h-10 w-20 rounded border" /></div>
           </div>

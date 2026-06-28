@@ -4,15 +4,18 @@ import { getAccounts, getSettings, updateSettings } from '../../api/client';
 import type { Account, ErpConfig, PostingSetup } from '../../types';
 import { Save } from 'lucide-react';
 
-type FieldDef = { key: keyof PostingSetup; label: string };
+// `control: true` marks roles that are themselves control accounts (the GL
+// receivables/payables control). Those roles MUST map to a control account, so
+// the picker for them includes control accounts rather than excluding them.
+type FieldDef = { key: keyof PostingSetup; label: string; control?: boolean };
 type Group = { title: string; hint?: string; fields: FieldDef[] };
 
 const GROUPS: Group[] = [
   {
     title: 'Receivables & Payables',
     fields: [
-      { key: 'accounts_receivable', label: 'Accounts Receivable' },
-      { key: 'accounts_payable', label: 'Accounts Payable' },
+      { key: 'accounts_receivable', label: 'Accounts Receivable (Trade Debtors)', control: true },
+      { key: 'accounts_payable', label: 'Accounts Payable (Trade Creditors)', control: true },
       {
         key: 'unapplied_payments',
         label: 'Unapplied Payments',
@@ -94,16 +97,15 @@ export default function PostingAccountsTab() {
     },
   });
 
-  // Postable accounts only (exclude control accounts, which cannot be posted to).
-  const options = useMemo(
-    () =>
-      (accounts ?? [])
-        .filter((a) => a.is_active && !a.is_control)
-        .sort((a, b) => a.code.localeCompare(b.code)),
+  const activeAccounts = useMemo(
+    () => (accounts ?? []).filter((a) => a.is_active).sort((a, b) => a.code.localeCompare(b.code)),
     [accounts],
   );
-
-  const codeIsKnown = (code: string) => options.some((o) => o.code === code);
+  // Default picker excludes control accounts (you don't post P&L/clearing to a
+  // control account); control-account roles (AR/AP) include them, since those
+  // roles ARE the GL control accounts.
+  const postableAccounts = useMemo(() => activeAccounts.filter((a) => !a.is_control), [activeAccounts]);
+  const optionsFor = (field: FieldDef) => (field.control ? activeAccounts : postableAccounts);
 
   if (!form) {
     return <p className="text-sm text-gray-500">Loading posting setup…</p>;
@@ -126,7 +128,8 @@ export default function PostingAccountsTab() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
             {group.fields.map((field) => {
               const value = form[field.key];
-              const unknown = value && !codeIsKnown(value);
+              const fieldOptions = optionsFor(field);
+              const unknown = value && !fieldOptions.some((o) => o.code === value);
               return (
                 <div key={field.key}>
                   <label className="label">{field.label}</label>
@@ -139,7 +142,7 @@ export default function PostingAccountsTab() {
                     {unknown && (
                       <option value={value}>{value} — (not in chart of accounts)</option>
                     )}
-                    {options.map((a) => (
+                    {fieldOptions.map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.code} — {a.name}
                       </option>

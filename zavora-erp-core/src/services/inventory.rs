@@ -84,17 +84,68 @@ pub async fn create_item(
     Ok(id)
 }
 
-/// Receive inventory (purchase receipt).
+/// Receive inventory (purchase receipt) as a **standalone** action (no vendor
+/// bill yet). Updates stock AND posts the GL: DR Inventory / CR GRNI clearing
+/// for the value received, linking the stock movement to the journal entry.
+///
+/// (The `_in_tx` variant stays GL-free because invoice/credit-note posting books
+/// the inventory journal itself; only this standalone wrapper posts.)
 pub async fn receive_inventory(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: ReceiveInventoryRequest,
     received_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
+    use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+
+    let today = req.date.unwrap_or_else(|| Utc::now().date_naive());
+    let item_id = req.item_id;
+    let quantity = req.quantity;
+    let unit_cost = req.unit_cost;
+    let value = (quantity * unit_cost).round_dp(2);
+
     let mut tx = engine.pool().begin().await?;
-    let id = receive_inventory_in_tx(&mut tx, entity_id, req, received_by).await?;
+    let movement_id = receive_inventory_in_tx(&mut tx, entity_id, req, received_by).await?;
+
+    // Resolve GL accounts: the item's inventory account + the tenant's GRNI
+    // clearing account from posting setup.
+    let item = sqlx::query_as::<_, InventoryItemRow>(
+        "SELECT * FROM inventory_items WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(item_id)
+    .bind(entity_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let posting = engine.posting_for(entity_id).await?;
+    let inventory_acct = if item.gl_inventory.is_empty() { posting.inventory_asset.clone() } else { item.gl_inventory.clone() };
+    let clearing_acct = posting.inventory_clearing.clone();
+
+    if value >= Decimal::new(1, 2) {
+        let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+        let lines = vec![
+            CreateJournalLineRequest { account_code: inventory_acct, debit: Some(value), credit: None, currency: base_ccy.clone(), fx_rate: Some(Decimal::ONE), description: Some(format!("Inventory receipt {} × {}", quantity, unit_cost)), dimensions: None },
+            CreateJournalLineRequest { account_code: clearing_acct, debit: None, credit: Some(value), currency: base_ccy, fx_rate: Some(Decimal::ONE), description: Some(format!("GRNI: {}", item.sku)), dimensions: None },
+        ];
+        let entry_req = CreateJournalEntryRequest {
+            date: today,
+            source: JournalSource::InventoryAdjustment,
+            source_id: Some(item_id),
+            reference: format!("RECV-{}", item.sku),
+            description: format!("Inventory receipt {}", item.sku),
+            lines,
+            post_immediately: true,
+        };
+        let period = crate::services::periods::period_for_date(engine, entity_id, today).await?;
+        let entry = crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, received_by.clone()).await?;
+        sqlx::query("UPDATE stock_movements SET journal_entry_id = $1 WHERE id = $2")
+            .bind(entry.id)
+            .bind(movement_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
     tx.commit().await?;
-    Ok(id)
+    Ok(movement_id)
 }
 
 /// Receive inventory within a caller-provided transaction.
@@ -240,18 +291,57 @@ pub async fn adjust_inventory(
     Ok(req.item_id)
 }
 
-/// Issue inventory (sale/consumption).
+/// Issue inventory (sale/consumption) as a **standalone** action. Updates stock
+/// AND posts the GL: DR COGS / CR Inventory for the cost of goods issued,
+/// linking the stock movement to the journal entry.
 ///
-/// Returns an `IssueInventoryResult` containing the movement ID and the cost
-/// of goods issued, which callers (e.g. invoice posting) use for COGS journal lines.
+/// Returns an `IssueInventoryResult` with the movement ID and cost info.
+/// (The `_in_tx` variant stays GL-free because invoice posting books COGS
+/// itself; only this standalone wrapper posts.)
 pub async fn issue_inventory(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: IssueInventoryRequest,
     issued_by: &AgentOrUserId,
 ) -> ErpResult<IssueInventoryResult> {
+    use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+
+    let today = req.date.unwrap_or_else(|| Utc::now().date_naive());
+    let item_id = req.item_id;
+
     let mut tx = engine.pool().begin().await?;
     let result = issue_inventory_in_tx(&mut tx, entity_id, req, issued_by).await?;
+
+    let value = result.total_cost.round_dp(2);
+    if value >= Decimal::new(1, 2) {
+        let sku: String = sqlx::query_scalar("SELECT sku FROM inventory_items WHERE id = $1 AND entity_id = $2")
+            .bind(item_id)
+            .bind(entity_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+        let lines = vec![
+            CreateJournalLineRequest { account_code: result.gl_cogs.clone(), debit: Some(value), credit: None, currency: base_ccy.clone(), fx_rate: Some(Decimal::ONE), description: Some(format!("COGS: {sku}")), dimensions: None },
+            CreateJournalLineRequest { account_code: result.gl_inventory.clone(), debit: None, credit: Some(value), currency: base_ccy, fx_rate: Some(Decimal::ONE), description: Some(format!("Inventory issue: {sku}")), dimensions: None },
+        ];
+        let entry_req = CreateJournalEntryRequest {
+            date: today,
+            source: JournalSource::InventoryAdjustment,
+            source_id: Some(item_id),
+            reference: format!("ISSUE-{sku}"),
+            description: format!("Inventory issue {sku}"),
+            lines,
+            post_immediately: true,
+        };
+        let period = crate::services::periods::period_for_date(engine, entity_id, today).await?;
+        let entry = crate::services::journal::create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, issued_by.clone()).await?;
+        sqlx::query("UPDATE stock_movements SET journal_entry_id = $1 WHERE id = $2")
+            .bind(entry.id)
+            .bind(result.movement_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
     tx.commit().await?;
     Ok(result)
 }

@@ -11,6 +11,42 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
+- **PDF / spreadsheet bank-statement import (review-before-commit).** Most Kenyan
+  banks issue PDF statements and M-Pesa issues XLSX; `POST /bank/import/extract`
+  sends the file to the xberg extraction sidecar (PDF text layer, OCR for scans,
+  or spreadsheet cells), parses the text into candidate transaction rows with
+  per-row confidence, and returns them **without writing anything**. The Banking
+  import dialog gained a **PDF tab** with an editable review table
+  (date/description/debit/credit/balance; low-confidence rows flagged; drop bad
+  rows); **Confirm** serialises the reviewed rows to CSV and commits through the
+  existing deterministic CSV importer, so idempotency, dedup and the
+  categorisation queue stay the single source of truth. OCR'd financial rows are
+  never auto-committed. (`services::statement_pdf`.)
+  - **M-Pesa statements parse cleanly** (dedicated parser; validated against a
+    real merchant XLSX — 28/28 transactions, totals reconcile to the statement
+    summary to the cent).
+  - **Generic bank PDFs** are best-effort: PDF text extraction often scrambles
+    multi-column tables, so the generic parser is a starting point that the user
+    must review/correct. **Per-bank templates** for the common banks are the
+    planned next step.
+- **Inventory now posts to the general ledger.** Standalone **Receive Stock** and
+  **Issue Stock** previously updated quantities/value but never touched the GL,
+  leaving inventory off-ledger (trial balance didn't reflect stock). They now
+  post journals within the same transaction — receipt: DR Inventory / CR
+  Goods-Received-Not-Invoiced clearing; issue: DR COGS / CR Inventory — and each
+  stock movement is linked to its journal entry (`stock_movements.journal_entry_id`,
+  migration 034). `PostingSetup` gained `inventory_asset`, `cost_of_goods_sold`,
+  and `inventory_clearing` accounts. The transaction-scoped `_in_tx` variants
+  used during invoice posting stay GL-free, so invoices still single-book COGS
+  (no double-posting). Verified: Inventory/GRNI/COGS balances tie to the
+  subledger.
+- **Posting-group assignment on master records.** Customers, vendors and products
+  now have **Posting Groups** selectors on their create forms (business group +
+  VAT group / product group + VAT product group), so the BC-style matrices are
+  actually usable — a customer assigned to e.g. an "Export" business group routes
+  its A/R to that group's control account. Verified end-to-end (export-group
+  invoice posted A/R to the group account, not the default). Group ids are
+  surfaced on the list/detail responses.
 - **Customer Payment History report.** New report listing every receipt from a
   customer over a period — date, payment number, method, reference, amount, and
   the portion still unapplied (on-account) — with totals. Available in the

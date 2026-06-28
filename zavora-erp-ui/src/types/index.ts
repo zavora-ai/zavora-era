@@ -354,6 +354,9 @@ export interface BrandingConfig {
   primary_color: string;
   kra_pin?: string;
   vat_number?: string;
+  registration_number?: string;
+  address?: string;
+  phone?: string;
 }
 
 export interface DocumentSequences {

@@ -93,6 +93,11 @@ pub struct CustomerRow {
     pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    /// Posting-group assignments (BC-style). Surfaced so the UI can show/edit them.
+    #[serde(default)]
+    pub general_business_group_id: Option<Uuid>,
+    #[serde(default)]
+    pub vat_business_group_id: Option<Uuid>,
 }
 
 /// Request to create a customer.

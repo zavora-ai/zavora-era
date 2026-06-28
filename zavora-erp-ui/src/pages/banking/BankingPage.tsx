@@ -244,7 +244,7 @@ export default function BankingPage() {
         <h3 className="font-medium mb-4">Bank Reconciliation</h3>
         <p className="text-sm text-gray-500 mb-4">
           Three-pass matching algorithm: Exact match → Near match (2-day window) → AI suggestion.
-          Import statements in MT940, OFX, or CSV format.
+          Import statements as CSV, MT940, OFX, PDF, or Excel (M-Pesa / bank exports).
         </p>
         <div className="flex gap-3">
           <button className="btn-primary" onClick={() => setShowImport(true)} disabled={bankAccounts.length === 0}>

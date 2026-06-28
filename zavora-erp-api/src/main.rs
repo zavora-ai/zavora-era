@@ -54,6 +54,13 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("../migrations").run(&pool).await?;
     tracing::info!("Migrations applied");
 
+    // Self-heal the statutory WHT rates if they're missing (migration 021 seeds
+    // them once with ON CONFLICT DO NOTHING, so a wiped/restored volume would
+    // otherwise leave WHT silently resolving to 0).
+    if let Err(e) = zavora_erp_core::services::wht::ensure_seeded(&pool).await {
+        tracing::warn!("Failed to ensure WHT rates are seeded: {e}");
+    }
+
     // Redis connection
     let redis_client = redis::Client::open(redis_url)?;
     let redis_conn = redis_client.get_multiplexed_async_connection().await?;
@@ -232,6 +239,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank-accounts", get(routes::bank::list_accounts).post(routes::bank::create_account))
         .route("/api/v1/bank-accounts/{id}", delete(routes::bank::delete_account))
         .route("/api/v1/bank/import", post(routes::bank::import_statement))
+        .route("/api/v1/bank/import/extract", post(routes::bank::extract_statement))
         .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
         .route("/api/v1/bank/reconciliations", get(routes::reconciliation::list))
         .route("/api/v1/bank/reconciliations/compute", post(routes::reconciliation::compute))

@@ -44,6 +44,9 @@ pub struct BrandingConfig {
     pub address: Option<String>,
     pub kra_pin: Option<String>,
     pub vat_number: Option<String>,
+    /// Company / business registration number (e.g. PVT-XXXXXXX). Shown on
+    /// invoices and statutory documents for limited companies.
+    pub registration_number: Option<String>,
 }
 
 impl Default for BrandingConfig {
@@ -61,6 +64,7 @@ impl Default for BrandingConfig {
             address: None,
             kra_pin: None,
             vat_number: None,
+            registration_number: None,
         }
     }
 }
@@ -239,6 +243,7 @@ pub async fn load_or_create_config(
             address: None,
             kra_pin: None,
             vat_number: None,
+            registration_number: None,
         }
     });
     let sequences: DocumentSequences = serde_json::from_value(row.sequences).unwrap_or_default();
@@ -247,7 +252,10 @@ pub async fn load_or_create_config(
         vat_number: None,
         vat_period: VatPeriod::Monthly,
         standard_vat_rate: Decimal::new(16, 2),
-        default_vat_treatment: VatTreatment::Standard16,
+        // Not VAT-registered by default, so items default to Exempt — a
+        // non-registered business never accidentally charges output VAT. A
+        // company that ticks "VAT Registered" sets this to Standard16.
+        default_vat_treatment: VatTreatment::Exempt,
         wht_enabled: true,
         paye_enabled: true,
     });

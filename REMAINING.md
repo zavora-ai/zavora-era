@@ -17,11 +17,12 @@ _Last reconciled against the codebase: 2026-06-28._
 - ⬜ **P1 — Procurement / P2P.** Purchase order → RFQ/tender → goods receipt →
   3-way match → debit notes → expense claims. Entirely absent. Largest functional
   gap. (Tracked as task #42.)
-- ⬜ **P2 — Posting-group matrices.** VAT Business × VAT Product → rate +
-  output/input accounts; General Business × General Product → sales/purchase/COGS;
-  customer/vendor/inventory posting groups; matrix editor UI. Posting today
-  resolves through the flat per-tenant `PostingSetup`, which works but is not the
-  BC/NetSuite-style matrix.
+- ✅ **P2 — Posting-group matrices.** _(done — moved to CHANGELOG 2026-06-28.)_
+  VAT Business × VAT Product → rate + output/input; General Business × General
+  Product → sales/purchase/COGS; per-business-group A/R & A/P control accounts;
+  matrix editor UI **and** per-record group assignment on customer/vendor/product
+  forms. Resolution is a fallback chain (line override → matrix → flat
+  `PostingSetup`), wired into invoicing, payments, supplier-CN and AR/AP control.
 - 🟡 **P2 — Supplier credit notes & bill lines.** Supplier credit notes store only
   `gross_total` (no line items); bill/CN posting is header-level (one expense
   line), so per-line GL and per-line **dimension capture on the AP side** are

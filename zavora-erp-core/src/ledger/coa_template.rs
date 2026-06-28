@@ -26,9 +26,14 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("1100", "Accounts Receivable", AccountType::Asset, None, true),
         acct("1200", "Trade Debtors", AccountType::Asset, Some("1100"), true),
         acct("1300", "VAT Input (Claimable)", AccountType::Asset, None, false),
+        // WHT credits withheld by customers on services income (claimable against
+        // the year's corporate income tax) — common for Kenyan service providers.
+        acct("1310", "WHT Receivable", AccountType::Asset, None, false),
         acct("1400", "Prepaid Expenses", AccountType::Asset, None, false),
         acct("1500", "Inventory", AccountType::Asset, None, false),
         acct("1600", "Other Current Assets", AccountType::Asset, None, false),
+        // Called-up share capital subscribed but not yet paid by the shareholder.
+        acct("1610", "Unpaid Share Capital", AccountType::Asset, None, false),
         acct("1700", "Unapplied Customer Payments", AccountType::Asset, None, false),
         // === Non-Current Assets (2000–2499) ===
         acct("2000", "Non-Current Assets", AccountType::Asset, None, true),
@@ -75,6 +80,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("5000", "Sales Revenue", AccountType::Revenue, None, false),
         acct("5100", "Service Revenue", AccountType::Revenue, None, false),
         acct("5200", "Other Income", AccountType::Revenue, None, false),
+        acct("5250", "Royalty Income", AccountType::Revenue, None, false),
         acct("5300", "Discounts Allowed", AccountType::ContraRevenue, None, false),
         acct("5400", "Sales Returns", AccountType::ContraRevenue, None, false),
         // === Cost of Goods Sold (6000–6999) ===
@@ -90,6 +96,8 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("7100", "Rent Expense", AccountType::Expense, Some("7000"), false),
         acct("7200", "Utilities", AccountType::Expense, Some("7000"), false),
         acct("7300", "Office Supplies", AccountType::Expense, Some("7000"), false),
+        // Cloud, hosting, domains, AI tooling and other SaaS subscriptions.
+        acct("7350", "Software, Cloud & Subscriptions", AccountType::Expense, Some("7000"), false),
         acct("7400", "Insurance", AccountType::Expense, Some("7000"), false),
         acct("7500", "Professional Fees", AccountType::Expense, Some("7000"), false),
         acct("7600", "Depreciation Expense", AccountType::Expense, Some("7000"), false),

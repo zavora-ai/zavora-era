@@ -208,10 +208,20 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
 
             {selectedRate && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm font-medium text-blue-900">Applicable rate:</p>
+                <p className="text-sm font-medium text-blue-900">Applicable rate ({form.resident ? 'resident' : 'non-resident'}):</p>
                 <p className="text-sm text-blue-700 mt-1">
-                  Resident: <strong>{selectedRate.resident}</strong> · Non-resident: <strong>{selectedRate.nonResident}</strong>
+                  <span className={form.resident ? 'font-bold underline' : ''}>Resident {selectedRate.resident}</span>
+                  {' · '}
+                  <span className={!form.resident ? 'font-bold underline' : ''}>Non-resident {selectedRate.nonResident}</span>
                 </p>
+              </div>
+            )}
+
+            {!form.resident && !form.wht_category && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                This is a <strong>non-resident</strong> vendor. Payments for services, royalties, management or
+                professional fees to non-residents are often subject to Kenyan withholding tax (commonly 20%,
+                or a lower treaty rate). Set a WHT category above if it applies — confirm with your tax advisor.
               </div>
             )}
 
