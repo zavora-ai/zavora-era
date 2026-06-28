@@ -8,7 +8,7 @@ than leaving stale ticks behind.
 Legend: ⬜ not started · 🟡 partial · ✅ done (kept briefly for context, then moved to CHANGELOG)
 Priority: **P0** blocker · **P1** before go-live · **P2** fast-follow · **P3** polish
 
-_Last reconciled against the codebase: 2026-06-27._
+_Last reconciled against the codebase: 2026-06-28._
 
 ---
 
@@ -29,9 +29,14 @@ _Last reconciled against the codebase: 2026-06-27._
 - 🟡 **P2 — Notification delivery.** Events queue to the outbox and the in-app
   inbox works, but real send-out (SMTP / SMS / WhatsApp) is scaffolded, not wired
   to a live provider. Scheduled/emailed reports depend on this.
-- ⬜ **P2 — OCR receipt capture.**
-- ⬜ **P3 — Tenant management.** The signup flow creates tenants, but there is no
-  in-app create/switch-tenant UX beyond it.
+- ✅ **P2 — OCR receipt capture.** _(done — moved to CHANGELOG 2026-06-28.)_
+  Multipart upload → image stored → pluggable OCR provider → review (per-field
+  confidence) → confirm → VAT-inclusive bill. Default provider is manual review
+  (no external dependency); an optional **xberg** sidecar enables real
+  extraction via `OCR_PROVIDER=xberg` + `XBERG_URL` (see `.env.example`).
+- ✅ **P3 — Tenant management.** _(done — moved to CHANGELOG 2026-06-28.)_
+  In-app create / switch / archive (close) / restore / leave, on top of the
+  signup flow.
 
 ## 2. Tax & payroll accuracy
 

@@ -8,6 +8,33 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-06-28 — User-driven tenant management & OCR receipt capture
+
+#### Added
+- **User-driven tenant lifecycle.** The in-app tenant switcher now supports the
+  full lifecycle on top of signup: **create**, **switch**, **archive (close)**,
+  **restore**, and **leave**. Archiving is a reversible soft-close
+  (`entity_settings.archived_at`, migration 029) — a hard delete is deliberately
+  not offered because the immutability triggers block deleting posted journal
+  lines and the ledger/audit trail must be retained for compliance. Owner-only
+  archive/restore; archiving the caller's last active tenant and a sole Owner
+  leaving are both refused; switching into an archived tenant is blocked; every
+  action writes an audit event. API: `POST /auth/tenants/{id}/archive` ·
+  `/unarchive` · `/leave`; `GET /auth/tenants?include_archived=true`.
+- **OCR receipt capture (P2)** completed end-to-end. `POST /receipts/capture`
+  now accepts a `multipart/form-data` image/PDF upload (8 MiB cap), stores the
+  image, runs OCR **synchronously**, and returns extracted fields with per-field
+  confidence; the review UI lets a user correct fields and `POST
+  /receipts/confirm` posts a **VAT-inclusive** bill (net line + recomputed VAT,
+  no double-counting). OCR is a **pluggable provider**: the default
+  `ManualReviewProvider` needs no external service (the reviewer types the
+  fields), and an optional **xberg** sidecar (`OCR_PROVIDER=xberg`,
+  `XBERG_URL`, `XBERG_OCR_TIMEOUT_SECS`) performs real extraction over HTTP,
+  degrading gracefully to manual review when unconfigured or unreachable — the
+  same convention as the M-Pesa gateway. Receipt images stay on-prem (a local
+  OCR backend); no data is sent to third parties by default.
+
+
 ### 2026-06-27 — End-to-end audit: idempotency, atomicity & multi-tenancy
 
 Backend and UI fixes from a full end-to-end accounting audit, plus a complete

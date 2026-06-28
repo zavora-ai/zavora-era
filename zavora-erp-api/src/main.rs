@@ -18,6 +18,9 @@ mod routes;
 /// Application state shared across handlers.
 pub struct AppState {
     pub engine: ErpEngine,
+    /// Configured receipt-OCR provider (manual review by default; xberg sidecar
+    /// when `OCR_PROVIDER=xberg`). Shared, cheap to clone behind the `Arc`.
+    pub ocr: std::sync::Arc<dyn zavora_erp_core::services::ocr_provider::OcrProvider>,
 }
 
 #[tokio::main]
@@ -77,7 +80,10 @@ async fn main() -> anyhow::Result<()> {
     // Create engine
     let engine = ErpEngine::new(pool, redis_conn, config).await?;
 
-    let state = Arc::new(AppState { engine });
+    let state = Arc::new(AppState {
+        engine,
+        ocr: routes::ocr_provider::provider_from_env(),
+    });
 
     // Spawn background scheduler
     let scheduler_engine = ErpEngine::new(scheduler_pool, scheduler_redis, scheduler_config).await?;

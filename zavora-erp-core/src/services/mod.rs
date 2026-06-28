@@ -21,4 +21,5 @@ pub mod notifications;
 pub mod notification_worker;
 pub mod scheduler;
 pub mod ocr;
+pub mod ocr_provider;
 pub mod wht;
