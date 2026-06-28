@@ -96,6 +96,7 @@ pub enum ReportContent {
     DimensionalAnalysis(DimensionalAnalysisReport),
     EquityChanges(EquityChangesReport),
     CashFlowDirect(CashFlowDirectReport),
+    CustomerPaymentHistory(CustomerPaymentHistoryReport),
     Generic(serde_json::Value),
 }
 
@@ -346,6 +347,39 @@ pub struct StatementLine {
     pub payment: Decimal,
     /// Running outstanding balance after this line.
     pub balance: Decimal,
+}
+
+/// Customer payment history — every payment received from one customer over a
+/// period, with the payment method, reference, amount, and how much of each
+/// receipt is still unapplied (sitting as on-account credit).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerPaymentHistoryReport {
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub period_from: NaiveDate,
+    pub period_to: NaiveDate,
+    pub lines: Vec<PaymentHistoryLine>,
+    /// Total received in the period.
+    pub total_received: Decimal,
+    /// Total still unapplied (on-account) across the period's receipts.
+    pub total_unapplied: Decimal,
+    /// Number of receipts in the period.
+    pub payment_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentHistoryLine {
+    pub date: NaiveDate,
+    /// Payment number (e.g. PAY-2026-0001).
+    pub number: String,
+    /// Payment method label (Cash / Bank Transfer / M-Pesa / Cheque / …).
+    pub method: String,
+    /// External reference / receipt number.
+    pub reference: String,
+    pub amount: Decimal,
+    /// Portion of this receipt not yet applied to a document (on-account).
+    pub unapplied: Decimal,
+    pub status: String,
 }
 
 /// Payroll summary — statutory and net-pay totals across the pay runs whose

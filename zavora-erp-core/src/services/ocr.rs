@@ -7,6 +7,14 @@ use crate::parties::VendorRow;
 use crate::payments::receipt_capture::*;
 use crate::types::AgentOrUserId;
 
+/// Overall OCR confidence at or above which a capture is auto-marked `reviewed`;
+/// below it the capture is flagged `needs_review` for mandatory human review.
+const CONFIDENCE_REVIEW_THRESHOLD: f32 = 0.7;
+
+/// Minimum normalised name-similarity for an OCR-extracted vendor name to be
+/// auto-matched to an existing vendor record.
+const VENDOR_MATCH_THRESHOLD: f64 = 0.6;
+
 /// Submit a receipt for OCR processing.
 /// In production, this would call Azure AI Content Understanding.
 /// Here we store the capture record and return it for manual review.
@@ -52,9 +60,8 @@ pub async fn process_ocr_result(
         None
     };
 
-    // Step 2: Determine status based on confidence score
-    // If confidence < 0.7: flag for mandatory human review
-    let status = if result.confidence < 0.7 {
+    // Step 2: Determine status based on confidence score.
+    let status = if result.confidence < CONFIDENCE_REVIEW_THRESHOLD {
         "needs_review"
     } else {
         "reviewed"
@@ -159,9 +166,9 @@ async fn fuzzy_match_vendor(engine: &ErpEngine, entity_id: Uuid, extracted_name:
         }
     }
 
-    // Only return a match if similarity exceeds threshold (0.6)
+    // Only return a match if similarity exceeds the configured threshold.
     match best_match {
-        Some((id, score)) if score > 0.6 => Ok(Some(id)),
+        Some((id, score)) if score > VENDOR_MATCH_THRESHOLD => Ok(Some(id)),
         _ => Ok(None),
     }
 }

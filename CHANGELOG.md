@@ -11,6 +11,28 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
+- **Customer Payment History report.** New report listing every receipt from a
+  customer over a period — date, payment number, method, reference, amount, and
+  the portion still unapplied (on-account) — with totals. Available in the
+  report catalogue (party + period controls), rendered in the UI, and CSV-
+  exportable. Previously this report type silently returned an empty body.
+- **Consolidation: FX translation + intercompany elimination.** The consolidated
+  trial balance now **translates** each entity's functional balances into a
+  chosen `presentation_currency` via `exchange_rates` (latest rate on/before the
+  date; 1:1 when already in that currency, flagged in `untranslated` when no rate
+  is on file), and **eliminates intercompany AR/AP** between the consolidated
+  entities — receivables/payables to a party whose KRA PIN matches a sister
+  entity — surfaced in an `eliminations` section. Previously it only summed
+  functional amounts and flagged mixed currencies.
+- **M-Pesa STK Push (Daraja) client.** Real Lipa-na-M-Pesa STK Push: OAuth token
+  + `processrequest` via a new `payments::daraja` client, wired to
+  `POST /payments/mpesa-stk-push` (resolves the invoice balance + customer phone,
+  triggers the prompt, returns the checkout request id). Deployment-gated by
+  `MPESA_CONSUMER_KEY`/`SECRET`/`SHORTCODE`/`PASSKEY`/`CALLBACK_URL` (sandbox vs
+  production via `MPESA_ENV`); returns a clear "not configured" error when the
+  credentials are absent. _Note: the outbound Daraja calls require live Safaricom
+  credentials and have not been exercised end-to-end; the password/timestamp/
+  MSISDN helpers are unit-tested._
 - **Per-tenant notification providers (self-service).** Each tenant can now
   configure its **own** delivery credentials in **Settings → Providers** — SMTP
   (email), Africa's Talking (SMS), Twilio (WhatsApp) — instead of relying only

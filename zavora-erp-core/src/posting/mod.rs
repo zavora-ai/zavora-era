@@ -59,6 +59,20 @@ pub struct PostingSetup {
     pub default_purchase: String,
     pub default_expense: String,
 
+    // --- Inventory ---
+    /// Inventory asset (stock on hand) control account.
+    pub inventory_asset: String,
+    /// Cost of goods sold.
+    pub cost_of_goods_sold: String,
+
+    // --- Fixed assets ---
+    /// Fixed-asset (cost) control account.
+    pub fixed_asset: String,
+    /// Accumulated depreciation (contra-asset).
+    pub accumulated_depreciation: String,
+    /// Depreciation expense.
+    pub depreciation_expense: String,
+
     // --- Payroll ---
     pub salaries_expense: String,
     pub nssf_employer_expense: String,
@@ -98,6 +112,11 @@ impl Default for PostingSetup {
             default_sales: "5000".to_string(),
             default_purchase: "6000".to_string(),
             default_expense: "7900".to_string(),
+            inventory_asset: "1300".to_string(),
+            cost_of_goods_sold: "6000".to_string(),
+            fixed_asset: "2500".to_string(),
+            accumulated_depreciation: "2600".to_string(),
+            depreciation_expense: "7600".to_string(),
             salaries_expense: "7010".to_string(),
             nssf_employer_expense: "7020".to_string(),
             housing_levy_employer_expense: "7030".to_string(),

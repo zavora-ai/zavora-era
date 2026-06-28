@@ -19,8 +19,9 @@ pub async fn create_product(
         None => engine.config_for(entity_id).await?.base_currency.clone(),
     };
     let uom = req.uom.unwrap_or(crate::types::UnitOfMeasure::Each);
-    let sales_account = req.sales_account.unwrap_or_else(|| "5000".to_string());
-    let purchase_account = req.purchase_account.unwrap_or_else(|| "6000".to_string());
+    let posting = engine.posting_for(entity_id).await?;
+    let sales_account = req.sales_account.unwrap_or_else(|| posting.default_sales.clone());
+    let purchase_account = req.purchase_account.unwrap_or_else(|| posting.default_purchase.clone());
     let vat_treatment = req.vat_treatment.unwrap_or(crate::types::VatTreatment::Standard16);
 
     sqlx::query(

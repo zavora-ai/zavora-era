@@ -9,6 +9,7 @@ import BalanceSheetView from './BalanceSheetView';
 import ProfitAndLossView from './ProfitAndLossView';
 import VatReturnView from './VatReturnView';
 import PartyStatementView from './PartyStatementView';
+import PaymentHistoryView from './PaymentHistoryView';
 import PayrollSummaryView from './PayrollSummaryView';
 import PayeP10View from './PayeP10View';
 import WhtReportView from './WhtReportView';
@@ -41,6 +42,8 @@ export default function ReportBody({ result, onDrill }: { result: any; onDrill?:
       return <VatReturnView c={c} />;
     case 'PartyStatement':
       return <PartyStatementView c={c} />;
+    case 'CustomerPaymentHistory':
+      return <PaymentHistoryView c={c} />;
     case 'PayrollSummary':
       return <PayrollSummaryView c={c} />;
     case 'PayeP10':

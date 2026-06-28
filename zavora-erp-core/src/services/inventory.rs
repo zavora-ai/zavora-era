@@ -55,6 +55,9 @@ pub async fn create_item(
     }
 
     let id = Uuid::new_v4();
+    let posting = engine.posting_for(entity_id).await?;
+    let gl_inventory = req.gl_inventory.clone().unwrap_or_else(|| posting.inventory_asset.clone());
+    let gl_cogs = req.gl_cogs.clone().unwrap_or_else(|| posting.cost_of_goods_sold.clone());
     sqlx::query(
         r#"INSERT INTO inventory_items
             (id, entity_id, product_id, sku, description, uom, costing_method,
@@ -69,8 +72,8 @@ pub async fn create_item(
     .bind(req.description.trim())
     .bind(req.uom.unwrap_or_else(|| "Each".to_string()))
     .bind(req.costing_method.unwrap_or_else(|| "WeightedAvgCost".to_string()))
-    .bind(req.gl_inventory.unwrap_or_else(|| "1300".to_string()))
-    .bind(req.gl_cogs.unwrap_or_else(|| "6000".to_string()))
+    .bind(req.gl_inventory.unwrap_or(gl_inventory))
+    .bind(req.gl_cogs.unwrap_or(gl_cogs))
     .bind(req.reorder_point)
     .bind(req.reorder_quantity)
     .bind(req.warehouse_id)
