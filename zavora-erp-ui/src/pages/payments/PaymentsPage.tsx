@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills, getBankAccounts } from '../../api/client';
+import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills, getBankAccounts, getAccounts } from '../../api/client';
 import api from '../../api/client';
 import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -383,6 +383,8 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     party_id: '',
     payment_date: new Date().toISOString().split('T')[0],
     bank_account_id: '',
+    funding_source: 'bank' as 'bank' | 'director', // pay-from: company bank vs director's loan / owner funds
+    funding_account: '4200', // GL account when funding_source = 'director'
     apply_to_document_id: '',
     apply_amount: 0,
     wht_amount: 0, // withholding tax withheld by the customer (KES), customer receipts only
@@ -403,6 +405,15 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     queryKey: ['bank-accounts'],
     queryFn: () => getBankAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
+  // Liability/equity accounts that can fund a payment off-bank (e.g. Directors
+  // Loans, owner's capital) — used when 'Paid from' is the director.
+  const { data: accounts = [] } = useQuery<any[]>({
+    queryKey: ['accounts'],
+    queryFn: () => getAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+  const fundingAccounts = accounts
+    .filter((a) => (a.account_type === 'Liability' || a.account_type === 'Equity') && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
   const parties = isCustomer ? customers : vendors;
 
   // Open documents to apply against, scoped to the selected party.
@@ -459,7 +470,10 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
       fx_rate: form.fx_rate,
       method,
       reference: form.reference,
-      bank_account_id: form.bank_account_id || undefined,
+      bank_account_id: form.funding_source === 'bank' ? (form.bank_account_id || undefined) : undefined,
+      // Off-bank funding (director's loan / owner funds): the payment's bank leg
+      // posts to this GL account instead of a cash account.
+      funding_account: form.funding_source === 'director' ? form.funding_account : undefined,
       applications,
       // WHT withheld by the customer (KES). The receipt clears the full invoice
       // as cash (amount) + WHT, posting the credit to WHT Receivable.
@@ -550,17 +564,42 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div>
-            <label className="label">Bank Account</label>
+            <label className="label">Paid {isCustomer ? 'into' : 'from'}</label>
             <select
               className="input"
-              value={form.bank_account_id}
-              onChange={(e) => setForm({ ...form, bank_account_id: e.target.value })}
+              value={form.funding_source}
+              onChange={(e) => setForm({ ...form, funding_source: e.target.value as 'bank' | 'director' })}
             >
-              <option value="">Default / unspecified</option>
-              {bankAccounts.map((b) => (
-                <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>
-              ))}
+              <option value="bank">Bank account</option>
+              <option value="director">Director's loan / owner funds</option>
             </select>
+            {form.funding_source === 'bank' ? (
+              <select
+                className="input mt-2"
+                value={form.bank_account_id}
+                onChange={(e) => setForm({ ...form, bank_account_id: e.target.value })}
+              >
+                <option value="">Default / unspecified</option>
+                {bankAccounts.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <select
+                  className="input mt-2"
+                  value={form.funding_account}
+                  onChange={(e) => setForm({ ...form, funding_account: e.target.value })}
+                >
+                  {fundingAccounts.map((a) => (
+                    <option key={a.code} value={a.code}>{a.code} — {a.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {isCustomer ? 'Funds received by the director on the company\u2019s behalf' : 'Paid by the director personally — credits the director\u2019s loan instead of a company bank account.'}
+                </p>
+              </>
+            )}
           </div>
         </div>
         <div>

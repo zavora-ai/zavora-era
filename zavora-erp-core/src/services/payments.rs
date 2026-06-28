@@ -152,7 +152,13 @@ pub async fn record_payment(
     let reference = req.reference.unwrap_or_else(|| number.clone());
 
     // Determine the bank account code for the JE
-    let bank_account_code = resolve_bank_account_code(engine, entity_id, req.bank_account_id).await?;
+    // Resolve the GL account the payment is funded from. A `funding_account`
+    // (e.g. Directors Loans for an owner-funded purchase) overrides the bank
+    // account, so the "Bank" leg posts to that account and no company cash moves.
+    let bank_account_code = match req.funding_account.as_ref().filter(|s| !s.trim().is_empty()) {
+        Some(acc) => acc.clone(),
+        None => resolve_bank_account_code(engine, entity_id, req.bank_account_id).await?,
+    };
 
     // Everything that touches the ledger (payment record, document balances, and
     // the journal entry) commits or rolls back together (Requirement 2.1).
@@ -845,6 +851,7 @@ pub async fn record_mpesa_payment(
         }],
         wht_amount: None,
         wht_account: None,
+        funding_account: None,
     };
 
     let actor = AgentOrUserId::Agent("mpesa-webhook".to_string());

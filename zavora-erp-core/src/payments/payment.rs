@@ -137,6 +137,13 @@ pub struct RecordPaymentRequest {
     /// Optional override for the WHT account (defaults to posting `wht_receivable`).
     #[serde(default)]
     pub wht_account: Option<String>,
+    /// Non-cash funding source: when set, the payment is funded from this GL
+    /// account (e.g. `4200` Directors Loans for an owner-funded purchase) instead
+    /// of a bank account — the "Bank" leg credits/debits this account. Lets a bill
+    /// be settled by the director personally without touching a company cash
+    /// account. Takes precedence over `bank_account_id` when present.
+    #[serde(default)]
+    pub funding_account: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

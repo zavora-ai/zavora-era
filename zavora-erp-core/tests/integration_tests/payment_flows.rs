@@ -184,6 +184,7 @@ fn customer_payment(
         }],
         wht_amount: None,
         wht_account: None,
+        funding_account: None,
     }
 }
 
