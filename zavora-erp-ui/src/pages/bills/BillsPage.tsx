@@ -88,6 +88,13 @@ export default function BillsPage() {
           >
             <Eye className="w-3 h-3" />
           </Link>
+          {/* Attachments available at every status — the source document
+              (e.g. an OCR-captured invoice) should be viewable before posting. */}
+          {hasRole(ROLES_CREATE) && (
+            <button onClick={() => setAttachBill(r)} className="btn-secondary text-xs py-1 px-2" title="Attachments">
+              <Paperclip className="w-3 h-3" />
+            </button>
+          )}
           {r.status === 'draft' && (
             <>
               {hasRole(ROLES_APPROVE) && (
@@ -110,9 +117,6 @@ export default function BillsPage() {
           )}
           {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (
             <>
-              <button onClick={() => setAttachBill(r)} className="btn-secondary text-xs py-1 px-2" title="Attachments">
-                <Paperclip className="w-3 h-3" />
-              </button>
               <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
                 <ReceiptText className="w-3 h-3" /> Credit Note
               </button>
