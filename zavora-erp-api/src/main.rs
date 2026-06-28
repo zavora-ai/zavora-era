@@ -280,6 +280,9 @@ async fn main() -> anyhow::Result<()> {
         // Tenant management for the authenticated user (list / switch / create).
         .route("/api/v1/auth/tenants", get(routes::auth_tenants::list_tenants).post(routes::auth_tenants::create_tenant))
         .route("/api/v1/auth/switch-tenant", post(routes::auth_tenants::switch_tenant))
+        .route("/api/v1/auth/tenants/{id}/archive", post(routes::auth_tenants::archive_tenant))
+        .route("/api/v1/auth/tenants/{id}/unarchive", post(routes::auth_tenants::unarchive_tenant))
+        .route("/api/v1/auth/tenants/{id}/leave", post(routes::auth_tenants::leave_tenant))
         // Every route above requires a valid access token.
         .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
 

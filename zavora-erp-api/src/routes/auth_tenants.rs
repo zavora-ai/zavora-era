@@ -53,6 +53,9 @@ struct MembershipRow {
     email: String,
     name: String,
     currency: String,
+    /// `true` when the tenant has been soft-archived (closed). Archived tenants
+    /// are hidden from the switcher by default and cannot be switched into.
+    archived: bool,
 }
 
 /// Resolve the caller's email from their user id (AuthContext carries no email).
@@ -65,7 +68,9 @@ async fn caller_email(state: &AppState, user_id: Uuid) -> Result<String, Respons
         .ok_or_else(|| er(ErpError::Unauthorized { message: "User not found".to_string() }))
 }
 
-/// Every active membership for `email`, newest-named first.
+/// Every active membership for `email`, newest-named first. The `archived` flag
+/// reflects whether each tenant has been soft-archived; callers decide whether
+/// to include or hide archived tenants.
 async fn memberships(state: &AppState, email: &str) -> Result<Vec<MembershipRow>, Response> {
     sqlx::query_as::<_, MembershipRow>(
         r#"SELECT u.id AS user_id,
@@ -74,7 +79,8 @@ async fn memberships(state: &AppState, email: &str) -> Result<Vec<MembershipRow>
                   u.display_name,
                   u.email,
                   COALESCE(s.organization_name, '(unnamed)') AS name,
-                  COALESCE(s.base_currency, 'KES') AS currency
+                  COALESCE(s.base_currency, 'KES') AS currency,
+                  (s.archived_at IS NOT NULL) AS archived
            FROM era_users u
            LEFT JOIN entity_settings s ON s.entity_id = u.entity_id
            WHERE lower(u.email) = lower($1) AND u.is_active = true
@@ -131,14 +137,20 @@ fn session_response(m: &MembershipRow, pair: &TokenPair) -> Response {
 
 /// GET /api/v1/auth/tenants — the tenants the current user belongs to, with the
 /// active one flagged. Drives the in-app tenant switcher.
+///
+/// Archived (closed) tenants are hidden by default; pass `?include_archived=true`
+/// to include them (each carries an `archived` flag) so the UI can offer a
+/// "restore" affordance.
 pub async fn list_tenants(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<ListTenantsQuery>,
 ) -> Result<Json<serde_json::Value>, Response> {
     let email = caller_email(&state, ctx.user_id).await?;
     let rows = memberships(&state, &email).await?;
     let items: Vec<_> = rows
         .iter()
+        .filter(|m| q.include_archived || !m.archived)
         .map(|m| {
             serde_json::json!({
                 "entity_id": m.entity_id,
@@ -146,10 +158,18 @@ pub async fn list_tenants(
                 "currency": m.currency,
                 "role": m.role,
                 "current": m.entity_id == ctx.entity_id,
+                "archived": m.archived,
             })
         })
         .collect();
     Ok(Json(serde_json::json!({ "tenants": items })))
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct ListTenantsQuery {
+    /// When true, archived tenants are included in the response.
+    #[serde(default)]
+    pub include_archived: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -175,6 +195,13 @@ pub async fn switch_tenant(
             message: "You are not a member of that tenant".to_string(),
         }));
     };
+
+    // An archived (closed) tenant must be restored before it can be entered.
+    if target.archived {
+        return Err(er(ErpError::ValidationFailed {
+            message: "That tenant is archived; restore it before switching in".to_string(),
+        }));
+    }
 
     let pair = auth::issue_token_pair(jwt_config(), target.user_id, target.entity_id, &target.role)
         .map_err(er)?;
@@ -265,6 +292,198 @@ pub async fn create_tenant(
         email,
         name: provisioned.organization_name.clone(),
         currency: "KES".to_string(),
+        archived: false,
     };
     Ok(session_response(&m, &pair))
+}
+
+
+// ---------------------------------------------------------------------------
+// Tenant lifecycle: archive (close) / unarchive (restore) / leave.
+//
+// A hard delete is intentionally not offered: the immutability triggers block
+// deleting posted journal lines and the ledger/audit trail is retained for
+// compliance. Archiving is the reversible, audit-preserving way for a user to
+// remove a tenant from their active workspace.
+// ---------------------------------------------------------------------------
+
+/// Look up the caller's membership of a specific tenant by their email, so role
+/// checks are evaluated against the *target* tenant (not the session's current
+/// one). Returns `None` when the caller is not a member.
+async fn membership_of(
+    state: &AppState,
+    email: &str,
+    entity_id: Uuid,
+) -> Result<Option<MembershipRow>, Response> {
+    let rows = memberships(state, email).await?;
+    Ok(rows.into_iter().find(|m| m.entity_id == entity_id))
+}
+
+/// Record a tenant-lifecycle audit event (archived / unarchived / left).
+async fn audit_tenant_event(
+    state: &AppState,
+    entity_id: Uuid,
+    actor_user_id: Uuid,
+    event_type: &str,
+) {
+    let actor = serde_json::json!({ "type": "user", "user_id": actor_user_id });
+    let metadata = serde_json::json!({ "by": actor_user_id, "at": chrono::Utc::now() });
+    let _ = sqlx::query(
+        r#"INSERT INTO audit_events
+               (entity_id, event_type, object_type, object_id, actor, metadata, timestamp)
+           VALUES ($1, $2, 'tenant', $3, $4, $5, NOW())"#,
+    )
+    .bind(entity_id)
+    .bind(event_type)
+    .bind(entity_id)
+    .bind(actor)
+    .bind(metadata)
+    .execute(state.engine.pool())
+    .await;
+}
+
+/// POST /api/v1/auth/tenants/{id}/archive — soft-archive (close) a tenant the
+/// caller Owns. Owner-only. Refuses to archive the caller's only non-archived
+/// tenant (they would be left with no active workspace) — they should create or
+/// switch to another tenant first. The ledger and audit trail are untouched;
+/// the tenant simply disappears from the switcher until restored.
+pub async fn archive_tenant(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(entity_id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, Response> {
+    let email = caller_email(&state, ctx.user_id).await?;
+    let all = memberships(&state, &email).await?;
+
+    let Some(target) = all.iter().find(|m| m.entity_id == entity_id) else {
+        return Err(er(ErpError::Unauthorized {
+            message: "You are not a member of that tenant".to_string(),
+        }));
+    };
+
+    // Only an Owner of the target tenant may archive it.
+    if target.role != "Owner" {
+        return Err(er(ErpError::PermissionDenied {
+            action: "archive a tenant".to_string(),
+            required_role: "Owner".to_string(),
+        }));
+    }
+
+    // Already archived → idempotent success.
+    if target.archived {
+        return Ok(Json(serde_json::json!({ "entity_id": entity_id, "archived": true })));
+    }
+
+    // Refuse to archive the caller's last remaining active workspace.
+    let active_count = all.iter().filter(|m| !m.archived).count();
+    if active_count <= 1 {
+        return Err(er(ErpError::ValidationFailed {
+            message: "Cannot archive your only active tenant; create or switch to another first"
+                .to_string(),
+        }));
+    }
+
+    sqlx::query(
+        "UPDATE entity_settings SET archived_at = NOW(), archived_by = $2 WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .bind(ctx.user_id)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    audit_tenant_event(&state, entity_id, ctx.user_id, "archived").await;
+
+    Ok(Json(serde_json::json!({ "entity_id": entity_id, "archived": true })))
+}
+
+/// POST /api/v1/auth/tenants/{id}/unarchive — restore a previously archived
+/// tenant. Owner-only. After restoring, the caller can switch into it again.
+pub async fn unarchive_tenant(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(entity_id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, Response> {
+    let email = caller_email(&state, ctx.user_id).await?;
+
+    let Some(target) = membership_of(&state, &email, entity_id).await? else {
+        return Err(er(ErpError::Unauthorized {
+            message: "You are not a member of that tenant".to_string(),
+        }));
+    };
+
+    if target.role != "Owner" {
+        return Err(er(ErpError::PermissionDenied {
+            action: "restore a tenant".to_string(),
+            required_role: "Owner".to_string(),
+        }));
+    }
+
+    sqlx::query(
+        "UPDATE entity_settings SET archived_at = NULL, archived_by = NULL WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    audit_tenant_event(&state, entity_id, ctx.user_id, "unarchived").await;
+
+    Ok(Json(serde_json::json!({ "entity_id": entity_id, "archived": false })))
+}
+
+/// POST /api/v1/auth/tenants/{id}/leave — the caller leaves a tenant by
+/// deactivating their own membership (era_users row) in it. This removes the
+/// tenant from their workspace without affecting anyone else.
+///
+/// A sole active Owner cannot leave (the tenant would be left ownerless) — they
+/// must hand ownership to another user first, or archive the tenant instead.
+/// The caller also cannot leave the tenant they are currently signed into via
+/// this call's own session entity, to avoid orphaning the live session; they
+/// should switch away first.
+pub async fn leave_tenant(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(entity_id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, Response> {
+    let email = caller_email(&state, ctx.user_id).await?;
+
+    let Some(target) = membership_of(&state, &email, entity_id).await? else {
+        return Err(er(ErpError::Unauthorized {
+            message: "You are not a member of that tenant".to_string(),
+        }));
+    };
+
+    // Sole-Owner protection: mirror the first-Owner rule in users.rs.
+    if target.role == "Owner" {
+        let active_owners = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM era_users \
+             WHERE entity_id = $1 AND role = 'Owner' AND is_active = true",
+        )
+        .bind(entity_id)
+        .fetch_one(state.engine.pool())
+        .await
+        .map_err(|e| er(ErpError::Database(e)))?;
+
+        if active_owners <= 1 {
+            return Err(er(ErpError::ValidationFailed {
+                message: "You are the sole Owner; transfer ownership or archive the tenant instead"
+                    .to_string(),
+            }));
+        }
+    }
+
+    // Deactivate only the caller's own membership in the target tenant.
+    sqlx::query(
+        "UPDATE era_users SET is_active = false WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(target.user_id)
+    .bind(entity_id)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    audit_tenant_event(&state, entity_id, ctx.user_id, "member_left").await;
+
+    Ok(Json(serde_json::json!({ "entity_id": entity_id, "left": true })))
 }
