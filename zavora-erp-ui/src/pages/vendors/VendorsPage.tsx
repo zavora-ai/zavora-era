@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getVendors, createVendor } from '../../api/client';
+import { getVendors, createVendor, assignPostingGroups } from '../../api/client';
+import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Vendor } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -69,10 +70,18 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
     // Notes
     notes: '',
   });
+  const [genGroup, setGenGroup] = useState('');
+  const [vatGroup, setVatGroup] = useState('');
 
   const mutation = useMutation({
     mutationFn: (data: any) => createVendor(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['vendors'] }); onClose(); },
+    onSuccess: async (resp: any) => {
+      const id = resp?.data?.id ?? resp?.data;
+      if (id && (genGroup || vatGroup)) {
+        try { await assignPostingGroups({ kind: 'vendor', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
+      }
+      queryClient.invalidateQueries({ queryKey: ['vendors'] }); onClose();
+    },
   });
 
   const whtRates: Record<string, { resident: string; nonResident: string }> = {
@@ -145,6 +154,7 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
                 </select>
               </div>
             </div>
+            <PostingGroupFields scope="party" generalId={genGroup} vatId={vatGroup} onGeneral={setGenGroup} onVat={setVatGroup} />
             <hr />
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Address</label><input className="input" value={form.address_1} onChange={(e) => setForm({ ...form, address_1: e.target.value })} placeholder="Street or P.O. Box" /></div>

@@ -63,6 +63,35 @@ pub async fn create_group(
 }
 
 #[derive(serde::Deserialize)]
+pub struct AssignReq {
+    /// "customer" | "vendor" | "product".
+    pub kind: String,
+    pub id: Uuid,
+    pub general_group_id: Option<Uuid>,
+    pub vat_group_id: Option<Uuid>,
+}
+
+/// POST /posting-groups/assign — set a master's posting groups.
+pub async fn assign(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(r): Json<AssignReq>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    require_role(ROLES_CREATE, &ctx, "assign posting groups").map_err(|e| err_response(e).into_response())?;
+    let (table, gen_col, vat_col) = match r.kind.as_str() {
+        "customer" => ("customers", "general_business_group_id", "vat_business_group_id"),
+        "vendor" => ("vendors", "general_business_group_id", "vat_business_group_id"),
+        "product" => ("products", "general_product_group_id", "vat_product_group_id"),
+        _ => return Err(err_response(zavora_erp_core::ErpError::ValidationFailed { message: "invalid kind".into() }).into_response()),
+    };
+    let sql = format!("UPDATE {table} SET {gen_col}=$1, {vat_col}=$2 WHERE id=$3 AND entity_id=$4");
+    sqlx::query(&sql).bind(r.general_group_id).bind(r.vat_group_id).bind(r.id).bind(ctx.entity_id)
+        .execute(state.engine.pool()).await
+        .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)).into_response())?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
 pub struct GeneralCellReq {
     pub gen_biz_group_id: Uuid,
     pub gen_prod_group_id: Uuid,

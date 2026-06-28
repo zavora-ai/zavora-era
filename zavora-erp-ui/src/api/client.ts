@@ -139,6 +139,8 @@ export const getConsolidationEntities = () => api.get('/consolidation/entities')
 export const getPostingGroups = () => api.get('/posting-groups');
 export const createPostingGroup = (data: { kind: string; code: string; name: string }) =>
   api.post('/posting-groups/group', data);
+export const assignPostingGroups = (data: { kind: 'customer' | 'vendor' | 'product'; id: string; general_group_id?: string; vat_group_id?: string }) =>
+  api.post('/posting-groups/assign', data);
 export const upsertGeneralMatrix = (data: { gen_biz_group_id: string; gen_prod_group_id: string; sales_account?: string; purchase_account?: string; cogs_account?: string }) =>
   api.post('/posting-groups/general-matrix', data);
 export const upsertVatMatrix = (data: { vat_biz_group_id: string; vat_prod_group_id: string; vat_rate: number; vat_output_account?: string; vat_input_account?: string }) =>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getCustomers, createCustomer } from '../../api/client';
+import { getCustomers, createCustomer, assignPostingGroups } from '../../api/client';
+import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Customer } from '../../types';
 import { formatDate, formatCurrency } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
@@ -94,10 +95,16 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
     // Notes
     notes: '',
   });
+  const [genGroup, setGenGroup] = useState('');
+  const [vatGroup, setVatGroup] = useState('');
 
   const mutation = useMutation({
     mutationFn: (data: any) => createCustomer(data),
-    onSuccess: () => {
+    onSuccess: async (resp: any) => {
+      const id = resp?.data?.id ?? resp?.data;
+      if (id && (genGroup || vatGroup)) {
+        try { await assignPostingGroups({ kind: 'customer', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
+      }
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       onClose();
     },
@@ -299,6 +306,7 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
                 <p className="text-xs text-gray-400 mt-1">Automatically sets due date on new invoices</p>
               </div>
             </div>
+            <PostingGroupFields scope="party" generalId={genGroup} vatId={vatGroup} onGeneral={setGenGroup} onVat={setVatGroup} />
             <div>
               <label className="label">Credit Limit (KES)</label>
               <input type="number" className="input" value={form.credit_limit} onChange={(e) => setForm({ ...form, credit_limit: e.target.value })} placeholder="Leave blank for no limit" />
