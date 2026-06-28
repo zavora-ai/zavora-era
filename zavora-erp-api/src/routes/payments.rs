@@ -29,21 +29,36 @@ pub async fn get_one(
     }
 }
 
+// Flat query struct: `#[serde(flatten)]` is NOT supported by the urlencoded
+// query deserializer, so list the fields explicitly.
+#[derive(serde::Deserialize)]
+pub struct PaymentListQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    /// `status=unapplied` returns only payments that still carry unapplied credit.
+    pub status: Option<String>,
+}
+
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
-    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
+    axum::extract::Query(q): axum::extract::Query<PaymentListQuery>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments WHERE entity_id = $1")
+    let page = crate::routes::pagination::PaginationParams { limit: q.limit, offset: q.offset };
+    let page = &page;
+    // The "Unapplied" tab requests only payments that still have credit to allocate.
+    let filter = if q.status.as_deref() == Some("unapplied") { " AND unapplied > 0" } else { "" };
+
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM payments WHERE entity_id = $1{filter}"))
         .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, PaymentRow>(
-        "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+        &format!("SELECT * FROM payments WHERE entity_id = $1{filter} ORDER BY created_at DESC LIMIT $2 OFFSET $3"),
     )
     .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }

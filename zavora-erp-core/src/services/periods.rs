@@ -281,6 +281,18 @@ pub async fn period_for_date(engine: &ErpEngine, entity_id: Uuid, date: NaiveDat
     })
 }
 
+/// The fiscal year a document `date` belongs to — i.e. the fiscal year of the
+/// period it posts into. Document numbers use THIS (not the calendar year the
+/// document is keyed in), so a 2025-dated invoice entered in 2026 is still
+/// numbered for 2025. Falls back to the calendar year when no period exists yet.
+pub async fn fiscal_year_for_date(engine: &ErpEngine, entity_id: Uuid, date: NaiveDate) -> i32 {
+    use chrono::Datelike;
+    period_for_date(engine, entity_id, date)
+        .await
+        .map(|p| p.fiscal_year)
+        .unwrap_or_else(|_| date.year())
+}
+
 /// List all periods for the entity.
 pub async fn list_periods(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<Vec<FiscalPeriod>> {
     let periods = sqlx::query_as::<_, FiscalPeriod>(

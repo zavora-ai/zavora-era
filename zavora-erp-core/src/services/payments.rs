@@ -16,6 +16,7 @@ struct PaymentAccounts {
     ap: String,
     unapplied_payments: String,
     wht_payable: String,
+    wht_receivable: String,
     realised_fx_gain: String,
     realised_fx_loss: String,
 }
@@ -50,6 +51,7 @@ impl PaymentAccounts {
             ap,
             unapplied_payments: p.unapplied_payments.clone(),
             wht_payable: p.wht_payable.clone(),
+            wht_receivable: p.wht_receivable.clone(),
             realised_fx_gain: p.realised_fx_gain.clone(),
             realised_fx_loss: p.realised_fx_loss.clone(),
         })
@@ -87,16 +89,36 @@ pub async fn record_payment(
     };
     let fx_rate = req.fx_rate.unwrap_or(Decimal::ONE);
 
-    // Validate applications don't exceed payment amount
+    // Withholding tax withheld by the customer (base currency, KES). On a customer
+    // receipt the AR clears as cash + WHT, so the effective value received is the
+    // cash plus the WHT credit. Express the WHT in the payment currency for the
+    // amount comparisons below.
+    let wht_amount = req.wht_amount.unwrap_or(Decimal::ZERO).max(Decimal::ZERO);
+    let wht_in_pay_ccy = if wht_amount > Decimal::ZERO && fx_rate > Decimal::ZERO {
+        (wht_amount / fx_rate).round_dp(2)
+    } else {
+        Decimal::ZERO
+    };
+
+    // Validate applications don't exceed the value received (cash + WHT credit).
+    // KRA WHT is fixed in KES, so its payment-currency equivalent rarely equals the
+    // cash gap to the cent — allow a small tolerance (the residual is booked to
+    // realised FX). Tolerance scales with the WHT (covers the rate spread between
+    // the client's WHT rate and our spot rate); zero when there's no WHT.
     let total_requested: Decimal = req.applications.iter().map(|a| a.amount).sum();
-    if total_requested > req.amount {
+    let wht_tolerance = if wht_amount > Decimal::ZERO {
+        (wht_in_pay_ccy * Decimal::new(5, 2)).max(Decimal::ONE) // 5% of WHT, min 1 unit
+    } else {
+        Decimal::ZERO
+    };
+    if total_requested > req.amount + wht_in_pay_ccy + wht_tolerance {
         return Err(ErpError::ValidationFailed {
-            message: "Total applied amount exceeds payment amount".to_string(),
+            message: "Total applied amount exceeds payment amount (cash + withholding tax)".to_string(),
         });
     }
 
     // Generate payment number
-    let number = generate_payment_number(engine, entity_id).await?;
+    let number = generate_payment_number(engine, entity_id, payment_date).await?;
 
     // --- Overpayment handling ---
     // For each application, cap the applied amount to the document's balance_due.
@@ -122,8 +144,10 @@ pub async fn record_payment(
         total_actually_applied += effective_apply;
     }
 
-    // Total unapplied = payment amount minus what was actually applied to documents
-    let unapplied = req.amount - total_actually_applied;
+    // Total unapplied = value received (cash + WHT credit) minus what cleared
+    // documents. With WHT, the AR cleared includes the withheld portion, so the
+    // WHT credit counts toward the value received.
+    let unapplied = (req.amount + wht_in_pay_ccy - total_actually_applied).max(Decimal::ZERO);
 
     let reference = req.reference.unwrap_or_else(|| number.clone());
 
@@ -144,7 +168,14 @@ pub async fn record_payment(
     .bind(id)
     .bind(entity_id)
     .bind(&number)
-    .bind(serde_json::to_string(&req.payment_type).unwrap_or_default())
+    // Store the snake_case enum value WITHOUT JSON quotes (e.g. `customer_payment`),
+    // matching what the read paths and the API/UI expect.
+    .bind(
+        serde_json::to_value(&req.payment_type)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_default(),
+    )
     .bind(req.party_id)
     .bind(payment_date)
     .bind(req.amount)
@@ -238,6 +269,8 @@ pub async fn record_payment(
         &bank_account_code,
         &req.payment_type,
         wht_total,
+        wht_amount,
+        req.wht_account.clone(),
         recorded_by,
     )
     .await?;
@@ -481,14 +514,19 @@ async fn post_payment_journal_entry(
     bank_account_code: &str,
     payment_type: &PaymentType,
     wht_amount: Decimal,
+    // WHT withheld by the CUSTOMER on a receipt (base currency, KES) → booked to
+    // WHT Receivable. Zero for vendor payments / receipts with no withholding.
+    wht_receivable_amount: Decimal,
+    wht_receivable_account: Option<String>,
     posted_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
     let acct = PaymentAccounts::resolve(engine, entity_id, Some(party_id), payment_type).await?;
+    let base_currency = engine.config_for(entity_id).await?.base_currency.clone();
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();
 
     match payment_type {
         PaymentType::CustomerPayment => {
-            // DR Bank (full amount received)
+            // DR Bank (cash actually received)
             lines.push(CreateJournalLineRequest {
                 account_code: bank_account_code.to_string(),
                 debit: Some(total_amount),
@@ -499,7 +537,22 @@ async fn post_payment_journal_entry(
                 dimensions: None,
             });
 
-            // CR AR (applied portion)
+            // DR WHT Receivable (tax credit withheld by the customer). KRA WHT is
+            // always KES, so this posts in base currency at rate 1.0. The full AR
+            // is cleared as cash + WHT; any cross-currency residual goes to FX below.
+            if wht_receivable_amount > Decimal::ZERO {
+                lines.push(CreateJournalLineRequest {
+                    account_code: wht_receivable_account.clone().unwrap_or_else(|| acct.wht_receivable.clone()),
+                    debit: Some(wht_receivable_amount),
+                    credit: None,
+                    currency: base_currency.clone(),
+                    fx_rate: Some(Decimal::ONE),
+                    description: Some(format!("WHT withheld by customer: {}", payment_number)),
+                    dimensions: None,
+                });
+            }
+
+            // CR AR (applied portion — full document value, cleared by cash + WHT)
             if applied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
                     account_code: acct.ar.clone(),
@@ -523,6 +576,40 @@ async fn post_payment_journal_entry(
                     description: Some(format!("Unapplied payment credit: {}", payment_number)),
                     dimensions: None,
                 });
+            }
+
+            // Realised FX residual. With WHT the AR clears as cash + a KES-fixed WHT
+            // credit, which rarely ties to the cent across currencies. Book the
+            // functional residual to realised FX so the entry balances exactly:
+            //   residual = (AR + unapplied − cash)·rate − WHT(KES)
+            if wht_receivable_amount > Decimal::ZERO {
+                let residual = ((applied_amount + unapplied_amount - total_amount) * fx_rate
+                    - wht_receivable_amount)
+                    .round_dp(2);
+                if residual.abs() >= Decimal::new(1, 2) {
+                    if residual > Decimal::ZERO {
+                        // credits exceed debits → a debit (FX loss) balances it
+                        lines.push(CreateJournalLineRequest {
+                            account_code: acct.realised_fx_loss.clone(),
+                            debit: Some(residual),
+                            credit: None,
+                            currency: base_currency.clone(),
+                            fx_rate: Some(Decimal::ONE),
+                            description: Some(format!("Realised FX on WHT receipt: {}", payment_number)),
+                            dimensions: None,
+                        });
+                    } else {
+                        lines.push(CreateJournalLineRequest {
+                            account_code: acct.realised_fx_gain.clone(),
+                            debit: None,
+                            credit: Some(-residual),
+                            currency: base_currency.clone(),
+                            fx_rate: Some(Decimal::ONE),
+                            description: Some(format!("Realised FX on WHT receipt: {}", payment_number)),
+                            dimensions: None,
+                        });
+                    }
+                }
             }
         }
         PaymentType::VendorPayment => {
@@ -756,6 +843,8 @@ pub async fn record_mpesa_payment(
             document_id: invoice_id,
             amount,
         }],
+        wht_amount: None,
+        wht_account: None,
     };
 
     let actor = AgentOrUserId::Agent("mpesa-webhook".to_string());
@@ -1060,9 +1149,9 @@ pub async fn apply_unapplied_payment(
     })
 }
 
-async fn generate_payment_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
+async fn generate_payment_number(engine: &ErpEngine, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(sequences, '{payment_next}', to_jsonb((sequences->>'payment_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'payment_next')::bigint - 1"#,
@@ -1073,7 +1162,7 @@ async fn generate_payment_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResu
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.payment_prefix;
-    let fiscal_year = Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 

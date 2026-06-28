@@ -69,7 +69,7 @@ pub async fn create_bill(
     };
 
     let gross_total = subtotal + tax_total - wht_amount;
-    let number = generate_bill_number(engine, entity_id).await?;
+    let number = generate_bill_number(engine, entity_id, issue_date).await?;
 
     let mut tx = engine.pool().begin().await?;
 
@@ -377,9 +377,9 @@ pub async fn delete_bill_draft(
     Ok(())
 }
 
-async fn generate_bill_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
+async fn generate_bill_number(engine: &ErpEngine, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(sequences, '{bill_next}', to_jsonb((sequences->>'bill_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'bill_next')::bigint - 1"#,
@@ -390,6 +390,6 @@ async fn generate_bill_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.bill_prefix;
-    let fiscal_year = Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }

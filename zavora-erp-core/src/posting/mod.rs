@@ -34,8 +34,11 @@ pub struct PostingSetup {
     pub vat_output: String,
     /// VAT Input (claimable) — incurred on purchases.
     pub vat_input: String,
-    /// Withholding Tax payable to KRA.
+    /// Withholding Tax payable to KRA (WHT this entity withholds from vendors).
     pub wht_payable: String,
+    /// Withholding Tax receivable — WHT credits withheld by customers from this
+    /// entity's income (a prepaid income-tax asset).
+    pub wht_receivable: String,
 
     // --- Foreign exchange ---
     pub realised_fx_gain: String,
@@ -102,6 +105,7 @@ impl Default for PostingSetup {
             vat_output: "3100".to_string(),
             vat_input: "1300".to_string(),
             wht_payable: "3210".to_string(),
+            wht_receivable: "1310".to_string(),
             realised_fx_gain: "8120".to_string(),
             realised_fx_loss: "8130".to_string(),
             unrealised_fx_gain: "8100".to_string(),

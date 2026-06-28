@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills } from '../../api/client';
+import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills, getBankAccounts } from '../../api/client';
 import api from '../../api/client';
 import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -85,7 +85,19 @@ function AllPaymentsTab() {
         ),
     },
     { key: 'payment_date', header: 'Date', render: (r) => formatDate(r.payment_date) },
-    { key: 'amount', header: 'Amount', render: (r) => formatCurrency(r.amount), className: 'text-right' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      className: 'text-right',
+      render: (r) => (
+        <div>
+          <span className="font-medium">{formatCurrency(r.amount, r.currency)}</span>
+          {r.currency !== 'KES' && (
+            <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.amount) * Number(r.fx_rate || 1), 'KES')}</p>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'method',
       header: 'Method',
@@ -145,12 +157,24 @@ function UnappliedPaymentsTab() {
         </span>
       ),
     },
-    { key: 'amount', header: 'Amount', render: (r) => formatCurrency(r.amount), className: 'text-right' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      className: 'text-right',
+      render: (r) => (
+        <div>
+          <span className="font-medium">{formatCurrency(r.amount, r.currency)}</span>
+          {r.currency !== 'KES' && (
+            <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.amount) * Number(r.fx_rate || 1), 'KES')}</p>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'unapplied',
       header: 'Unapplied Balance',
       render: (r) => (
-        <span className="font-semibold text-amber-600">{formatCurrency(r.unapplied)}</span>
+        <span className="font-semibold text-amber-600">{formatCurrency(r.unapplied, r.currency)}</span>
       ),
       className: 'text-right',
     },
@@ -318,6 +342,8 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     // API contract: serde expects snake_case PaymentType ('customer_payment' | 'vendor_payment').
     payment_type: 'customer_payment',
     amount: 0,
+    currency: 'KES',
+    fx_rate: 1,
     method: 'BankTransfer',
     reference: '',
     party_id: '',
@@ -325,6 +351,7 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     bank_account_id: '',
     apply_to_document_id: '',
     apply_amount: 0,
+    wht_amount: 0, // withholding tax withheld by the customer (KES), customer receipts only
   });
 
   const isCustomer = form.payment_type === 'customer_payment';
@@ -337,6 +364,10 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
   const { data: vendors = [] } = useQuery<any[]>({
     queryKey: ['vendors'],
     queryFn: () => getVendors().then((r) => r.data),
+  });
+  const { data: bankAccounts = [] } = useQuery<any[]>({
+    queryKey: ['bank-accounts'],
+    queryFn: () => getBankAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
   const parties = isCustomer ? customers : vendors;
 
@@ -390,10 +421,15 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
       party_id: form.party_id,
       payment_date: form.payment_date,
       amount: form.amount,
+      currency: form.currency,
+      fx_rate: form.fx_rate,
       method,
       reference: form.reference,
       bank_account_id: form.bank_account_id || undefined,
       applications,
+      // WHT withheld by the customer (KES). The receipt clears the full invoice
+      // as cash (amount) + WHT, posting the credit to WHT Receivable.
+      wht_amount: isCustomer && form.wht_amount > 0 ? form.wht_amount : undefined,
     });
   };
 
@@ -429,9 +465,9 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="label">Amount (KES) *</label>
+            <label className="label">Amount ({form.currency}) *</label>
             <input
               type="number"
               className="input"
@@ -441,6 +477,18 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
               required
             />
           </div>
+          <div>
+            <label className="label">Currency</label>
+            <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, fx_rate: e.target.value === 'KES' ? 1 : form.fx_rate })}>
+              <option value="KES">KES</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">FX Rate → KES</label>
+            <input type="number" step="0.0001" className="input" value={form.fx_rate} disabled={form.currency === 'KES'} onChange={(e) => setForm({ ...form, fx_rate: +e.target.value })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Payment Date *</label>
             <input
@@ -469,12 +517,16 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="label">Bank Account</label>
-            <input
+            <select
               className="input"
               value={form.bank_account_id}
               onChange={(e) => setForm({ ...form, bank_account_id: e.target.value })}
-              placeholder="Optional — bank account ID"
-            />
+            >
+              <option value="">Default / unspecified</option>
+              {bankAccounts.map((b) => (
+                <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>
+              ))}
+            </select>
           </div>
         </div>
         <div>
@@ -501,6 +553,9 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
                     ...form,
                     apply_to_document_id: e.target.value,
                     apply_amount: doc ? Number(doc.balance_due ?? 0) : form.apply_amount,
+                    // Match the receipt currency/rate to the document being settled.
+                    currency: doc?.currency ?? form.currency,
+                    fx_rate: doc ? Number(doc.fx_rate ?? 1) : form.fx_rate,
                   });
                 }}
                 disabled={!form.party_id}
@@ -527,6 +582,30 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           </div>
           <p className="text-xs text-gray-400 mt-1">Leave blank to record as unapplied payment</p>
         </div>
+
+        {isCustomer && (
+          <div>
+            <label className="label">Withholding Tax withheld (KES)</label>
+            <input
+              type="number"
+              step="0.01"
+              className="input"
+              value={form.wht_amount}
+              onChange={(e) => setForm({ ...form, wht_amount: +e.target.value })}
+              placeholder="0.00"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              If the customer withheld 5% WHT, enter the certificate amount (in KES). The cash received above
+              plus this WHT clears the full invoice; the WHT posts to <span className="font-mono">1310 WHT Receivable</span>.
+            </p>
+            {form.wht_amount > 0 && form.apply_amount > 0 && (
+              <p className="text-xs text-blue-600 mt-1">
+                Cash {Number(form.amount).toFixed(2)} + WHT {Number(form.wht_amount).toFixed(2)} clears invoice balance {Number(form.apply_amount).toFixed(2)}.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-end gap-3 pt-4 border-t">
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancel

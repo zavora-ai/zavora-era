@@ -76,8 +76,8 @@ pub async fn create_invoice(
     }).sum();
     let gross_total = crate::money::round_money(subtotal + tax_total);
 
-    // Generate invoice number
-    let number = generate_invoice_number(engine, entity_id).await?;
+    // Generate invoice number (fiscal year of the issue date, not "now").
+    let number = generate_invoice_number(engine, entity_id, issue_date).await?;
 
     // Insert header + lines atomically so a failure cannot leave an invoice
     // header without its line items.
@@ -273,7 +273,7 @@ pub async fn create_credit_note(
     }
 
     // Generate credit note number
-    let cn_number = generate_credit_note_number(engine, entity_id).await?;
+    let cn_number = generate_credit_note_number(engine, entity_id, cn_date).await?;
     let cn_id = Uuid::new_v4();
 
     // The credit note record, its lines, the reversing journal entry, and the
@@ -588,7 +588,7 @@ pub async fn create_estimate(
     let gross_total = crate::money::round_money(subtotal + tax_total);
 
     // Generate estimate number
-    let number = generate_estimate_number(engine, entity_id).await?;
+    let number = generate_estimate_number(engine, entity_id, issue_date).await?;
 
     // Insert estimate header + lines atomically.
     let mut tx = engine.pool().begin().await?;
@@ -957,9 +957,9 @@ pub(crate) async fn resolve_invoice_line(
 }
 
 /// Generate the next invoice number atomically.
-async fn generate_invoice_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
+async fn generate_invoice_number(engine: &ErpEngine, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(sequences, '{invoice_next}', to_jsonb((sequences->>'invoice_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'invoice_next')::bigint - 1"#,
@@ -970,15 +970,15 @@ async fn generate_invoice_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResu
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.invoice_prefix;
-    let fiscal_year = Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 
 /// Generate the next credit note number atomically.
-async fn generate_credit_note_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
+async fn generate_credit_note_number(engine: &ErpEngine, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(sequences, '{credit_note_next}', to_jsonb((sequences->>'credit_note_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'credit_note_next')::bigint - 1"#,
@@ -989,15 +989,15 @@ async fn generate_credit_note_number(engine: &ErpEngine, entity_id: Uuid) -> Erp
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.credit_note_prefix;
-    let fiscal_year = Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
 
 /// Generate the next estimate number atomically.
-async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<String> {
+async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
-        r#"UPDATE entity_settings 
+        r#"UPDATE entity_settings
            SET sequences = jsonb_set(sequences, '{estimate_next}', to_jsonb((sequences->>'estimate_next')::bigint + 1))
            WHERE entity_id = $1
            RETURNING (sequences->>'estimate_next')::bigint - 1"#,
@@ -1008,7 +1008,7 @@ async fn generate_estimate_number(engine: &ErpEngine, entity_id: Uuid) -> ErpRes
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.estimate_prefix;
-    let fiscal_year = Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
 
     Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))
 }
