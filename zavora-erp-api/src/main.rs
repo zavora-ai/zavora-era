@@ -251,6 +251,11 @@ async fn main() -> anyhow::Result<()> {
         // Audit
         .route("/api/v1/audit", get(routes::audit::query))
         .route("/api/v1/audit/{object_type}/{object_id}", get(routes::audit::for_object))
+        // Posting groups (BC/NetSuite-style matrices)
+        .route("/api/v1/posting-groups", get(routes::posting_groups::get_all))
+        .route("/api/v1/posting-groups/group", post(routes::posting_groups::create_group))
+        .route("/api/v1/posting-groups/general-matrix", post(routes::posting_groups::upsert_general))
+        .route("/api/v1/posting-groups/vat-matrix", post(routes::posting_groups::upsert_vat))
         // Reports
         .route("/api/v1/reports", post(routes::reports::generate))
         .route("/api/v1/reports/export", post(routes::reports::export))

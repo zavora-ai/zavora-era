@@ -108,7 +108,7 @@ pub async fn create_supplier_credit_note(
     } else {
         // Explicit lines provided — resolve and compute totals.
         for line_req in &req.lines {
-            let mut line = crate::services::invoicing::resolve_invoice_line(engine, entity_id, line_req).await?;
+            let mut line = crate::services::invoicing::resolve_invoice_line(engine, entity_id, line_req, None).await?;
             line.compute_totals();
             lines.push(line);
         }

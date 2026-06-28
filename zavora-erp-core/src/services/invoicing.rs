@@ -52,10 +52,14 @@ pub async fn create_invoice(
             .unwrap_or(crate::types::PaymentTerms::Net30);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
+    // Ensure this tenant has its default posting groups + matrices (idempotent;
+    // a no-op once seeded). Lets the matrix drive line account derivation below.
+    let _ = crate::posting::groups::ensure_default_posting_groups(engine, entity_id).await;
+
     // Resolve invoice lines (auto-fill from products if product_id specified)
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -242,10 +246,11 @@ pub async fn create_credit_note(
             })
             .collect()
     } else {
-        // Partial credit note — resolve specified lines
+        // Partial credit note — resolve specified lines (mirror the original
+        // invoice's accounts; the matrix isn't re-applied here).
         let mut lines = Vec::new();
         for line_req in &req.lines {
-            let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+            let mut line = resolve_invoice_line(engine, entity_id, line_req, None).await?;
             line.compute_totals();
             lines.push(line);
         }
@@ -565,7 +570,7 @@ pub async fn create_estimate(
     // Resolve lines
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -674,7 +679,7 @@ pub async fn update_estimate_draft(
 
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }
@@ -869,6 +874,7 @@ pub(crate) async fn resolve_invoice_line(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: &CreateInvoiceLineRequest,
+    customer_id: Option<Uuid>,
 ) -> ErpResult<InvoiceLine> {
     let id = Uuid::new_v4();
 
@@ -891,6 +897,23 @@ pub(crate) async fn resolve_invoice_line(
                 .unwrap_or(crate::types::VatTreatment::Standard16)
         });
 
+        // Posting-group derivation: (customer business group × product general
+        // group) → sales account from the matrix. An explicit account_code on the
+        // line still wins (override); otherwise fall back to the product account.
+        let derived_sales = if req.account_code.is_none() {
+            let cust_biz = match customer_id {
+                Some(cid) => crate::posting::groups::customer_general_biz(engine, entity_id, cid).await,
+                None => None,
+            };
+            let prod_group = crate::posting::groups::product_general_group(engine, entity_id, product_id).await;
+            crate::posting::groups::resolve_general(engine, entity_id, cust_biz, prod_group)
+                .await?
+                .map(|g| g.sales_account)
+                .filter(|a| !a.is_empty())
+        } else {
+            None
+        };
+
         Ok(InvoiceLine {
             id,
             product_id: Some(product_id),
@@ -898,7 +921,7 @@ pub(crate) async fn resolve_invoice_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(product.unit_price.unwrap_or(Decimal::ZERO)),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or(product.sales_account),
+            account_code: req.account_code.clone().or(derived_sales).unwrap_or(product.sales_account),
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,
@@ -1029,7 +1052,7 @@ pub async fn update_invoice_draft(
 
     let mut lines = Vec::new();
     for line_req in &req.lines {
-        let mut line = resolve_invoice_line(engine, entity_id, line_req).await?;
+        let mut line = resolve_invoice_line(engine, entity_id, line_req, Some(req.customer_id)).await?;
         line.compute_totals();
         lines.push(line);
     }

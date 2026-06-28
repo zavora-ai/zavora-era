@@ -12,6 +12,8 @@
 //! VAT business + product groups) resolved through setup matrices on top of this
 //! struct; this type is the seam those matrices will plug into.
 
+pub mod groups;
+
 use serde::{Deserialize, Serialize};
 
 /// Resolved GL account codes for an entity. Defaults mirror the Kenya Standard
