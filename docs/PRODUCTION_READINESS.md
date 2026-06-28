@@ -1,146 +1,54 @@
-# Production Readiness — Remaining Work
+# Production Readiness — Status Snapshot
 
-Status of Zavora ERP toward full production use. Items are grouped by area and
-marked with priority: **P0** (blocker for any real use), **P1** (required before
-go-live), **P2** (important, fast-follow), **P3** (nice to have).
+Status of Zavora ERP toward full production use, reconciled against the codebase
+on **2026-06-27**.
+
+> **This is a snapshot, not the live backlog.** Outstanding work is tracked in
+> [`../REMAINING.md`](../REMAINING.md); completed work is in
+> [`../CHANGELOG.md`](../CHANGELOG.md). Update those two files as work lands;
+> refresh the summary here only at milestones.
 
 Legend: ✅ done · 🟡 partial · ⬜ not started
 
 ---
 
-## Completed in recent work
+## Done since the last snapshot
 
-- ✅ Estimates feature (missing `estimate_lines` table) — fixed (migration 003)
-- ✅ Bank account GL column mismatch (`gl_account_code` → `gl_account`)
-- ✅ UI ↔ API auth alignment: identity headers, `/auth/login`, `/users`, Login page, route guard
-- ✅ Missing routes used by the UI: `DELETE /bank-accounts/{id}`, `POST /payments/mpesa-stk-push`
-- ✅ Agent endpoints now require auth + role
-- ✅ M-Pesa webhook idempotency (unique receipt claim; migration 004)
-- ✅ Atomic draft creation for invoices and estimates (single transaction)
-- ✅ Posting setup (Phase 1 resolver + Phase 3 editable UI, live reload) — see `POSTING_SETUP.md`
-- ✅ Auth hardening: global middleware gates **every** protected route (no
-  unauthenticated access); role checks added to all master-data write handlers
-  (accounts, parties, catalog, inventory, assets, bank, fx, transactions)
-- ✅ Token storage: access token kept in memory only; refresh token moved to an
-  httpOnly, SameSite=Strict cookie (no tokens in localStorage); `/auth/logout`
-  revokes + clears; `ErpError::Unauthorized` now maps to HTTP 401
-- ✅ Role checks on the `parties` update handlers (customer/vendor/employee)
-- ✅ User management UI (Settings → Users & Roles): list users, invite with role +
-  optional initial password; invite-with-password creates an active account that
-  can sign in immediately, invite-without-password creates an `invited` stub
-- ✅ Sidebar shows the signed-in user's real name/role (from the session)
+The earlier version of this doc predated the end-to-end audit. These P0/P1 items
+it listed as outstanding are now **done** (see CHANGELOG for detail):
 
----
+- ✅ **P0 — Real authentication.** JWT + Argon2id; global middleware gates every
+  protected route; refresh token in an httpOnly SameSite=Strict cookie.
+- ✅ **P0 — Per-request tenant scoping.** Services scope by `ctx.entity_id`;
+  manual journal posting, login lookup and the schedulers are all multi-tenant.
+- ✅ **P0 — Transaction atomicity.** `create_and_post_in_tx` threads one
+  transaction through payment / invoice / credit-note / year-end-close flows.
+- ✅ **P0 — Automated test foundation.** 49 tests (proptest + integration); see
+  `REMAINING.md` for coverage gaps.
+- ✅ **P1 — Rounding policy.** Sub-cent tolerance shared between validator and
+  poster; rounding line to the configured account.
+- ✅ **P1 — Unapplied-payments account.** Defaults to a seeded account (`9100`).
+- ✅ **P1 — Document numbering.** Gapless allocation (`FOR UPDATE`) with year
+  reset; Document Numbers settings persist.
+- ✅ **P1 — Settings save.** Company / Tax / Payments / Document Numbers tabs all
+  persist with live reload.
+- ✅ **P1 — Void / delete flows** and **pagination** on list endpoints.
+- ✅ **P1 — User management UI** (list + invite with role + optional password).
+- ✅ **P2 — Bank statement import** (CSV/MT940/OFX), idempotent.
+- ✅ **P2 — M-Pesa STK Push** initiation + callback (idempotent, orphan recovery).
+- ✅ **Reporting** Phases 1–3 & 6: per-report pages, branded document
+  preview/print, statement→GL→source drill-down, budgets / custom builder /
+  scheduled / consolidation.
+- ✅ Secret startup validation; `/health` checks Postgres + Redis.
 
-## 1. Data integrity & accounting correctness
+## Still outstanding (summary)
 
-- ⬜ **P0 — Transaction atomicity for ledger-coupled flows.** `record_payment`,
-  `post_invoice`, `create_credit_note`, and `apply_unapplied_payment` perform
-  multiple autocommit writes plus a self-contained journal transaction. A failure
-  mid-sequence can leave torn state (payment without balance update, balances
-  reduced without a posted journal). Refactor `journal::create_and_post` into a
-  transaction-aware variant and thread one transaction through each operation
-  (FX gain/loss and reminder side-effects can run post-commit).
-- ⬜ **P1 — Rounding policy.** Line VAT is computed without explicit rounding and
-  the journal balance check uses exact `Decimal` equality. Define a 2dp rounding
-  policy for monetary fields and add a rounding line / tolerance so VAT-derived
-  imbalances cannot block posting.
-- ⬜ **P1 — Correct unapplied-payments accounts.** Default `3050` is not in the
-  CoA; split into customer vs vendor unapplied accounts (Phase 2) and set valid
-  defaults (e.g. `1700`/`9100`, `3600`/`9110`).
-- ⬜ **P1 — Document numbering.** Numbers are consumed even on failed inserts
-  (gaps) and the `year_reset` flag is never applied (counter never resets per
-  year). KRA/ETR contexts often require gapless, year-scoped numbering.
-- 🟡 **P1 — Bill posting (`post_bill`) review.** Confirm VAT input is posted and
-  routed through `posting.vat_input`; verify WHT and expense lines balance.
-- ⬜ **P2 — Supplier credit notes store no line items** (only `gross_total`).
-- ⬜ **P2 — Statutory payroll/tax accuracy.** PAYE relief handling omits
-  SHA/insurance relief; PAYE not rounded. Requires tax-professional validation
-  before filing-grade use.
+The full, prioritised list lives in [`../REMAINING.md`](../REMAINING.md). Headlines:
 
-## 2. Security & multi-tenancy
-
-- ⬜ **P0 — Real authentication.** Login currently resolves identity by email and
-  the API trusts `X-User-*` headers (gateway model). Implement verified auth
-  (JWT/OIDC or password hashing + sessions) and stop trusting raw headers from
-  the browser.
-- ⬜ **P0 — Per-request tenant scoping.** All data is scoped to the startup
-  `ENTITY_ID`; the authenticated `ctx.entity_id` is ignored. Either commit to
-  single-tenant-per-process explicitly, or scope every query by `ctx.entity_id`
-  for true multi-tenancy.
-- ⬜ **P1 — CORS lockdown.** `CorsLayer::permissive()` must be restricted to known
-  origins in production.
-- ⬜ **P1 — M-Pesa callback authenticity.** Validate Daraja callbacks (IP
-  allowlist / signature) and correlate via `CheckoutRequestID`/`AccountReference`
-  rather than a client-supplied `invoice_id`.
-- ⬜ **P1 — Secrets & TLS.** Move DB/Redis/provider credentials to a secret store;
-  terminate TLS; never commit real secrets (`.env` is gitignored — keep it so).
-- ⬜ **P2 — Rate limiting and request size limits** on public endpoints
-  (login, webhooks, uploads).
-
-## 3. Posting groups (Phase 2 / 4)
-
-- ⬜ **P2 — VAT Posting Setup matrix.** VAT Business × VAT Product groups →
-  rate + output/input accounts; wire into invoice/bill line VAT resolution.
-- ⬜ **P2 — General Posting Setup matrix.** General Business × General Product
-  groups → sales / purchase / COGS accounts.
-- ⬜ **P2 — Customer / Vendor / Inventory posting groups** → receivables/payables
-  and inventory/COGS/variance accounts.
-- ⬜ **P2 — Setup UI** for the matrices (extends Settings → Posting Accounts).
-- ⬜ **P3 — Migrate master-record account fields** onto posting-group references
-  with backward compatibility (Phase 4).
-
-## 4. Functional gaps
-
-- ⬜ **P1 — Void / delete flows.** No void route (status `Voided` exists unused);
-  no delete for draft invoices/bills; customers/vendors/products only toggle
-  `is_active`.
-- ⬜ **P1 — Pagination** on list endpoints (and the spec's paginated GL detail).
-- ✅ **User management UI** — Settings → Users & Roles (list + invite with role +
-  optional initial password). Remaining: an **accept-invite / set-password** flow
-  (invited users with no password still cannot self-activate; today an admin sets
-  an initial password), plus edit/deactivate-user actions.
-- ⬜ **P2 — Tenant management is not implemented.** The process serves a single
-  entity fixed at startup (`ENTITY_ID`); there is no create/switch-tenant API or
-  UI. Multi-tenant onboarding is a backend architecture change (tied to the
-  per-request tenant-scoping item in §2).
-- 🟡 **P1 — Settings save.** Only the Posting Accounts tab persists. The Company /
-  Tax / Payments / Document Numbers tabs render values but their Save button is
-  not wired; and non-posting settings need full live reload (`reload_config` only
-  refreshes posting today).
-- ⬜ **P2 — Bank statement import** (CSV/MT940/OFX) is a stub.
-- ⬜ **P2 — M-Pesa STK Push** gateway integration not implemented (endpoint
-  returns a clear "not configured" error).
-- 🟡 **P2 — OCR receipt capture / notification delivery** (email/WhatsApp/SMS):
-  verify real providers are wired vs. queue-only.
-- ⬜ **P3 — Dashboard polish** (e.g. "NaN%" on empty data), empty/loading states,
-  form validation, error boundaries.
-
-## 5. Quality, testing & operations
-
-- ⬜ **P0 — Automated tests.** No unit/integration tests exist. Accounting logic
-  (balancing, posting, payroll, FX, period close) needs a test suite before
-  production. Add property/golden tests for journal balancing.
-- ⬜ **P1 — CI pipeline:** build, test, `cargo clippy`, migration check, UI build/lint.
-- ⬜ **P1 — Containerization & deploy:** Dockerfiles for API and UI, production
-  compose/manifests, reverse proxy, health/readiness probes.
-- ⬜ **P1 — Backups & migration safety:** DB backup/restore runbook; review
-  destructive migrations; consider down-migrations.
-- ⬜ **P2 — Observability:** structured logs, metrics, request tracing; durable
-  audit consumer for the Redis audit stream.
-- ⬜ **P2 — Performance:** index review, eliminate N+1 queries on detail views.
-- ⬜ **P3 — Clean up build warnings** (unused imports/variables) and enable
-  `-D warnings` in CI.
-
----
-
-## Suggested sequence to go-live
-
-1. **P0 correctness/security:** ledger transaction atomicity, real auth, tenant
-   scoping, automated tests for the posting paths.
-2. **P1 hardening:** rounding policy, numbering, CORS/TLS/secrets, webhook
-   authenticity, pagination, void/delete, settings save + user management UI, CI,
-   containerized deploy, backups.
-3. **P2 depth:** posting-group matrices, bank import, payments/OCR/notification
-   integrations, observability.
-4. **P3 polish.**
+- 🟡 **Operations:** CI pipeline, production containerization + TLS, backup
+  runbook, graceful-shutdown drain, wider test coverage, observability.
+- ⬜ **Security:** CORS lockdown, rate limiting, M-Pesa callback authenticity.
+- ⬜ **Features:** procurement / P2P; posting-group matrices; supplier-CN & bill
+  line items + AP dimensions; notification real send-out; OCR capture.
+- 🟡 **Tax/payroll:** statutory PAYE relief (SHA/insurance) + rounding —
+  needs tax-professional validation.

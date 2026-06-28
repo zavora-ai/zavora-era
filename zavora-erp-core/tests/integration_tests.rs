@@ -18,3 +18,6 @@ mod harness_smoke;
 
 #[path = "integration_tests/payment_flows.rs"]
 mod payment_flows;
+
+#[path = "integration_tests/wht_rates.rs"]
+mod wht_rates;
