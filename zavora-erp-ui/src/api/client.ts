@@ -199,7 +199,10 @@ export const createEmployee = (data: any) => api.post('/employees', data);
 
 // === Products ===
 export const getProducts = () => api.get('/products');
+export const getProduct = (id: string) => api.get(`/products/${id}`);
 export const createProduct = (data: any) => api.post('/products', data);
+export const updateProduct = (id: string, data: any) => api.put(`/products/${id}`, data);
+export const deleteProduct = (id: string) => api.delete(`/products/${id}`);
 
 // === Invoices ===
 export const getInvoices = (params?: PageParams) => api.get('/invoices', { params });

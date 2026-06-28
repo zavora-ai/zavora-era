@@ -61,6 +61,22 @@ pub struct ProductRow {
     pub vat_product_group_id: Option<Uuid>,
 }
 
+impl ProductRow {
+    /// Enum-backed columns (`product_type`, `uom`, `vat_treatment`) are persisted
+    /// as serde_json strings, i.e. wrapped in quotes (`"Service"`). Strip the
+    /// surrounding quotes so the API exposes clean values (`Service`) that the
+    /// UI can compare directly. Tolerates already-clean values.
+    pub fn normalized(mut self) -> Self {
+        fn unquote(s: &str) -> String {
+            s.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(s).to_string()
+        }
+        self.product_type = unquote(&self.product_type);
+        self.uom = unquote(&self.uom);
+        self.vat_treatment = unquote(&self.vat_treatment);
+        self
+    }
+}
+
 /// Request to create a product.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateProductRequest {

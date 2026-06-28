@@ -180,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/employees/{id}", get(routes::parties::get_employee).put(routes::parties::update_employee))
         // Products
         .route("/api/v1/products", get(routes::catalog::list_products).post(routes::catalog::create_product))
-        .route("/api/v1/products/{id}", get(routes::catalog::get_product).put(routes::catalog::update_product))
+        .route("/api/v1/products/{id}", get(routes::catalog::get_product).put(routes::catalog::update_product).delete(routes::catalog::delete_product))
         // Invoices
         .route("/api/v1/invoices", get(routes::invoices::list).post(routes::invoices::create))
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_one).put(routes::invoices::update).delete(routes::invoices::delete))

@@ -189,6 +189,8 @@ export interface Product {
   track_inventory: boolean;
   inventory_item_id?: string;
   is_active: boolean;
+  general_product_group_id?: string;
+  vat_product_group_id?: string;
   created_at: string;
 }
 
