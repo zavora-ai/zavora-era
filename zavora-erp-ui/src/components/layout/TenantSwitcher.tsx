@@ -58,13 +58,13 @@ export default function TenantSwitcher() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-lg py-1 px-2 hover:bg-gray-50 transition-colors max-w-[220px]"
+        className="flex items-center gap-2 rounded-lg py-1 px-2 hover:bg-gray-50 transition-colors shrink-0"
         title="Switch tenant"
       >
         <div className="w-7 h-7 rounded-md bg-indigo-50 flex items-center justify-center shrink-0">
           <Building2 className="w-4 h-4 text-indigo-600" />
         </div>
-        <span className="hidden md:block text-[13px] font-medium text-gray-700 truncate">
+        <span className="hidden md:block text-[13px] font-medium text-gray-700 whitespace-nowrap">
           {current?.name ?? 'Workspace'}
         </span>
         <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
@@ -87,7 +87,7 @@ export default function TenantSwitcher() {
                   <Building2 className="w-4 h-4 text-gray-500" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 truncate">{t.name}</p>
+                  <p className="text-sm text-gray-800 break-words">{t.name}</p>
                   <p className="text-[11px] text-gray-400">{t.role} · {t.currency}</p>
                 </div>
                 {switching === t.entity_id ? (
