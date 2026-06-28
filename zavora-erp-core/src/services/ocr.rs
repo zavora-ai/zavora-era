@@ -316,6 +316,31 @@ pub async fn confirm_and_create_bill(
 
     let bill = crate::services::bills::create_bill(engine, entity_id, bill_req, confirmed_by).await?;
 
+    // Auto-attach the captured source document to the new bill, so the posted
+    // record carries its own evidence (best practice: every bill keeps the
+    // invoice/receipt it was created from). The capture stored the original
+    // upload as a base64 data-URL in `image_url`; decode it and link a copy.
+    if let Some((mime, bytes)) = decode_data_url(&capture_row.image_url) {
+        let ext = mime_extension(&mime);
+        let filename = format!("{}-source.{}", bill.number, ext);
+        if let Err(e) = crate::services::attachments::upload(
+            engine,
+            entity_id,
+            "bill",
+            bill.id,
+            &filename,
+            &mime,
+            &bytes,
+            confirmed_by,
+        )
+        .await
+        {
+            // Non-fatal: the bill is already created; log and continue so a
+            // storage hiccup never blocks posting.
+            tracing::warn!(bill_id = %bill.id, error = %e, "failed to auto-attach receipt source to bill");
+        }
+    }
+
     // Update capture record
     sqlx::query(
         "UPDATE receipt_captures SET status = 'posted', suggested_bill_id = $1, reviewed_at = $2 WHERE id = $3",
@@ -327,6 +352,30 @@ pub async fn confirm_and_create_bill(
     .await?;
 
     Ok(bill)
+}
+
+/// Decode a `data:<mime>;base64,<payload>` URL into `(mime, bytes)`. Returns
+/// `None` for non-data URLs or malformed payloads.
+fn decode_data_url(url: &str) -> Option<(String, Vec<u8>)> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let rest = url.strip_prefix("data:")?;
+    let (meta, payload) = rest.split_once(',')?;
+    let mime = meta.strip_suffix(";base64").unwrap_or(meta);
+    let mime = if mime.is_empty() { "application/octet-stream" } else { mime };
+    let bytes = STANDARD.decode(payload).ok()?;
+    Some((mime.to_string(), bytes))
+}
+
+/// Map a MIME type to a sensible file extension for the stored attachment name.
+fn mime_extension(mime: &str) -> &'static str {
+    match mime {
+        m if m.contains("pdf") => "pdf",
+        m if m.contains("png") => "png",
+        m if m.contains("jpeg") || m.contains("jpg") => "jpg",
+        m if m.contains("webp") => "webp",
+        m if m.contains("gif") => "gif",
+        _ => "bin",
+    }
 }
 
 /// Build the bill lines for a confirmed receipt.
@@ -427,8 +476,23 @@ struct CaptureRow {
 #[cfg(test)]
 mod tests {
     use super::build_bill_lines;
+    use super::{decode_data_url, mime_extension};
     use crate::types::VatTreatment;
     use rust_decimal::Decimal;
+
+    #[test]
+    fn decode_data_url_roundtrip() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let bytes = b"%PDF-1.4 hello";
+        let url = format!("data:application/pdf;base64,{}", STANDARD.encode(bytes));
+        let (mime, out) = decode_data_url(&url).expect("decodes");
+        assert_eq!(mime, "application/pdf");
+        assert_eq!(out, bytes);
+        assert_eq!(mime_extension(&mime), "pdf");
+        // Non-data URLs and garbage return None rather than panicking.
+        assert!(decode_data_url("https://example.com/x.pdf").is_none());
+        assert!(decode_data_url("data:application/pdf;base64,!!notb64!!").is_none());
+    }
 
     /// Reproduce the bill engine's per-line gross: unit_price + VAT-on-top.
     fn line_gross(unit_price: Decimal, vat: &VatTreatment) -> Decimal {
