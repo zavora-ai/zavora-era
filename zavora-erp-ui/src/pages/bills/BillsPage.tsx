@@ -11,13 +11,14 @@ import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
 import Attachments from '../../components/shared/Attachments';
-import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
+import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText, Paperclip } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [scnBill, setScnBill] = useState<Bill | null>(null);
+  const [attachBill, setAttachBill] = useState<Bill | null>(null);
   const [filter, setFilter] = useState<string>('all');
   // Deep-link from a vendor's "New Bill": /bills?new=1&vendor=<id> opens the
   // create form pre-filled for that vendor.
@@ -75,7 +76,7 @@ export default function BillsPage() {
         </div>
       ),
     },
-    { key: 'wht_amount', header: 'WHT', render: (r) => r.wht_amount > 0 ? formatCurrency(r.wht_amount) : '—', className: 'text-right' },
+    { key: 'wht_amount', header: 'WHT', render: (r) => r.wht_amount > 0 ? formatCurrency(r.wht_amount, r.currency) : '—', className: 'text-right' },
     {
       key: 'actions', header: '',
       render: (r) => (
@@ -108,9 +109,14 @@ export default function BillsPage() {
             </button>
           )}
           {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (
-            <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
-              <ReceiptText className="w-3 h-3" /> Credit Note
-            </button>
+            <>
+              <button onClick={() => setAttachBill(r)} className="btn-secondary text-xs py-1 px-2" title="Attachments">
+                <Paperclip className="w-3 h-3" />
+              </button>
+              <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
+                <ReceiptText className="w-3 h-3" /> Credit Note
+              </button>
+            </>
           )}
         </div>
       )
@@ -148,6 +154,14 @@ export default function BillsPage() {
       {showCreate && <CreateBillModal initialVendorId={newVendorId} onClose={() => setShowCreate(false)} />}
       {editId && <CreateBillModal editId={editId} onClose={() => setEditId(null)} />}
       {scnBill && <SupplierCreditNoteModal bill={scnBill} onClose={() => setScnBill(null)} />}
+      {attachBill && (
+        <Modal open={true} onClose={() => setAttachBill(null)} title={`Attachments — ${attachBill.number}`}>
+          <Attachments linkedType="bill" linkedId={attachBill.id} label="Source document (supplier invoice / receipt)" />
+          <div className="flex justify-end pt-4 mt-2 border-t">
+            <button type="button" onClick={() => setAttachBill(null)} className="btn-secondary">Close</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -460,7 +474,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
                   </select>
                 </div>
                 <div className="col-span-1 text-right text-sm font-medium">
-                  {formatCurrency(line.quantity * line.unit_price)}
+                  {formatCurrency(line.quantity * line.unit_price, form.currency)}
                 </div>
                 <div className="col-span-1 text-center">
                   <button type="button" onClick={() => removeLine(i)} className="text-gray-400 hover:text-red-500 text-lg" disabled={form.lines.length === 1}>×</button>
@@ -498,21 +512,27 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">{formatCurrency(subtotal)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, form.currency)}</span>
             </div>
 
             {/* Tax lines */}
             {Object.entries(taxByRate).map(([rate, amount]) => (
               <div key={rate} className="flex justify-between text-sm">
                 <span className="text-gray-600">VAT ({rate}%)</span>
-                <span>{formatCurrency(amount)}</span>
+                <span>{formatCurrency(amount, form.currency)}</span>
               </div>
             ))}
 
             <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold">
               <span>Total ({form.currency})</span>
-              <span>{formatCurrency(grandTotal)}</span>
+              <span>{formatCurrency(grandTotal, form.currency)}</span>
             </div>
+            {form.currency !== 'KES' && (
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Equivalent in KES</span>
+                <span>{formatCurrency(grandTotal * (Number(form.fx_rate) || 0), 'KES')} @ {form.fx_rate || '—'}</span>
+              </div>
+            )}
           </div>
         </div>
 
