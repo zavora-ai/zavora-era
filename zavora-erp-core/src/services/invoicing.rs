@@ -2301,6 +2301,19 @@ pub async fn resolve_bill_line(
                 .unwrap_or(crate::types::VatTreatment::Standard16)
         });
 
+        // Posting-group derivation: (vendor business group × product general
+        // group) → purchase account from the matrix. Explicit account_code wins.
+        let derived_purchase = if req.account_code.is_none() {
+            let vend_biz = crate::posting::groups::vendor_general_biz(engine, entity_id, vendor.id).await;
+            let prod_group = crate::posting::groups::product_general_group(engine, entity_id, product_id).await;
+            crate::posting::groups::resolve_general(engine, entity_id, vend_biz, prod_group)
+                .await?
+                .map(|g| g.purchase_account)
+                .filter(|a| !a.is_empty())
+        } else {
+            None
+        };
+
         Ok(InvoiceLine {
             id,
             product_id: Some(product_id),
@@ -2308,7 +2321,7 @@ pub async fn resolve_bill_line(
             quantity: req.quantity,
             unit_price: req.unit_price.unwrap_or(product.unit_price.unwrap_or(Decimal::ZERO)),
             discount_percent: req.discount_percent.unwrap_or(Decimal::ZERO),
-            account_code: req.account_code.clone().unwrap_or(product.purchase_account),
+            account_code: req.account_code.clone().or(derived_purchase).unwrap_or(product.purchase_account),
             vat_treatment,
             line_total: Decimal::ZERO,
             vat_amount: Decimal::ZERO,

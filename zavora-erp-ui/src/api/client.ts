@@ -135,6 +135,14 @@ export const saveReportSchedule = (data: { id?: string; name: string; report_typ
   api.post('/report-schedules', data);
 export const deleteReportSchedule = (id: string) => api.delete(`/report-schedules/${id}`);
 export const getConsolidationEntities = () => api.get('/consolidation/entities');
+// === Posting groups (BC-style matrices) ===
+export const getPostingGroups = () => api.get('/posting-groups');
+export const createPostingGroup = (data: { kind: string; code: string; name: string }) =>
+  api.post('/posting-groups/group', data);
+export const upsertGeneralMatrix = (data: { gen_biz_group_id: string; gen_prod_group_id: string; sales_account?: string; purchase_account?: string; cogs_account?: string }) =>
+  api.post('/posting-groups/general-matrix', data);
+export const upsertVatMatrix = (data: { vat_biz_group_id: string; vat_prod_group_id: string; vat_rate: number; vat_output_account?: string; vat_input_account?: string }) =>
+  api.post('/posting-groups/vat-matrix', data);
 export const runConsolidatedTrialBalance = (data: { entity_ids: string[]; as_at: string }) =>
   api.post('/consolidation/trial-balance', data);
 export const postOpeningBalances = (data: { as_of_date: string; lines: { account_code: string; debit?: number; credit?: number }[] }) =>

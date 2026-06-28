@@ -38,6 +38,10 @@ pub async fn create_bill(
             .unwrap_or(crate::types::PaymentTerms::Net30);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
+    // Ensure default posting groups exist + masters are assigned (idempotent),
+    // so the matrix can drive purchase-account derivation below.
+    let _ = crate::posting::groups::ensure_default_posting_groups(engine, entity_id).await;
+
     // Resolve lines
     let mut lines = Vec::new();
     for line_req in &req.lines {
@@ -246,6 +250,10 @@ pub async fn update_bill_draft(
         serde_json::from_str(&format!("\"{}\"", vendor.payment_terms))
             .unwrap_or(crate::types::PaymentTerms::Net30);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
+
+    // Ensure default posting groups exist + masters are assigned (idempotent),
+    // so the matrix can drive purchase-account derivation below.
+    let _ = crate::posting::groups::ensure_default_posting_groups(engine, entity_id).await;
 
     // Resolve lines
     let mut lines = Vec::new();

@@ -4,6 +4,7 @@ import { getSettings, updateSettings } from '../../api/client';
 import type { ErpConfig, DocumentSequences } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
 import PostingAccountsTab from './PostingAccountsTab';
+import PostingGroupsTab from './PostingGroupsTab';
 import { SkeletonLines } from '../../components/shared/Skeleton';
 import ErrorRetry from '../../components/shared/ErrorRetry';
 import { Save, CheckCircle, AlertCircle } from 'lucide-react';
@@ -12,7 +13,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data: config, isLoading, isError, refetch } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
 
-  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting'>('company');
+  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting' | 'posting-groups'>('company');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Controlled form state for each tab
@@ -78,6 +79,7 @@ export default function SettingsPage() {
     { key: 'payments', label: 'Payment Methods' },
     { key: 'sequences', label: 'Document Numbers' },
     { key: 'posting', label: 'Posting Accounts' },
+    { key: 'posting-groups', label: 'Posting Groups' },
   ];
 
   return (
@@ -184,8 +186,9 @@ export default function SettingsPage() {
         )}
 
         {tab === 'posting' && <PostingAccountsTab />}
+        {tab === 'posting-groups' && <PostingGroupsTab />}
 
-        {tab !== 'posting' && (
+        {tab !== 'posting' && tab !== 'posting-groups' && (
           <div className="mt-6 pt-4 border-t flex justify-end">
             <button onClick={handleSave} disabled={mutation.isPending} className="btn-primary">
               {mutation.isPending ? (
