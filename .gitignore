@@ -35,3 +35,6 @@ sample_data/
 
 # Screenshot artifacts (Playwright captures, ad-hoc PNGs)
 *.png
+
+# Local DB backups (contain real tenant data — never commit)
+backups/

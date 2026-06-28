@@ -8,6 +8,53 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-06-28 — Multi-currency onboarding hardening (real-company validation)
+
+Surfaced while setting up a real Kenyan services company end-to-end through the
+UI (not VAT-registered; trades heavily in USD/EUR). See `docs/UI_GAPS.md`.
+
+#### Added
+- **Bank account → GL account selector.** The Add Bank Account form now lets you
+  choose which ledger account a bank account posts to (asset, non-control;
+  defaults to the KES bank GL). Previously every account silently defaulted to
+  one GL code, so a USD account and an M-Pesa till co-mingled with the KES bank
+  in a single ledger account — breaking per-account balances and FX revaluation
+  of the foreign account. The backend already accepted `gl_account`; only the UI
+  was missing it. (`BankingPage`.)
+- **Future fiscal periods can be locked.** `close_period` now permits a **soft
+  close from `Future`** (previously rejected outright), and the Periods page
+  shows the Soft Close action on future periods. Future periods are postable, so
+  they must be lockable — e.g. to stop stray postings into the auto-seeded next
+  year while back-booking a prior one. Hard close still requires a prior soft
+  close. (`services::periods`, `PeriodsPage`.)
+- **WHT rates self-heal at startup.** Migration 021 seeds the statutory KRA WHT
+  rates once with `ON CONFLICT DO NOTHING`, so a wiped/restored volume could
+  leave the table empty while the migration ledger still showed 021 applied —
+  making every WHT lookup silently resolve to 0 (tax not withheld). Startup now
+  backfills any missing statutory category via `wht::ensure_seeded`, without
+  overwriting an admin's customised rate.
+- **Services-first chart of accounts & posting defaults.** The Kenya Standard
+  seed gained `1310 WHT Receivable`, `1610 Unpaid Share Capital`, `5250 Royalty
+  Income`, and `7350 Software, Cloud & Subscriptions`; default sales → `5100`
+  Service Revenue and default purchase → `7350` (was goods-centric). New
+  non-registered tenants default to **VAT Exempt** so they never accidentally
+  charge output VAT, and the Products form derives its tax-treatment default from
+  the company's VAT registration.
+- **Company statutory fields + editable currency/year-end.** Settings → Company
+  now captures **Registration Number**, **Registered Address**, and **Phone**
+  (`BrandingConfig.registration_number`), and makes **Base Currency** and
+  **Fiscal Year-End** editable (previously read-only). Non-resident vendors are
+  prompted that WHT may apply on services/royalties.
+
+#### Fixed
+- **FX Rates page crash.** The exchange-rate `rate` arrives from the API as a
+  JSON string (Rust `Decimal` serialises to a string); the FX Rates table called
+  `rate.toFixed(4)`, throwing and blanking the page after a rate was saved. Now
+  coerces with `Number()` before formatting.
+- **Posting Accounts control-account picker.** A/R and A/P roles now correctly
+  include control accounts in their picker (they *are* the GL control accounts);
+  other roles still exclude them.
+
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
