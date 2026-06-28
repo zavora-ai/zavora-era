@@ -6,6 +6,7 @@ pub mod parties;
 pub mod catalog;
 pub mod invoices;
 pub mod estimates;
+pub mod invoice_templates;
 pub mod bills;
 pub mod budgets;
 pub mod consolidation;

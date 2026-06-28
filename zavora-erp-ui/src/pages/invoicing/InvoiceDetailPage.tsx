@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceEtims, getAuditForObject, getPayments, mpesaStkPush } from '../../api/client';
+import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceEtims, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
@@ -35,6 +35,32 @@ export default function InvoiceDetailPage() {
   const [showTransmit, setShowTransmit] = useState(false);
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  // Download the same server-rendered PDF used by the preview, named by the
+  // invoice number (via the response's Content-Disposition).
+  const downloadPdf = async () => {
+    if (!id) return;
+    setDownloadingPdf(true);
+    try {
+      const r = await getInvoiceDocumentPdf(id);
+      const cd = (r.headers?.['content-disposition'] as string) || '';
+      const match = /filename="?([^";]+)"?/.exec(cd);
+      const filename = match ? match[1] : `invoice-${id}.pdf`;
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch {
+      // no-op; the dedicated Preview page surfaces errors in detail
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   // GET /invoices/{id} returns { invoice, lines }. Unwrap so the page reads the
   // invoice fields (and render the real line items below).
@@ -151,8 +177,8 @@ export default function InvoiceDetailPage() {
                 </div>
               )}
             </div>
-            <button className="btn-secondary text-sm py-1.5 px-3">
-              <Download className="w-3.5 h-3.5" /> PDF
+            <button onClick={downloadPdf} disabled={downloadingPdf} className="btn-secondary text-sm py-1.5 px-3">
+              {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} PDF
             </button>
           </div>
 

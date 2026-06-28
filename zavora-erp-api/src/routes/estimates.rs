@@ -238,3 +238,49 @@ async fn transition_estimate(
 
     Ok(Json(serde_json::json!({ "id": id, "status": to })))
 }
+
+#[derive(serde::Deserialize)]
+pub struct DocumentQuery {
+    /// "html" (default) for the on-screen/iframe document, or "pdf" for download.
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+/// GET /estimates/{id}/document?format=html|pdf
+/// Same renderer as invoices, so the on-screen preview, the download and the
+/// emailed PDF match.
+pub async fn document(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    axum::extract::Query(q): axum::extract::Query<DocumentQuery>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use zavora_erp_core::services::invoicing as svc;
+
+    if q.format.as_deref() == Some("pdf") {
+        match svc::estimate_document_pdf(&state.engine, ctx.entity_id, id).await {
+            Ok((bytes, number)) => {
+                let safe: String = number
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+                    .collect();
+                let filename = if safe.is_empty() { format!("estimate-{id}") } else { safe };
+                (
+                    [
+                        (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
+                        (axum::http::header::CONTENT_DISPOSITION, format!("inline; filename=\"{filename}.pdf\"")),
+                    ],
+                    bytes,
+                )
+                    .into_response()
+            }
+            Err(e) => err_response(e).into_response(),
+        }
+    } else {
+        match svc::estimate_document_html(&state.engine, ctx.entity_id, id).await {
+            Ok(html) => axum::response::Html(html).into_response(),
+            Err(e) => err_response(e).into_response(),
+        }
+    }
+}

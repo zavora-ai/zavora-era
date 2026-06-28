@@ -86,6 +86,7 @@ pub async fn process_report_schedules_for(engine: &ErpEngine, entity_id: Uuid) -
                 related_type: Some("report_schedule".to_string()),
                 related_id: Some(s.id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
             let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
         }
@@ -353,6 +354,14 @@ pub async fn process_recurring_invoices_for(engine: &ErpEngine, entity_id: Uuid)
             Ok(invoice) => {
                 created_ids.push(invoice.id);
 
+                // Link the generated invoice back to its recurring template so the
+                // template can show its real history.
+                let _ = sqlx::query("UPDATE invoices SET recurring_invoice_id = $1 WHERE id = $2")
+                    .bind(rec.id)
+                    .bind(invoice.id)
+                    .execute(engine.pool())
+                    .await;
+
                 // If auto_send, post it
                 if rec.auto_send {
                     let _ =
@@ -444,6 +453,7 @@ pub async fn process_invoice_reminders_for(engine: &ErpEngine, entity_id: Uuid) 
                     related_type: Some("Invoice".to_string()),
                     related_id: Some(inv.id),
                     schedule_at: None,
+                    attachments: Vec::new(),
                 };
 
                 let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
@@ -667,6 +677,7 @@ pub async fn run_overdue_check(engine: &ErpEngine) -> ErpResult<OverdueCheckResu
                 related_type: Some("Invoice".to_string()),
                 related_id: Some(inv.id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
 
             let delivery_outcome =

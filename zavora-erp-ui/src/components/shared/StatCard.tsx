@@ -8,11 +8,23 @@ interface Props {
   icon?: ReactNode;
   trend?: { value: string; positive: boolean };
   className?: string;
+  onClick?: () => void;
 }
 
-export default function StatCard({ title, value, subtitle, icon, trend, className }: Props) {
+export default function StatCard({ title, value, subtitle, icon, trend, className, onClick }: Props) {
+  const clickable = !!onClick;
   return (
-    <div className={clsx('card p-5 group hover:shadow-md transition-shadow', className)}>
+    <div
+      className={clsx(
+        'card p-5 group hover:shadow-md transition-shadow',
+        clickable && 'cursor-pointer hover:border-indigo-300',
+        className,
+      )}
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(); } } : undefined}
+    >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{title}</p>

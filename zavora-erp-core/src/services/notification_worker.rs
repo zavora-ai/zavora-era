@@ -5,10 +5,12 @@
 
 use chrono::Utc;
 use lettre::message::header::ContentType;
+use lettre::message::{Attachment, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use sqlx::PgPool;
 use uuid::Uuid;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
 use crate::notifications::SendNotificationRequest;
 use crate::types::Channel;
@@ -286,7 +288,7 @@ async fn deliver_email(
         .as_deref()
         .unwrap_or("Notification from Zavora ERP");
 
-    let email = Message::builder()
+    let builder = Message::builder()
         .from(
             from_addr
                 .parse()
@@ -295,10 +297,35 @@ async fn deliver_email(
         .to(recipient
             .parse()
             .map_err(|e| format!("Invalid recipient address '{recipient}': {e}"))?)
-        .subject(subject)
-        .header(ContentType::TEXT_HTML)
-        .body(req.body.clone())
-        .map_err(|e| format!("Failed to build email: {e}"))?;
+        .subject(subject);
+
+    // With attachments, build a mixed multipart (HTML body + each file). Without,
+    // keep the simple single-part HTML message.
+    let email = if req.attachments.is_empty() {
+        builder
+            .header(ContentType::TEXT_HTML)
+            .body(req.body.clone())
+            .map_err(|e| format!("Failed to build email: {e}"))?
+    } else {
+        let mut mp = MultiPart::mixed().singlepart(
+            SinglePart::builder()
+                .header(ContentType::TEXT_HTML)
+                .body(req.body.clone()),
+        );
+        for att in &req.attachments {
+            let bytes = B64
+                .decode(att.content_base64.as_bytes())
+                .map_err(|e| format!("Invalid base64 attachment '{}': {e}", att.filename))?;
+            let ct = ContentType::parse(&att.mime_type)
+                .unwrap_or(ContentType::parse("application/octet-stream").unwrap());
+            mp = mp.singlepart(
+                Attachment::new(att.filename.clone()).body(bytes, ct),
+            );
+        }
+        builder
+            .multipart(mp)
+            .map_err(|e| format!("Failed to build email: {e}"))?
+    };
 
     transport
         .send(email)

@@ -4,8 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement } from '../../api/client';
+import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, getTransactions, generateReport } from '../../api/client';
+import { formatCurrency, formatDate } from '../../utils/format';
 import type { BankAccount } from '../../types';
+
+const TODAY = new Date().toISOString().split('T')[0];
 
 export default function BankingPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -17,6 +20,61 @@ export default function BankingPage() {
     queryKey: ['bank-accounts'],
     queryFn: () => getBankAccounts().then(r => Array.isArray(r.data) ? r.data : []),
   });
+
+  // Trial Balance gives every account's closing balance; we map each bank
+  // account's gl_account to its balance (closing_debit − closing_credit).
+  const { data: tbLines = [] } = useQuery<any[]>({
+    queryKey: ['trial-balance', 'banking'],
+    queryFn: () =>
+      generateReport({ entity_id: '00000000-0000-0000-0000-000000000000', report_type: 'TrialBalance', parameters: { as_at: TODAY } })
+        .then(r => {
+          const tb = r.data?.TrialBalance ?? r.data?.content?.TrialBalance ?? r.data;
+          return Array.isArray(tb?.lines) ? tb.lines : [];
+        }),
+  });
+  const balanceFor = (glCode: string): number => {
+    const row = tbLines.find((l) => l.account_code === glCode);
+    if (!row) return 0;
+    return Number(row.closing_debit || 0) - Number(row.closing_credit || 0);
+  };
+  const totalCash = bankAccounts.reduce((sum, ba) => sum + balanceFor(ba.gl_account), 0);
+
+  // Recent bank transactions: GL detail for each bank account's gl_account,
+  // merged and sorted by date (most recent first).
+  const { data: recentTxns = [] } = useQuery<any[]>({
+    queryKey: ['bank-gl-detail', bankAccounts.map(b => b.gl_account).join(',')],
+    enabled: bankAccounts.length > 0,
+    queryFn: async () => {
+      const all: any[] = [];
+      for (const ba of bankAccounts) {
+        try {
+          const r = await generateReport({
+            entity_id: '00000000-0000-0000-0000-000000000000',
+            report_type: 'GlDetail',
+            parameters: { as_at: TODAY, account_code: ba.gl_account },
+          });
+          const g = r.data?.GlDetail ?? r.data?.content?.GlDetail ?? r.data;
+          for (const ln of (Array.isArray(g?.lines) ? g.lines : [])) {
+            all.push({ ...ln, account_name: ba.name, gl_account: ba.gl_account });
+          }
+        } catch { /* skip accounts with no ledger */ }
+      }
+      all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+      return all.slice(0, 25);
+    },
+  });
+
+  // Categorisation queue — drives the reconciliation summary cards.
+  const { data: txns = [] } = useQuery<any[]>({
+    queryKey: ['transactions', 'all'],
+    queryFn: () => getTransactions({ limit: 500 }).then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+    }),
+  });
+  const matchedCount = txns.filter(t => t.status === 'categorised').length;
+  const pendingCount = txns.filter(t => t.status === 'uncategorised').length;
+  const excludedCount = txns.filter(t => t.status === 'excluded').length;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteBankAccount(id),
@@ -49,8 +107,12 @@ export default function BankingPage() {
     <div>
       <PageHeader title="Banking" subtitle="Bank accounts, feeds, and reconciliation" />
 
-      {/* Actions */}
-      <div className="flex justify-end mb-4">
+      {/* Total cash across all accounts */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm text-gray-500">
+          Total balance across {bankAccounts.length} account{bankAccounts.length === 1 ? '' : 's'}:{' '}
+          <span className="font-semibold text-gray-900">{formatCurrency(totalCash)}</span>
+        </div>
         <button className="btn-primary flex items-center gap-2" onClick={() => setShowCreate(true)}>
           <Plus className="w-4 h-4" /> Add Bank Account
         </button>
@@ -92,6 +154,8 @@ export default function BankingPage() {
               <p className="text-xs text-gray-400 mb-2">
                 ••••{ba.account_number.slice(-4)} · {ba.currency}
               </p>
+              {/* Account balance from the GL */}
+              <p className="text-xl font-bold text-gray-900 mb-2">{formatCurrency(balanceFor(ba.gl_account), ba.currency)}</p>
               {/* Feed status badge */}
               <div className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${ba.feed_enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -110,11 +174,69 @@ export default function BankingPage() {
         </div>
       )}
 
+      {/* Recent bank transactions (across all accounts) */}
+      {recentTxns.length > 0 && (
+        <div className="card overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b bg-gray-50">
+            <h3 className="text-sm font-medium text-gray-700">Recent Bank Transactions</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b text-xs font-medium text-gray-500 uppercase">
+                  <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Account</th>
+                  <th className="px-5 py-3 text-left">Description</th>
+                  <th className="px-5 py-3 text-left">Reference</th>
+                  <th className="px-5 py-3 text-right">Money In</th>
+                  <th className="px-5 py-3 text-right">Money Out</th>
+                  <th className="px-5 py-3 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {recentTxns.map((t, i) => {
+                  const dr = Number(t.debit || 0), cr = Number(t.credit || 0);
+                  return (
+                    <tr key={t.entry_id ? `${t.entry_id}-${i}` : i}>
+                      <td className="px-5 py-3 text-sm text-gray-600">{formatDate(t.date)}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600">{t.account_name}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900">{t.description || t.reference || '—'}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400">{t.journal_number || t.reference || ''}</td>
+                      <td className="px-5 py-3 text-sm text-right text-green-600">{dr > 0 ? formatCurrency(dr) : ''}</td>
+                      <td className="px-5 py-3 text-sm text-right text-red-600">{cr > 0 ? formatCurrency(cr) : ''}</td>
+                      <td className="px-5 py-3 text-sm text-right font-medium">{formatCurrency(Number(t.balance || 0))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Reconciliation summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <StatCard title="Matched Transactions" value="—" icon={<CheckCircle2 className="w-5 h-5" />} />
-        <StatCard title="Pending Categorisation" value="—" icon={<ArrowLeftRight className="w-5 h-5" />} />
-        <StatCard title="Discrepancies" value="—" icon={<AlertTriangle className="w-5 h-5" />} />
+        <StatCard
+          title="Matched Transactions"
+          value={String(matchedCount)}
+          subtitle="Categorised"
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
+        <StatCard
+          title="Pending Categorisation"
+          value={String(pendingCount)}
+          subtitle={pendingCount > 0 ? 'Needs review' : 'All caught up'}
+          icon={<ArrowLeftRight className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
+        <StatCard
+          title="Excluded"
+          value={String(excludedCount)}
+          subtitle="Not for the books"
+          icon={<AlertTriangle className="w-5 h-5" />}
+          onClick={() => navigate('/transactions')}
+        />
       </div>
 
       {/* Reconciliation features */}

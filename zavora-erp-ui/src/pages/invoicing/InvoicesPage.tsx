@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts } from '../../api/client';
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
@@ -19,8 +19,23 @@ const isPostedLike = (s: string) => POSTED_LIKE.includes(s);
 export default function InvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>('all');
+  // Allow deep-linking to a status tab, e.g. /invoices?status=overdue (used by
+  // the dashboard "Needs Attention" overdue card).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validFilters = ['all', 'draft', 'posted', 'overdue', 'paid'];
+  const initialFilter = validFilters.includes(searchParams.get('status') || '')
+    ? (searchParams.get('status') as string)
+    : 'all';
+  const [filter, setFilter] = useState<string>(initialFilter);
+  // Deep-link from a customer's "New Invoice": /invoices?new=1&customer=<id>
+  // opens the create form pre-filled for that customer.
+  const newCustomerId = searchParams.get('customer') || '';
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') setShowCreate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
@@ -34,10 +49,10 @@ export default function InvoicesPage() {
   const { data: customers = [] } = useQuery<any[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
   const customerName = (id?: string) => (Array.isArray(customers) ? customers : []).find((c) => c.id === id)?.name ?? `${id?.slice(0, 8)}…`;
   const [writeOffInv, setWriteOffInv] = useState<any | null>(null);
+  const [sendInv, setSendInv] = useState<any | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
   const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate });
-  const sendMutation = useMutation({ mutationFn: (id: string) => sendInvoice(id), onSuccess: invalidate });
   const deleteMutation = useMutation({ mutationFn: (id: string) => deleteInvoice(id), onSuccess: invalidate });
 
   const filtered = filter === 'all' ? invoices
@@ -86,8 +101,8 @@ export default function InvoicesPage() {
             </>
           )}
           {isPostedLike(r.status) && !(r as any).sent_at && hasRole(ROLES_SEND) && (
-            <button onClick={() => sendMutation.mutate(r.id)} disabled={sendMutation.isPending} className="btn-secondary text-xs py-1 px-2" title="Mark as sent to customer">
-              <Send className="w-3 h-3" /> Mark sent
+            <button onClick={() => setSendInv(r)} className="btn-secondary text-xs py-1 px-2" title="Send to customer (email + PDF) or mark as sent">
+              <Send className="w-3 h-3" /> Send
             </button>
           )}
           {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && hasRole(ROLES_POST) && (
@@ -117,7 +132,10 @@ export default function InvoicesPage() {
         {(['all', 'draft', 'posted', 'overdue', 'paid'] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setFilter(s)}
+            onClick={() => {
+              setFilter(s);
+              setSearchParams(s === 'all' ? {} : { status: s }, { replace: true });
+            }}
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === s ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
           >
             {s.charAt(0).toUpperCase() + s.slice(1)} ({statusCounts[s]})
@@ -128,9 +146,10 @@ export default function InvoicesPage() {
       <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/invoices/${r.id}`)} emptyMessage="No invoices yet. Create your first invoice to get paid." />
       <PaginationControls page={page} limit={limit} total={invoicesTotal} onPage={setPage} />
 
-      {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateInvoiceModal initialCustomerId={newCustomerId} onClose={() => setShowCreate(false)} />}
       {editId && <CreateInvoiceModal editId={editId} onClose={() => setEditId(null)} />}
       {writeOffInv && <WriteOffModal invoice={writeOffInv} onClose={() => setWriteOffInv(null)} onDone={() => { invalidate(); setWriteOffInv(null); }} />}
+      {sendInv && <SendInvoiceModal invoice={sendInv} customer={(Array.isArray(customers) ? customers : []).find((c) => c.id === sendInv.customer_id)} onClose={() => setSendInv(null)} onDone={() => { invalidate(); setSendInv(null); }} />}
     </div>
   );
 }
@@ -138,6 +157,122 @@ export default function InvoicesPage() {
 // ============================================================
 // Full-featured Invoice Creation / Edit — Wave Apps parity
 // ============================================================
+function SendInvoiceModal({ invoice, customer, onClose, onDone }: { invoice: any; customer?: any; onClose: () => void; onDone: () => void }) {
+  const customerEmail = (() => {
+    const emails = customer?.email;
+    if (Array.isArray(emails) && emails.length > 0) return emails[0]?.email ?? '';
+    return '';
+  })();
+  const [mode, setMode] = useState<'email' | 'mark'>('email');
+  const [recipient, setRecipient] = useState(customerEmail);
+  const [templateId, setTemplateId] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const { data: templates = [] } = useQuery<any[]>({
+    queryKey: ['invoice-templates'],
+    queryFn: () => getInvoiceTemplates().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+
+  const mut = useMutation({
+    mutationFn: () =>
+      sendInvoice(invoice.id, {
+        invoice_id: invoice.id,
+        channels: ['Email'],
+        message: message.trim() || undefined,
+        template_id: templateId || undefined,
+        recipient_email: mode === 'email' ? (recipient.trim() || undefined) : undefined,
+        mark_sent_only: mode === 'mark',
+      }),
+    onSuccess: (resp: any) => {
+      const emailed = resp?.data?.emailed_to;
+      if (mode === 'mark' || !emailed) {
+        onDone();
+      } else {
+        setResult(emailed);
+      }
+    },
+    onError: (e: any) => setError(e?.response?.data?.error || 'Failed to send invoice.'),
+  });
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Send ${invoice.number}`} size="md">
+      {result ? (
+        <div className="space-y-4">
+          <div className="bg-green-50 text-green-700 text-sm p-3 rounded-lg">
+            Invoice emailed to <strong>{result}</strong> with a PDF attached, and marked as sent.
+          </div>
+          <div className="flex justify-end"><button className="btn-primary" onClick={onDone}>Done</button></div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{error}</div>}
+
+          {/* Mode toggle */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('email')}
+              className={`flex-1 text-sm py-2 rounded-lg border ${mode === 'email' ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-600'}`}
+            >
+              Send by email
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('mark')}
+              className={`flex-1 text-sm py-2 rounded-lg border ${mode === 'mark' ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-600'}`}
+            >
+              Mark as sent
+            </button>
+          </div>
+
+          {mode === 'email' ? (
+            <>
+              <div>
+                <label className="label">Recipient email *</label>
+                <input className="input" type="email" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="customer@example.com" />
+                {!customerEmail && <p className="text-xs text-amber-600 mt-1">This customer has no email on file — enter one to send.</p>}
+              </div>
+              <div>
+                <label className="label">Invoice template</label>
+                <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                  <option value="">Default template</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Controls the colours and footer on the attached PDF.</p>
+              </div>
+              <div>
+                <label className="label">Message <span className="text-gray-400 font-normal">(optional)</span></label>
+                <textarea className="input" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Add a note to the customer…" />
+              </div>
+              <p className="text-xs text-gray-500">A formatted email with the invoice PDF attached will be sent, and the invoice marked as sent.</p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">
+              Mark <strong>{invoice.number}</strong> as sent without emailing — for when you've already delivered it
+              outside the system (printed, emailed manually, etc.).
+            </p>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button
+              className="btn-primary"
+              disabled={mut.isPending || (mode === 'email' && !recipient.trim())}
+              onClick={() => { setError(null); mut.mutate(); }}
+            >
+              {mut.isPending ? 'Sending…' : mode === 'email' ? 'Send invoice' : 'Mark as sent'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: () => void; onDone: () => void }) {
   const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
   const expenseAccounts = accounts.filter((a) => a.account_type === 'Expense');
@@ -182,7 +317,7 @@ function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: ()
   );
 }
 
-function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
+function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: string; initialCustomerId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
@@ -194,7 +329,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
   const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
   const [form, setForm] = useState({
-    customer_id: '',
+    customer_id: initialCustomerId || '',
     invoice_date: today,
     due_date: defaultDue,
     po_number: '',

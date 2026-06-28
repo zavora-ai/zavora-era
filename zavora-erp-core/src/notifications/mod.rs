@@ -18,6 +18,7 @@ pub enum NotificationEventType {
     PaymentReceived,
     CreditLimitExceeded,
     ScheduledReport,
+    InvoiceSent,
 }
 
 /// Status of a notification.
@@ -51,6 +52,17 @@ pub struct Notification {
     pub created_at: DateTime<Utc>,
 }
 
+/// An email attachment carried with a notification. `content_base64` holds the
+/// file bytes base64-encoded so the attachment survives JSON/Redis transport.
+/// Attachments are delivery-only — they are NOT persisted to the notifications
+/// table (only the body/subject are).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationAttachment {
+    pub filename: String,
+    pub mime_type: String,
+    pub content_base64: String,
+}
+
 /// Request to send a notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendNotificationRequest {
@@ -62,6 +74,10 @@ pub struct SendNotificationRequest {
     pub related_type: Option<String>,
     pub related_id: Option<Uuid>,
     pub schedule_at: Option<DateTime<Utc>>,
+    /// Optional email attachments (e.g. an invoice PDF). Only used by the Email
+    /// channel; ignored elsewhere. Defaults to empty for backward compatibility.
+    #[serde(default)]
+    pub attachments: Vec<NotificationAttachment>,
 }
 
 /// A scheduled reminder job (for invoice reminders).

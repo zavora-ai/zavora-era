@@ -1,12 +1,13 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRecurringInvoices, createRecurringInvoice, deleteRecurringInvoice, getCustomers, getProducts } from '../../api/client';
+import { getRecurringInvoices, createRecurringInvoice, deleteRecurringInvoice, getCustomers, getProducts, getRecurringDocumentPdf, getRecurringInvoiceHistory } from '../../api/client';
 import type { Customer, Product } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/format';
+import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, RefreshCw, Calendar, Pause, Play, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, RefreshCw, Calendar, Pause, Play, Trash2, AlertCircle, Eye, Download, History, Loader2 } from 'lucide-react';
 
 interface RecurringInvoice {
   id: string;
@@ -26,7 +27,27 @@ interface RecurringInvoice {
 
 export default function RecurringInvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  const downloadPdf = async (id: string) => {
+    setDownloadingId(id);
+    try {
+      const r = await getRecurringDocumentPdf(id);
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'recurring-invoice-preview.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch { /* no-op */ } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const { data: recurring = [], isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ['recurring-invoices'],
@@ -91,17 +112,43 @@ export default function RecurringInvoicesPage() {
     {
       key: 'id', header: '',
       render: (r) => (
-        <button
-          onClick={() => {
-            if (confirm('Delete this recurring schedule? This stops future automatic invoices.')) {
-              deleteMutation.mutate(r.id);
-            }
-          }}
-          className="text-gray-400 hover:text-red-600"
-          title="Delete schedule"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          <Link
+            to={`/documents/recurring/${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="btn-secondary text-xs py-1 px-2"
+            title="Preview next invoice"
+          >
+            <Eye className="w-3 h-3" />
+          </Link>
+          <button
+            onClick={(e) => { e.stopPropagation(); downloadPdf(r.id); }}
+            disabled={downloadingId === r.id}
+            className="btn-secondary text-xs py-1 px-2"
+            title="Download preview PDF"
+          >
+            {downloadingId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setHistoryFor(r.id); }}
+            className="btn-secondary text-xs py-1 px-2"
+            title="Generated invoices"
+          >
+            <History className="w-3 h-3" /> {r.run_count}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm('Delete this recurring schedule? This stops future automatic invoices.')) {
+                deleteMutation.mutate(r.id);
+              }
+            }}
+            className="btn-secondary text-xs py-1 px-2 text-red-600 border-red-200 hover:bg-red-50"
+            title="Delete schedule"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
       ),
       className: 'text-right',
     },
@@ -160,11 +207,61 @@ export default function RecurringInvoicesPage() {
         columns={columns}
         data={recurring}
         loading={isLoading}
+        onRowClick={(r) => navigate(`/documents/recurring/${r.id}`)}
         emptyMessage="No recurring invoices set up yet. Create one to automate your billing."
       />
 
       {showCreate && <CreateRecurringModal onClose={() => setShowCreate(false)} />}
+      {historyFor && (
+        <HistoryModal
+          recurringId={historyFor}
+          customerName={getCustomerName(recurring.find(r => r.id === historyFor)?.customer_id || '')}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
     </div>
+  );
+}
+
+interface HistoryItem { id: string; number: string; issue_date: string; status: string; gross_total: number; balance_due: number; }
+
+function HistoryModal({ recurringId, customerName, onClose }: { recurringId: string; customerName: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { data: items = [], isLoading } = useQuery<HistoryItem[]>({
+    queryKey: ['recurring-history', recurringId],
+    queryFn: () => getRecurringInvoiceHistory(recurringId).then(r => Array.isArray(r.data) ? r.data : []),
+  });
+
+  return (
+    <Modal open={true} onClose={onClose} title="Generated Invoices" subtitle={`Invoices created by this schedule${customerName ? ' · ' + customerName : ''}`} size="lg">
+      {isLoading ? (
+        <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>
+      ) : items.length === 0 ? (
+        <div className="p-8 text-center text-gray-400 text-sm">
+          No invoices have been generated by this schedule yet. They appear here automatically on each run.
+        </div>
+      ) : (
+        <div className="divide-y border rounded-lg overflow-hidden">
+          {items.map((inv) => (
+            <button
+              key={inv.id}
+              onClick={() => { onClose(); navigate(`/invoices/${inv.id}`); }}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={statusColor(inv.status)}>{inv.status.replace('_', ' ')}</span>
+                <span className="font-medium text-blue-600">{inv.number}</span>
+                <span className="text-sm text-gray-500">{formatDate(inv.issue_date)}</span>
+              </div>
+              <div className="text-right shrink-0 ml-3">
+                <p className="text-sm font-medium text-gray-900">{formatCurrency(inv.gross_total)}</p>
+                {Number(inv.balance_due) > 0 && <p className="text-xs text-gray-500">{formatCurrency(inv.balance_due)} due</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 

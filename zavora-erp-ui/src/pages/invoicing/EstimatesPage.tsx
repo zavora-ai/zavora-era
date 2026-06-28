@@ -10,13 +10,14 @@ import PaginationControls from '../../components/shared/PaginationControls';
 import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { Plus, ArrowRight, Send, Check, X, Eye, Pencil, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function EstimatesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
   const { data: resp, isLoading } = useQuery({
@@ -171,7 +172,7 @@ export default function EstimatesPage() {
         ))}
       </div>
 
-      <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No estimates yet. Create your first estimate to send quotes to customers." />
+      <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/documents/estimate/${r.id}`)} emptyMessage="No estimates yet. Create your first estimate to send quotes to customers." />
       <PaginationControls page={page} limit={limit} total={estimatesTotal} onPage={setPage} />
 
       {showCreate && <CreateEstimateModal onClose={() => setShowCreate(false)} />}

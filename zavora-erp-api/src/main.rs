@@ -171,14 +171,18 @@ async fn main() -> anyhow::Result<()> {
         // Invoices
         .route("/api/v1/invoices", get(routes::invoices::list).post(routes::invoices::create))
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_one).put(routes::invoices::update).delete(routes::invoices::delete))
+        .route("/api/v1/invoices/{id}/document", get(routes::invoices::document))
         .route("/api/v1/invoices/{id}/post", post(routes::invoices::post_invoice))
         .route("/api/v1/invoices/{id}/send", post(routes::invoices::send))
         .route("/api/v1/invoices/{id}/write-off", post(routes::invoices::write_off))
         .route("/api/v1/invoices/{id}/credit-note", post(routes::invoices::create_credit_note))
         .route("/api/v1/invoices/{id}/etims-transmit", post(routes::invoices::etims_transmit))
+        // Invoice templates (branding for the send/PDF flow)
+        .route("/api/v1/invoice-templates", get(routes::invoice_templates::list).post(routes::invoice_templates::create))
         // Estimates
         .route("/api/v1/estimates", get(routes::estimates::list).post(routes::estimates::create))
         .route("/api/v1/estimates/{id}", get(routes::estimates::get_one).put(routes::estimates::update).delete(routes::estimates::delete))
+        .route("/api/v1/estimates/{id}/document", get(routes::estimates::document))
         .route("/api/v1/estimates/{id}/convert", post(routes::estimates::convert))
         .route("/api/v1/estimates/{id}/send", post(routes::estimates::send))
         .route("/api/v1/estimates/{id}/accept", post(routes::estimates::accept))
@@ -186,6 +190,8 @@ async fn main() -> anyhow::Result<()> {
         // Recurring Invoices
         .route("/api/v1/recurring-invoices", get(routes::invoices::list_recurring).post(routes::invoices::create_recurring))
         .route("/api/v1/recurring-invoices/{id}", axum::routing::put(routes::invoices::update_recurring).delete(routes::invoices::delete_recurring))
+        .route("/api/v1/recurring-invoices/{id}/document", get(routes::invoices::recurring_document))
+        .route("/api/v1/recurring-invoices/{id}/invoices", get(routes::invoices::recurring_history))
         // Notifications (in-app inbox)
         .route("/api/v1/notifications", get(routes::notifications::list))
         .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))

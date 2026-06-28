@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download, Printer, Loader2 } from 'lucide-react';
-import { getInvoiceDocumentHtml, getInvoiceDocumentPdf } from '../../api/client';
+import { getRecurringDocumentHtml, getRecurringDocumentPdf } from '../../api/client';
 
-/// The invoice document is rendered server-side (one source of truth), so the
-/// on-screen view, the downloaded PDF, and the emailed PDF are identical. We load
-/// the same HTML the server produces into an iframe; Download/Print fetch the PDF
-/// (server prints that exact HTML to PDF via headless Chrome).
-export default function InvoicePreview() {
+/// Preview of the next invoice a recurring schedule will generate. Same renderer
+/// as invoices/estimates, so the on-screen view and the downloaded PDF match.
+export default function RecurringPreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [html, setHtml] = useState<string | null>(null);
@@ -17,9 +15,9 @@ export default function InvoicePreview() {
   useEffect(() => {
     let cancelled = false;
     if (!id) return;
-    getInvoiceDocumentHtml(id)
+    getRecurringDocumentHtml(id)
       .then((r) => { if (!cancelled) setHtml(typeof r.data === 'string' ? r.data : String(r.data)); })
-      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error || 'Failed to load document.'); });
+      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error || 'Failed to load preview.'); });
     return () => { cancelled = true; };
   }, [id]);
 
@@ -27,15 +25,11 @@ export default function InvoicePreview() {
     if (!id) return;
     setDownloading(true);
     try {
-      const r = await getInvoiceDocumentPdf(id);
-      // Prefer the server-provided filename (the invoice number) over the UUID.
-      const cd = (r.headers?.['content-disposition'] as string) || '';
-      const match = /filename="?([^";]+)"?/.exec(cd);
-      const filename = match ? match[1] : `invoice-${id}.pdf`;
+      const r = await getRecurringDocumentPdf(id);
       const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = 'recurring-invoice-preview.pdf';
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -50,7 +44,7 @@ export default function InvoicePreview() {
   const print = async () => {
     if (!id) return;
     try {
-      const r = await getInvoiceDocumentPdf(id);
+      const r = await getRecurringDocumentPdf(id);
       const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -69,17 +63,21 @@ export default function InvoicePreview() {
         </button>
       </div>
 
+      <p className="text-sm text-gray-500 mb-4">
+        Preview of the next invoice this schedule will generate. Figures update as the template changes.
+      </p>
+
       {error && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg mb-4">{error}</div>}
 
       {html === null && !error ? (
         <div className="p-12 text-center text-gray-500">
           <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
-          <p className="mt-3 text-sm">Loading document…</p>
+          <p className="mt-3 text-sm">Loading preview…</p>
         </div>
       ) : html ? (
         <div className="mx-auto max-w-4xl border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white">
           <iframe
-            title="Invoice document"
+            title="Recurring invoice preview"
             srcDoc={html}
             className="w-full"
             style={{ height: '297mm', border: 'none', background: '#fff' }}

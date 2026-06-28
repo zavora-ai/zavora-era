@@ -1162,6 +1162,731 @@ pub async fn mark_invoice_sent(
     Ok(())
 }
 
+/// Build the shared invoice document model from the database. This is the single
+/// source of truth used for the on-screen preview, the downloaded PDF, and the
+/// emailed PDF — so all three are identical.
+pub async fn build_invoice_document(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<crate::invoicing::document::InvoiceDocument> {
+    use crate::invoicing::document::{InvoiceDocLine, InvoiceDocument};
+
+    let invoice = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    let lines = sqlx::query_as::<_, InvoiceLineRow>(
+        "SELECT * FROM invoice_lines WHERE invoice_id = $1",
+    )
+    .bind(invoice_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let template = load_template(engine, entity_id, invoice.template_id).await?;
+    let (primary_color, footer_text) = match &template {
+        Some(t) => (t.primary_color.clone(), t.footer_text.clone()),
+        None => ("#1a56db".to_string(), None),
+    };
+
+    // Org/branding from settings.
+    let (org_name, kra_pin, vat_number, branding_json): (Option<String>, Option<String>, Option<String>, Option<serde_json::Value>) =
+        sqlx::query_as(
+            "SELECT organization_name, kra_pin, NULL::text, branding FROM entity_settings WHERE entity_id = $1",
+        )
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?
+        .unwrap_or((None, None, None, None));
+
+    // Branding may carry richer fields (logo, address, email, phone, vat).
+    let branding = branding_json.unwrap_or_default();
+    let bget = |k: &str| branding.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let logo_url = bget("logo_url");
+    let org_address = bget("address");
+    let org_email = bget("email");
+    let org_phone = bget("phone");
+    let org_vat = vat_number.or_else(|| bget("vat_number"));
+    let footer_text = footer_text.or_else(|| bget("footer_text"));
+    let org_name = bget("company_name").or(org_name).unwrap_or_else(|| "Your Company".to_string());
+
+    // Customer address (stored as JSON).
+    let customer_address = customer.as_ref().and_then(|c| {
+        c.address.as_ref().and_then(|a| {
+            let parts: Vec<String> = ["line1", "line2", "city", "country"]
+                .iter()
+                .filter_map(|k| a.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()))
+                .collect();
+            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+        })
+    });
+
+    let is_credit = invoice.invoice_type == "credit_note";
+    let is_draft = invoice.status == "draft";
+    let title = if is_credit { "CREDIT NOTE" } else if is_draft { "PROFORMA INVOICE" } else { "TAX INVOICE" };
+
+    let etims_number = if invoice.etims_status == "transmitted" { invoice.etims_invoice_number.clone() } else { None };
+
+    Ok(InvoiceDocument {
+        org_name,
+        org_kra_pin: kra_pin,
+        org_vat_number: org_vat,
+        org_address,
+        org_email,
+        org_phone,
+        logo_url,
+        primary_color,
+        footer_text,
+        title: title.to_string(),
+        number: invoice.number.clone(),
+        issue_date: invoice.issue_date.to_string(),
+        due_date: invoice.due_date.to_string(),
+        currency: invoice.currency.clone(),
+        etims_number,
+        customer_name: customer.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| invoice.customer_id.to_string()),
+        customer_address,
+        customer_kra_pin: customer.as_ref().and_then(|c| c.kra_pin.clone()),
+        lines: lines.iter().map(|l| InvoiceDocLine {
+            description: l.description.clone(),
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            vat_amount: l.vat_amount,
+            line_total: l.line_total,
+        }).collect(),
+        subtotal: invoice.subtotal,
+        discount_total: invoice.discount_total,
+        tax_total: invoice.tax_total,
+        gross_total: invoice.gross_total,
+        amount_paid: invoice.amount_paid,
+        balance_due: invoice.balance_due,
+        notes: invoice.notes.clone(),
+        number_label: "Invoice No".to_string(),
+        date2_label: "Due Date".to_string(),
+        summary_label: "Balance Due".to_string(),
+        show_payments: true,
+    })
+}
+
+/// Render the shared invoice document as HTML (source of truth for on-screen).
+pub async fn invoice_document_html(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<String> {
+    let doc = build_invoice_document(engine, entity_id, invoice_id).await?;
+    Ok(crate::invoicing::document::render_invoice_html(&doc))
+}
+
+/// Build the shared document model for an **estimate/quote** — same renderer as
+/// invoices, so the on-screen preview, downloaded PDF and emailed PDF match.
+pub async fn build_estimate_document(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    estimate_id: Uuid,
+) -> ErpResult<crate::invoicing::document::InvoiceDocument> {
+    use crate::invoicing::document::{InvoiceDocLine, InvoiceDocument};
+    use crate::invoicing::estimate::EstimateRow;
+
+    let est = sqlx::query_as::<_, EstimateRow>(
+        "SELECT * FROM estimates WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(estimate_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Estimate".to_string(), id: estimate_id })?;
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(est.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    let lines = sqlx::query_as::<_, InvoiceLineRow>(
+        r#"SELECT id, estimate_id AS invoice_id, product_id, description, quantity,
+                  unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount
+           FROM estimate_lines WHERE estimate_id = $1"#,
+    )
+    .bind(estimate_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let template = load_template(engine, entity_id, est.template_id).await?;
+    let (primary_color, footer_text) = match &template {
+        Some(t) => (t.primary_color.clone(), t.footer_text.clone()),
+        None => ("#1a56db".to_string(), None),
+    };
+
+    let (org_name, kra_pin, vat_number, branding_json): (Option<String>, Option<String>, Option<String>, Option<serde_json::Value>) =
+        sqlx::query_as(
+            "SELECT organization_name, kra_pin, NULL::text, branding FROM entity_settings WHERE entity_id = $1",
+        )
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?
+        .unwrap_or((None, None, None, None));
+
+    let branding = branding_json.unwrap_or_default();
+    let bget = |k: &str| branding.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let logo_url = bget("logo_url");
+    let org_address = bget("address");
+    let org_email = bget("email");
+    let org_phone = bget("phone");
+    let org_vat = vat_number.or_else(|| bget("vat_number"));
+    let footer_text = footer_text.or_else(|| bget("footer_text"));
+    let org_name = bget("company_name").or(org_name).unwrap_or_else(|| "Your Company".to_string());
+
+    let customer_address = customer.as_ref().and_then(|c| {
+        c.address.as_ref().and_then(|a| {
+            let parts: Vec<String> = ["line1", "line2", "city", "country"]
+                .iter()
+                .filter_map(|k| a.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()))
+                .collect();
+            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+        })
+    });
+
+    Ok(InvoiceDocument {
+        org_name,
+        org_kra_pin: kra_pin,
+        org_vat_number: org_vat,
+        org_address,
+        org_email,
+        org_phone,
+        logo_url,
+        primary_color,
+        footer_text,
+        title: "ESTIMATE".to_string(),
+        number: est.number.clone(),
+        issue_date: est.issue_date.to_string(),
+        due_date: est.expiry_date.to_string(),
+        currency: est.currency.clone(),
+        etims_number: None,
+        customer_name: customer.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| est.customer_id.to_string()),
+        customer_address,
+        customer_kra_pin: customer.as_ref().and_then(|c| c.kra_pin.clone()),
+        lines: lines.iter().map(|l| InvoiceDocLine {
+            description: l.description.clone(),
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            vat_amount: l.vat_amount,
+            line_total: l.line_total,
+        }).collect(),
+        subtotal: est.subtotal,
+        discount_total: Decimal::ZERO,
+        tax_total: est.tax_total,
+        gross_total: est.gross_total,
+        amount_paid: Decimal::ZERO,
+        balance_due: est.gross_total,
+        notes: est.notes.clone(),
+        number_label: "Estimate No".to_string(),
+        date2_label: "Valid Until".to_string(),
+        summary_label: "Estimate Total".to_string(),
+        show_payments: false,
+    })
+}
+
+/// Estimate document as HTML.
+pub async fn estimate_document_html(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    estimate_id: Uuid,
+) -> ErpResult<String> {
+    let doc = build_estimate_document(engine, entity_id, estimate_id).await?;
+    Ok(crate::invoicing::document::render_invoice_html(&doc))
+}
+
+/// Estimate document as PDF (headless-Chrome, falling back to the built-in PDF).
+/// Returns the bytes and the estimate number for the download filename.
+pub async fn estimate_document_pdf(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    estimate_id: Uuid,
+) -> ErpResult<(Vec<u8>, String)> {
+    let doc = build_estimate_document(engine, entity_id, estimate_id).await?;
+    let number = doc.number.clone();
+    let html = crate::invoicing::document::render_invoice_html(&doc);
+    let html_clone = html.clone();
+    let pdf = tokio::task::spawn_blocking(move || crate::invoicing::htmlpdf::html_to_pdf(&html_clone))
+        .await
+        .ok()
+        .flatten();
+    let bytes = match pdf {
+        Some(b) => b,
+        None => {
+            let fb = crate::invoicing::pdf::InvoicePdfData {
+                org_name: doc.org_name.clone(),
+                invoice_number: doc.number.clone(),
+                invoice_type_label: doc.title.clone(),
+                issue_date: doc.issue_date.clone(),
+                due_date: doc.due_date.clone(),
+                currency: doc.currency.clone(),
+                customer_name: doc.customer_name.clone(),
+                customer_email: None,
+                lines: doc.lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    line_total: l.line_total,
+                }).collect(),
+                subtotal: doc.subtotal,
+                discount_total: doc.discount_total,
+                tax_total: doc.tax_total,
+                gross_total: doc.gross_total,
+                amount_paid: doc.amount_paid,
+                balance_due: doc.balance_due,
+                notes: doc.notes.clone(),
+                footer_text: doc.footer_text.clone(),
+                accent_rgb: crate::invoicing::pdf::parse_hex_color(&doc.primary_color),
+            };
+            crate::invoicing::pdf::render_invoice_pdf(&fb)
+        }
+    };
+    Ok((bytes, number))
+}
+
+/// Build the shared document model for the **next invoice a recurring template
+/// will generate** — a proforma preview using the template lines, the customer,
+/// and the next scheduled run date. Totals are computed the same way as a real
+/// invoice (line total pre-VAT, VAT per line treatment).
+pub async fn build_recurring_document(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    recurring_id: Uuid,
+) -> ErpResult<crate::invoicing::document::InvoiceDocument> {
+    use crate::invoicing::document::{InvoiceDocLine, InvoiceDocument};
+    use crate::invoicing::recurring::RecurringInvoiceRow;
+    use crate::types::VatTreatment;
+
+    let rec = sqlx::query_as::<_, RecurringInvoiceRow>(
+        "SELECT * FROM recurring_invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(recurring_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "RecurringInvoice".to_string(), id: recurring_id })?;
+
+    let template: crate::invoicing::CreateInvoiceRequest =
+        serde_json::from_value(rec.template.clone())
+            .map_err(|e| ErpError::ValidationFailed { message: format!("Invalid recurring template: {e}") })?;
+
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(rec.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    // Compute lines + totals (pre-VAT line total, VAT per line treatment).
+    let mut doc_lines = Vec::new();
+    let (mut subtotal, mut tax_total) = (Decimal::ZERO, Decimal::ZERO);
+    for l in &template.lines {
+        let unit = l.unit_price.unwrap_or(Decimal::ZERO);
+        let gross = l.quantity * unit;
+        let disc = l.discount_percent.unwrap_or(Decimal::ZERO) / Decimal::new(100, 0);
+        let line_total = (gross - gross * disc).round_dp(2);
+        let rate = l.vat_treatment.clone().unwrap_or(VatTreatment::Standard16).rate();
+        let vat_amount = (line_total * rate).round_dp(2);
+        subtotal += line_total;
+        tax_total += vat_amount;
+        doc_lines.push(InvoiceDocLine {
+            description: l.description.clone().unwrap_or_default(),
+            quantity: l.quantity,
+            unit_price: unit,
+            vat_amount,
+            line_total,
+        });
+    }
+    let gross_total = subtotal + tax_total;
+
+    // Branding from settings.
+    let (org_name, kra_pin, _vat, branding_json): (Option<String>, Option<String>, Option<String>, Option<serde_json::Value>) =
+        sqlx::query_as("SELECT organization_name, kra_pin, NULL::text, branding FROM entity_settings WHERE entity_id = $1")
+            .bind(entity_id)
+            .fetch_optional(engine.pool())
+            .await?
+            .unwrap_or((None, None, None, None));
+    let branding = branding_json.unwrap_or_default();
+    let bget = |k: &str| branding.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let org_name = bget("company_name").or(org_name).unwrap_or_else(|| "Your Company".to_string());
+
+    let customer_address = customer.as_ref().and_then(|c| {
+        c.address.as_ref().and_then(|a| {
+            let parts: Vec<String> = ["line1", "line2", "city", "country"]
+                .iter()
+                .filter_map(|k| a.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()))
+                .collect();
+            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+        })
+    });
+
+    Ok(InvoiceDocument {
+        org_name,
+        org_kra_pin: kra_pin,
+        org_vat_number: bget("vat_number"),
+        org_address: bget("address"),
+        org_email: bget("email"),
+        org_phone: bget("phone"),
+        logo_url: bget("logo_url"),
+        primary_color: "#1a56db".to_string(),
+        footer_text: bget("footer_text"),
+        title: "RECURRING INVOICE — PREVIEW".to_string(),
+        number: "Next scheduled".to_string(),
+        issue_date: rec.next_run.to_string(),
+        due_date: rec.frequency.clone(),
+        currency: template.currency.clone().unwrap_or_else(|| "KES".to_string()),
+        etims_number: None,
+        customer_name: customer.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| rec.customer_id.to_string()),
+        customer_address,
+        customer_kra_pin: customer.as_ref().and_then(|c| c.kra_pin.clone()),
+        lines: doc_lines,
+        subtotal,
+        discount_total: Decimal::ZERO,
+        tax_total,
+        gross_total,
+        amount_paid: Decimal::ZERO,
+        balance_due: gross_total,
+        notes: template.notes.clone(),
+        number_label: "Reference".to_string(),
+        date2_label: "Frequency".to_string(),
+        summary_label: "Invoice Total".to_string(),
+        show_payments: false,
+    })
+}
+
+/// Recurring-template preview document as HTML.
+pub async fn recurring_document_html(engine: &ErpEngine, entity_id: Uuid, recurring_id: Uuid) -> ErpResult<String> {
+    let doc = build_recurring_document(engine, entity_id, recurring_id).await?;
+    Ok(crate::invoicing::document::render_invoice_html(&doc))
+}
+
+/// Recurring-template preview document as PDF.
+pub async fn recurring_document_pdf(engine: &ErpEngine, entity_id: Uuid, recurring_id: Uuid) -> ErpResult<(Vec<u8>, String)> {
+    let doc = build_recurring_document(engine, entity_id, recurring_id).await?;
+    let html = crate::invoicing::document::render_invoice_html(&doc);
+    let html_clone = html.clone();
+    let pdf = tokio::task::spawn_blocking(move || crate::invoicing::htmlpdf::html_to_pdf(&html_clone))
+        .await
+        .ok()
+        .flatten();
+    let bytes = match pdf {
+        Some(b) => b,
+        None => {
+            let fb = crate::invoicing::pdf::InvoicePdfData {
+                org_name: doc.org_name.clone(),
+                invoice_number: doc.number.clone(),
+                invoice_type_label: doc.title.clone(),
+                issue_date: doc.issue_date.clone(),
+                due_date: doc.due_date.clone(),
+                currency: doc.currency.clone(),
+                customer_name: doc.customer_name.clone(),
+                customer_email: None,
+                lines: doc.lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    line_total: l.line_total,
+                }).collect(),
+                subtotal: doc.subtotal,
+                discount_total: doc.discount_total,
+                tax_total: doc.tax_total,
+                gross_total: doc.gross_total,
+                amount_paid: doc.amount_paid,
+                balance_due: doc.balance_due,
+                notes: doc.notes.clone(),
+                footer_text: doc.footer_text.clone(),
+                accent_rgb: crate::invoicing::pdf::parse_hex_color(&doc.primary_color),
+            };
+            crate::invoicing::pdf::render_invoice_pdf(&fb)
+        }
+    };
+    Ok((bytes, "recurring-preview".to_string()))
+}
+
+/// Invoices actually generated by a recurring template (most recent first).
+pub async fn recurring_invoice_history(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    recurring_id: Uuid,
+) -> ErpResult<Vec<crate::invoicing::recurring::RecurringInvoiceHistoryItem>> {
+    let rows = sqlx::query_as::<_, crate::invoicing::recurring::RecurringInvoiceHistoryItem>(
+        r#"SELECT id, number, issue_date, status, gross_total, balance_due
+           FROM invoices
+           WHERE entity_id = $1 AND recurring_invoice_id = $2
+           ORDER BY issue_date DESC, created_at DESC"#,
+    )
+    .bind(entity_id)
+    .bind(recurring_id)
+    .fetch_all(engine.pool())
+    .await?;
+    Ok(rows)
+}
+
+/// Render the shared invoice document as PDF. Prefers headless-Chrome conversion
+/// of the exact HTML (so it matches the screen); falls back to the lightweight
+/// hand-built PDF if Chrome is unavailable. Returns (pdf_bytes, accent_hex).
+pub async fn invoice_document_pdf(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    invoice_id: Uuid,
+) -> ErpResult<(Vec<u8>, String)> {
+    let doc = build_invoice_document(engine, entity_id, invoice_id).await?;
+    let accent = doc.primary_color.clone();
+    let number = doc.number.clone();
+    let html = crate::invoicing::document::render_invoice_html(&doc);
+
+    // Chrome conversion can block; run it on a blocking thread.
+    let html_clone = html.clone();
+    let pdf = tokio::task::spawn_blocking(move || crate::invoicing::htmlpdf::html_to_pdf(&html_clone))
+        .await
+        .ok()
+        .flatten();
+
+    let bytes = match pdf {
+        Some(b) => b,
+        None => {
+            // Fallback: hand-built PDF from the same data.
+            tracing::warn!("Chrome unavailable; using fallback PDF renderer for invoice {invoice_id}");
+            let fb = crate::invoicing::pdf::InvoicePdfData {
+                org_name: doc.org_name.clone(),
+                invoice_number: doc.number.clone(),
+                invoice_type_label: doc.title.clone(),
+                issue_date: doc.issue_date.clone(),
+                due_date: doc.due_date.clone(),
+                currency: doc.currency.clone(),
+                customer_name: doc.customer_name.clone(),
+                customer_email: None,
+                lines: doc.lines.iter().map(|l| crate::invoicing::pdf::InvoicePdfLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    line_total: l.line_total,
+                }).collect(),
+                subtotal: doc.subtotal,
+                discount_total: doc.discount_total,
+                tax_total: doc.tax_total,
+                gross_total: doc.gross_total,
+                amount_paid: doc.amount_paid,
+                balance_due: doc.balance_due,
+                notes: doc.notes.clone(),
+                footer_text: doc.footer_text.clone(),
+                accent_rgb: crate::invoicing::pdf::parse_hex_color(&accent),
+            };
+            crate::invoicing::pdf::render_invoice_pdf(&fb)
+        }
+    };
+    Ok((bytes, number))
+}
+
+/// Send an invoice to its customer by email — a formatted HTML message with the
+/// invoice PDF attached — and stamp `sent_at`. The PDF is rendered with the
+/// chosen template (request `template_id` → invoice's template → entity default
+/// → built-in). If `mark_sent_only` is set, or no recipient email is available,
+/// it falls back to just stamping `sent_at` (off-system send). Email delivery is
+/// queued via the notification system; if SMTP is unconfigured the worker
+/// no-ops, so this never blocks marking the invoice sent.
+///
+/// Returns the recipient the email was queued to, if any.
+pub async fn send_invoice(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    req: crate::invoicing::SendInvoiceRequest,
+) -> ErpResult<Option<String>> {
+    let invoice_id = req.invoice_id;
+    let invoice = sqlx::query_as::<_, InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    if invoice.status == "draft" {
+        return Err(ErpError::ValidationFailed {
+            message: "Post the invoice before sending it".to_string(),
+        });
+    }
+
+    // Mark-sent-only short circuit (off-system delivery).
+    if req.mark_sent_only {
+        mark_invoice_sent(engine, entity_id, invoice_id).await?;
+        return Ok(None);
+    }
+
+    // Resolve the customer + recipient email.
+    let customer = sqlx::query_as::<_, crate::parties::CustomerRow>(
+        "SELECT * FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice.customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Customer".to_string(), id: invoice.customer_id })?;
+
+    let recipient = req.recipient_email.clone().or_else(|| {
+        serde_json::from_value::<Vec<crate::types::ContactEmail>>(customer.email.clone())
+            .ok()
+            .and_then(|emails| emails.into_iter().map(|e| e.email).find(|e| !e.is_empty()))
+    });
+
+    // No email anywhere → mark sent only (still records the action).
+    let Some(recipient) = recipient else {
+        mark_invoice_sent(engine, entity_id, invoice_id).await?;
+        return Ok(None);
+    };
+
+    // Resolve the template: request → invoice → entity default → None (built-in).
+    let template_id = req.template_id.or(invoice.template_id);
+    let template = load_template(engine, entity_id, template_id).await?;
+
+    // Org name + branding from settings (best-effort).
+    let org_name = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT organization_name FROM entity_settings WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .flatten()
+    .unwrap_or_else(|| "Your Company".to_string());
+
+    // Build the shared document PDF (same renderer as on-screen + download).
+    let (pdf_bytes, _accent_hex) = invoice_document_pdf(engine, entity_id, invoice_id).await?;
+    let accent_hex = match &template {
+        Some(t) => t.primary_color.clone(),
+        None => "#1a56db".to_string(),
+    };
+    let pdf_b64 = {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        B64.encode(&pdf_bytes)
+    };
+
+    // Formatted HTML email body.
+    let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex);
+    let subject = format!("Invoice {} from {}", invoice.number, org_name);
+
+    let notif = crate::notifications::SendNotificationRequest {
+        event_type: crate::notifications::NotificationEventType::InvoiceSent,
+        channels: vec![crate::types::Channel::Email],
+        recipients: vec![recipient.clone()],
+        subject: Some(subject),
+        body,
+        related_type: Some("Invoice".to_string()),
+        related_id: Some(invoice_id),
+        schedule_at: None,
+        attachments: vec![crate::notifications::NotificationAttachment {
+            filename: format!("{}.pdf", invoice.number),
+            mime_type: "application/pdf".to_string(),
+            content_base64: pdf_b64,
+        }],
+    };
+    crate::services::notifications::send_notification(engine, entity_id, notif).await?;
+
+    // Stamp sent.
+    mark_invoice_sent(engine, entity_id, invoice_id).await?;
+
+    Ok(Some(recipient))
+}
+
+/// Load an invoice template by id, or the entity's default, or None.
+async fn load_template(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    template_id: Option<Uuid>,
+) -> ErpResult<Option<crate::invoicing::InvoiceTemplateRow>> {
+    if let Some(tid) = template_id {
+        let row = sqlx::query_as::<_, crate::invoicing::InvoiceTemplateRow>(
+            "SELECT * FROM invoice_templates WHERE id = $1 AND entity_id = $2",
+        )
+        .bind(tid)
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?;
+        if row.is_some() {
+            return Ok(row);
+        }
+    }
+    // Fall back to the entity default template.
+    let row = sqlx::query_as::<_, crate::invoicing::InvoiceTemplateRow>(
+        "SELECT * FROM invoice_templates WHERE entity_id = $1 AND is_default = true LIMIT 1",
+    )
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+    Ok(row)
+}
+
+/// Render a clean, branded HTML email body for an invoice.
+fn render_invoice_email_html(
+    org_name: &str,
+    invoice: &InvoiceRow,
+    customer_name: &str,
+    message: Option<&str>,
+    accent_hex: &str,
+) -> String {
+    let intro = message
+        .filter(|m| !m.trim().is_empty())
+        .map(|m| format!("<p style=\"margin:0 0 16px;color:#374151\">{}</p>", html_escape(m)))
+        .unwrap_or_default();
+    format!(
+        r#"<!DOCTYPE html><html><body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
+  <div style="max-width:600px;margin:0 auto;padding:24px">
+    <div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+      <div style="background:{accent};padding:20px 24px">
+        <h1 style="margin:0;color:#fff;font-size:18px">{org}</h1>
+      </div>
+      <div style="padding:24px">
+        <p style="margin:0 0 16px;color:#111827">Hi {customer},</p>
+        {intro}
+        <p style="margin:0 0 16px;color:#374151">
+          Please find attached invoice <strong>{number}</strong>.
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px">
+          <tr><td style="padding:6px 0;color:#6b7280">Invoice</td><td style="padding:6px 0;text-align:right;color:#111827">{number}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Issue date</td><td style="padding:6px 0;text-align:right;color:#111827">{issue}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Due date</td><td style="padding:6px 0;text-align:right;color:#111827">{due}</td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#111827;font-weight:bold">Amount due</td>
+              <td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;color:{accent};font-weight:bold;font-size:18px">{currency} {balance}</td></tr>
+        </table>
+        <p style="margin:0;color:#9ca3af;font-size:12px">Thank you for your business.</p>
+      </div>
+    </div>
+    <p style="text-align:center;color:#9ca3af;font-size:11px;margin:16px 0 0">Sent by {org} via Zavora ERP</p>
+  </div>
+</body></html>"#,
+        accent = html_escape(accent_hex),
+        org = html_escape(org_name),
+        customer = html_escape(customer_name),
+        intro = intro,
+        number = html_escape(&invoice.number),
+        issue = invoice.issue_date,
+        due = invoice.due_date,
+        currency = html_escape(&invoice.currency),
+        balance = invoice.balance_due,
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
 /// Post an invoice — creates the GL journal entry (DR AR / CR Revenue / CR VAT Output).
 /// For line items with tracked inventory products, also issues stock and posts COGS
 /// (DR COGS / CR Inventory at weighted average cost). Rejects with InsufficientStock
@@ -1250,6 +1975,7 @@ pub async fn post_invoice(
                 related_type: Some("Invoice".to_string()),
                 related_id: Some(invoice_id),
                 schedule_at: None,
+                attachments: Vec::new(),
             };
 
             // Best-effort notification — don't fail the entire operation if notification fails

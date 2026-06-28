@@ -1,139 +1,90 @@
-import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { getEstimate, getCustomer, getSettings } from '../../api/client';
-import type { Estimate, Customer, BrandingConfig } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/format';
-import DocumentLayout from '../../components/documents/DocumentLayout';
-import DocumentLineItems, { type LineItem } from '../../components/documents/DocumentLineItems';
-import DocumentActions from '../../components/documents/DocumentActions';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Download, Printer, Loader2 } from 'lucide-react';
+import { getEstimateDocumentHtml, getEstimateDocumentPdf } from '../../api/client';
 
+/// The estimate document is rendered server-side by the same renderer as
+/// invoices, so the on-screen preview, the downloaded PDF, and the emailed PDF
+/// are identical. We load the server HTML into an iframe; Download/Print fetch
+/// the PDF (the server prints that exact HTML to PDF).
 export default function EstimatePreview() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
-  const { data: estimateData, isLoading } = useQuery<{ estimate: Estimate; lines: any[] }>({
-    queryKey: ['estimate-preview', id],
-    queryFn: () => getEstimate(id!).then(r => r.data),
-    enabled: !!id,
-  });
+  useEffect(() => {
+    let cancelled = false;
+    if (!id) return;
+    getEstimateDocumentHtml(id)
+      .then((r) => { if (!cancelled) setHtml(typeof r.data === 'string' ? r.data : String(r.data)); })
+      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error || 'Failed to load document.'); });
+    return () => { cancelled = true; };
+  }, [id]);
 
-  const estimate = estimateData?.estimate ?? (estimateData as unknown as Estimate);
-  const rawLines: any[] = estimateData?.lines ?? [];
+  const download = async () => {
+    if (!id) return;
+    setDownloading(true);
+    try {
+      const r = await getEstimateDocumentPdf(id);
+      const cd = (r.headers?.['content-disposition'] as string) || '';
+      const match = /filename="?([^";]+)"?/.exec(cd);
+      const filename = match ? match[1] : `estimate-${id}.pdf`;
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to generate PDF.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
-  const { data: customer } = useQuery<Customer>({
-    queryKey: ['customer', estimate?.customer_id],
-    queryFn: () => getCustomer(estimate!.customer_id).then(r => r.data),
-    enabled: !!estimate?.customer_id,
-  });
-
-  const { data: settingsRes } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
-  const branding: BrandingConfig | undefined = settingsRes?.data?.branding;
-
-  if (isLoading) {
-    return (
-      <div className="p-12 text-center">
-        <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
-        <p className="mt-3 text-sm text-gray-500">Loading document…</p>
-      </div>
-    );
-  }
-
-  if (!estimate) {
-    return <div className="p-12 text-center text-gray-500">Estimate not found</div>;
-  }
-
-  const isDraft = estimate.status === 'draft';
-
-  const lines: LineItem[] = rawLines.map((l: any) => ({
-    description: l.description || '',
-    quantity: l.quantity ?? 1,
-    unit_price: l.unit_price ?? 0,
-    discount_percent: l.discount_percent,
-    vat_amount: l.vat_amount,
-    line_total: l.line_total ?? (l.quantity ?? 1) * (l.unit_price ?? 0),
-  }));
+  const print = async () => {
+    if (!id) return;
+    try {
+      const r = await getEstimateDocumentPdf(id);
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'Failed to open PDF.');
+    }
+  };
 
   return (
     <div className="p-6">
-      <DocumentActions />
-
-      <div className={isDraft ? 'draft-watermark' : ''}>
-        <DocumentLayout
-          branding={branding}
-          title="ESTIMATE / QUOTATION"
-          documentNumber={estimate.number}
-        >
-          {/* Document header details */}
-          <div className="grid grid-cols-2 gap-8 mb-8">
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">Prepared For</h3>
-              <p className="text-sm font-medium text-gray-900">{customer?.name ?? estimate.customer_id.slice(0, 8)}</p>
-              {customer?.address && (
-                <p className="text-sm text-gray-600">
-                  {[customer.address.line1, customer.address.line2, customer.address.city, customer.address.country].filter(Boolean).join(', ')}
-                </p>
-              )}
-              {customer?.kra_pin && <p className="text-sm text-gray-600">PIN: {customer.kra_pin}</p>}
-            </div>
-            <div className="text-right space-y-1">
-              <div className="text-sm">
-                <span className="text-gray-500">Estimate #: </span>
-                <span className="font-medium text-gray-900">{estimate.number}</span>
-              </div>
-              <div className="text-sm">
-                <span className="text-gray-500">Issue Date: </span>
-                <span className="text-gray-900">{formatDate(estimate.issue_date)}</span>
-              </div>
-              <div className="text-sm">
-                <span className="text-gray-500">Expiry Date: </span>
-                <span className="text-gray-900">{formatDate(estimate.expiry_date)}</span>
-              </div>
-              <div className="text-sm">
-                <span className="text-gray-500">Currency: </span>
-                <span className="text-gray-900">{estimate.currency}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Line items */}
-          {lines.length > 0 ? (
-            <DocumentLineItems
-              lines={lines}
-              currency={estimate.currency}
-              subtotal={estimate.subtotal}
-              taxTotal={estimate.tax_total}
-              grossTotal={estimate.gross_total}
-            />
-          ) : (
-            <div className="border rounded-lg p-6 text-center text-sm text-gray-500">
-              <p>Line items summary</p>
-              <div className="mt-4 space-y-1">
-                <div className="flex justify-between max-w-xs mx-auto">
-                  <span>Subtotal</span><span className="font-medium">{formatCurrency(estimate.subtotal, estimate.currency)}</span>
-                </div>
-                <div className="flex justify-between max-w-xs mx-auto">
-                  <span>VAT</span><span>{formatCurrency(estimate.tax_total, estimate.currency)}</span>
-                </div>
-                <div className="flex justify-between max-w-xs mx-auto border-t pt-1 font-bold">
-                  <span>Total</span><span>{formatCurrency(estimate.gross_total, estimate.currency)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
-          {estimate.notes && (
-            <div className="mt-8 pt-6 border-t">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Notes & Terms</h4>
-              <p className="text-sm text-gray-600 whitespace-pre-line">{estimate.notes}</p>
-            </div>
-          )}
-
-          {/* Validity notice */}
-          <div className="mt-6 text-xs text-gray-400 text-center">
-            This quotation is valid until {formatDate(estimate.expiry_date)}.
-          </div>
-        </DocumentLayout>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={() => navigate(-1)} className="btn-secondary"><ArrowLeft className="w-4 h-4" /> Back</button>
+        <button onClick={print} className="btn-secondary"><Printer className="w-4 h-4" /> Print</button>
+        <button onClick={download} className="btn-primary" disabled={downloading}>
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Download PDF
+        </button>
       </div>
+
+      {error && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg mb-4">{error}</div>}
+
+      {html === null && !error ? (
+        <div className="p-12 text-center text-gray-500">
+          <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto" />
+          <p className="mt-3 text-sm">Loading document…</p>
+        </div>
+      ) : html ? (
+        <div className="mx-auto max-w-4xl border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white">
+          <iframe
+            title="Estimate document"
+            srcDoc={html}
+            className="w-full"
+            style={{ height: '297mm', border: 'none', background: '#fff' }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

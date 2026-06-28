@@ -73,30 +73,41 @@ export default function DashboardPage() {
     ? Math.round(((s.net_income_mtd - s.net_income_prior) / Math.abs(s.net_income_prior)) * 100)
     : null;
 
+  // Net Income is "this month" → open the Profit & Loss report for the current
+  // month so the figures match the card.
+  const asAt = new Date(s.as_at);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const pnlFrom = `${asAt.getFullYear()}-${pad(asAt.getMonth() + 1)}-01`;
+  const pnlTo = `${asAt.getFullYear()}-${pad(asAt.getMonth() + 1)}-${pad(asAt.getDate())}`;
+  const pnlLink = `/reports/profit-and-loss?from=${pnlFrom}&to=${pnlTo}`;
+
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Financial overview" />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="Cash & Bank" value={formatCurrency(s.cash_and_bank)} icon={<Wallet className="w-6 h-6" />} />
+        <StatCard title="Cash & Bank" value={formatCurrency(s.cash_and_bank)} icon={<Wallet className="w-6 h-6" />} onClick={() => navigate('/banking')} />
         <StatCard
           title="Accounts Receivable"
           value={formatCurrency(s.total_receivable)}
           subtitle={`${s.overdue_invoice_count} overdue`}
           icon={<TrendingUp className="w-6 h-6" />}
+          onClick={() => navigate('/invoices')}
         />
         <StatCard
           title="Accounts Payable"
           value={formatCurrency(s.total_payable)}
           subtitle={`${s.overdue_bill_count} overdue`}
           icon={<TrendingDown className="w-6 h-6" />}
+          onClick={() => navigate('/bills')}
         />
         <StatCard
           title="Net Income (this month)"
           value={formatCurrency(s.net_income_mtd)}
           trend={priorPct !== null ? { value: `${priorPct >= 0 ? '+' : ''}${priorPct}% vs last month`, positive: s.net_income_mtd >= s.net_income_prior } : undefined}
           icon={<TrendingUp className="w-6 h-6" />}
+          onClick={() => navigate(pnlLink)}
         />
       </div>
 
@@ -111,7 +122,7 @@ export default function DashboardPage() {
           <div className="card p-6 lg:col-span-2">
             <div className="flex items-baseline justify-between mb-1">
               <h3 className="text-sm font-medium text-gray-500">Profit &amp; Loss</h3>
-              <button onClick={() => navigate('/reports')} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              <button onClick={() => navigate(pnlLink)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
                 View report <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -195,7 +206,7 @@ export default function DashboardPage() {
                 </button>
               )}
               {s.overdue_invoice_count > 0 && (
-                <button onClick={() => navigate('/invoices')} className="w-full flex items-center gap-3 p-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-left">
+                <button onClick={() => navigate('/invoices?status=overdue')} className="w-full flex items-center gap-3 p-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-left">
                   <FileText className="w-5 h-5 text-red-600 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-red-900">{formatCurrency(s.overdue_receivable)} overdue</p>

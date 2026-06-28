@@ -123,7 +123,7 @@ export default function VendorDetailPage() {
             <button onClick={() => navigate('/vendors')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
-            <button onClick={() => navigate(`/bills?vendor=${id}`)} className="btn-secondary">
+            <button onClick={() => navigate(`/bills?new=1&vendor=${id}`)} className="btn-secondary">
               <FilePlus2 className="w-4 h-4" /> New Bill
             </button>
             <button onClick={() => navigate(`/payments?vendor=${id}`)} className="btn-primary">

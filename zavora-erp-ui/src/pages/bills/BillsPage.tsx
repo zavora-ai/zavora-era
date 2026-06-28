@@ -11,14 +11,23 @@ import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
 import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [scnBill, setScnBill] = useState<Bill | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  // Deep-link from a vendor's "New Bill": /bills?new=1&vendor=<id> opens the
+  // create form pre-filled for that vendor.
+  const [searchParams] = useSearchParams();
+  const newVendorId = searchParams.get('vendor') || '';
+  useEffect(() => {
+    if (searchParams.get('new') === '1') setShowCreate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
   const { data: resp, isLoading } = useQuery({
@@ -120,10 +129,10 @@ export default function BillsPage() {
         ))}
       </div>
 
-      <DataTable columns={columns} data={filtered} loading={isLoading} emptyMessage="No bills yet. Create your first bill to track payables." />
+      <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/documents/bill/${r.id}`)} emptyMessage="No bills yet. Create your first bill to track payables." />
       <PaginationControls page={page} limit={limit} total={billsTotal} onPage={setPage} />
 
-      {showCreate && <CreateBillModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateBillModal initialVendorId={newVendorId} onClose={() => setShowCreate(false)} />}
       {editId && <CreateBillModal editId={editId} onClose={() => setEditId(null)} />}
       {scnBill && <SupplierCreditNoteModal bill={scnBill} onClose={() => setScnBill(null)} />}
     </div>
@@ -134,7 +143,7 @@ export default function BillsPage() {
 // ============================================================
 // Full-featured Bill Creation / Edit modal
 // ============================================================
-function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
+function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string; initialVendorId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
@@ -149,7 +158,7 @@ function CreateBillModal({ editId, onClose }: { editId?: string; onClose: () => 
   }
 
   const [form, setForm] = useState({
-    vendor_id: '',
+    vendor_id: initialVendorId || '',
     issue_date: today,
     due_date: '',
     vendor_invoice_number: '',
