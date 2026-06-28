@@ -277,6 +277,9 @@ async fn main() -> anyhow::Result<()> {
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         .route("/api/v1/users/{id}", put(routes::users::update))
+        // Tenant management for the authenticated user (list / switch / create).
+        .route("/api/v1/auth/tenants", get(routes::auth_tenants::list_tenants).post(routes::auth_tenants::create_tenant))
+        .route("/api/v1/auth/switch-tenant", post(routes::auth_tenants::switch_tenant))
         // Every route above requires a valid access token.
         .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
 

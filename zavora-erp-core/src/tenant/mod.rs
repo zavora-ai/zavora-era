@@ -356,6 +356,49 @@ pub async fn provision_tenant(
     pool: &sqlx::PgPool,
     req: ProvisionTenantRequest,
 ) -> ErpResult<ProvisionedTenant> {
+    // Hash the password before any persistence; plaintext is never stored
+    // (Req 2.3, 2.6). Then delegate to the hash-based provisioner so the
+    // signup path and the "create an additional tenant for an already
+    // authenticated user" path share one atomic implementation.
+    let password_hash = crate::auth::hash_password(&req.owner_password)?;
+    provision_tenant_with_hash(
+        pool,
+        ProvisionTenantWithHash {
+            organization_name: req.organization_name,
+            organization_type: req.organization_type,
+            kra_pin: req.kra_pin,
+            owner_email: req.owner_email,
+            owner_display_name: req.owner_display_name,
+            owner_password_hash: password_hash,
+            seed_chart_of_accounts: req.seed_chart_of_accounts,
+        },
+    )
+    .await
+}
+
+/// Like [`ProvisionTenantRequest`] but carrying an already-computed Argon2id
+/// password **hash** instead of plaintext. Used when an authenticated user
+/// creates an additional tenant: we reuse their existing stored hash rather
+/// than asking for (or re-hashing) their password.
+#[derive(Debug, Clone)]
+pub struct ProvisionTenantWithHash {
+    pub organization_name: String,
+    pub organization_type: String,
+    pub kra_pin: Option<String>,
+    pub owner_email: String,
+    pub owner_display_name: String,
+    pub owner_password_hash: String,
+    pub seed_chart_of_accounts: bool,
+}
+
+/// Provision a brand-new tenant atomically, given a pre-computed owner password
+/// hash. See [`provision_tenant`] for the full step-by-step contract — this is
+/// the shared implementation; the only difference is that the password hash is
+/// supplied by the caller (never the plaintext).
+pub async fn provision_tenant_with_hash(
+    pool: &sqlx::PgPool,
+    req: ProvisionTenantWithHash,
+) -> ErpResult<ProvisionedTenant> {
     // 1. Fresh, unique tenant key (Req 2.1, 12.2, 12.3). The `entity_settings`
     //    primary key guards against the astronomically unlikely UUID collision:
     //    a clash surfaces as a unique violation that rolls the transaction back.
@@ -363,9 +406,7 @@ pub async fn provision_tenant(
     let owner_user_id = Uuid::new_v4();
     let created_at = Utc::now();
 
-    // 3. Hash the password before any persistence; plaintext is never stored
-    //    (Req 2.3, 2.6).
-    let password_hash = crate::auth::hash_password(&req.owner_password)?;
+    let password_hash = req.owner_password_hash;
 
     // 2. Open the single transaction shared by every write below.
     let mut tx = pool.begin().await?;

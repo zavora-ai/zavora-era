@@ -93,6 +93,11 @@ export const signup = (data: {
   password: string;
 }) => api.post('/auth/signup', data);
 export const logout = () => api.post('/auth/logout', {});
+// === Tenant management (multi-tenant: a user may belong to several entities) ===
+export const getMyTenants = () => api.get('/auth/tenants');
+export const switchTenant = (entity_id: string) => api.post('/auth/switch-tenant', { entity_id });
+export const createTenant = (data: { organization_name: string; organization_type: string; kra_pin?: string }) =>
+  api.post('/auth/tenants', data);
 export const getUsers = () => api.get('/users');
 export const createUser = (data: {
   email: string;
