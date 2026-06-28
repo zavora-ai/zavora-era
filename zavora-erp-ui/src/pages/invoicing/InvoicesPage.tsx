@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
@@ -19,7 +19,14 @@ const isPostedLike = (s: string) => POSTED_LIKE.includes(s);
 export default function InvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>('all');
+  // Allow deep-linking to a status tab, e.g. /invoices?status=overdue (used by
+  // the dashboard "Needs Attention" overdue card).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validFilters = ['all', 'draft', 'posted', 'overdue', 'paid'];
+  const initialFilter = validFilters.includes(searchParams.get('status') || '')
+    ? (searchParams.get('status') as string)
+    : 'all';
+  const [filter, setFilter] = useState<string>(initialFilter);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -117,7 +124,10 @@ export default function InvoicesPage() {
         {(['all', 'draft', 'posted', 'overdue', 'paid'] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setFilter(s)}
+            onClick={() => {
+              setFilter(s);
+              setSearchParams(s === 'all' ? {} : { status: s }, { replace: true });
+            }}
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === s ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
           >
             {s.charAt(0).toUpperCase() + s.slice(1)} ({statusCounts[s]})

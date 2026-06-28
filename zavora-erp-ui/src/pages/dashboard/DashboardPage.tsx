@@ -198,7 +198,7 @@ export default function DashboardPage() {
                 </button>
               )}
               {s.overdue_invoice_count > 0 && (
-                <button onClick={() => navigate('/invoices')} className="w-full flex items-center gap-3 p-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-left">
+                <button onClick={() => navigate('/invoices?status=overdue')} className="w-full flex items-center gap-3 p-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-left">
                   <FileText className="w-5 h-5 text-red-600 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-red-900">{formatCurrency(s.overdue_receivable)} overdue</p>
