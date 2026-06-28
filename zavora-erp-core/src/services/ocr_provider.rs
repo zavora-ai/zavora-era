@@ -480,28 +480,137 @@ fn currency_code_in(text: &str) -> Option<String> {
     None
 }
 
-/// Pick the vendor/merchant name. Skips `FROM`/`TO` markers and generic
-/// headings; prefers the line immediately after a `From` marker.
+/// Pick the vendor/merchant name from the document text.
+///
+/// Supplier invoices put the issuing party under a "from" marker that varies by
+/// language: English `FROM` / `FROM TO`, French `DE` / `DE À`, Spanish `DESDE` /
+/// `DE`, German `VON`. The real name is the first company-like line after that
+/// marker. A company name can wrap across two physical lines (e.g. "Servicios
+/// Comerciales Amazon" / "México S. de R.L. de C.V."), so we join a trailing
+/// continuation line when it still looks like part of a name. Falls back to a
+/// known-issuer sniff (AWS) and then to the first company-like line anywhere.
 fn detect_vendor(lines: &[(String, f32)]) -> (Option<String>, Option<f32>) {
-    // Prefer the first vendor candidate right after a "From"/"FROM TO" marker.
+    // 1) First candidate right after a "from"/"de"/"desde" marker. The marker
+    //    may be its own line ("From") or the prefix of a column-merged line
+    //    ("FROM TO  Invoice Number: …"), in which case the issuer name leads
+    //    the *next* line ("Amazon Online Germany GmbH  Zavora Technologies …").
     for (i, (t, _)) in lines.iter().enumerate() {
-        let l = t.trim().to_lowercase();
-        if l == "from" || l == "from to" || l == "from:" || l.starts_with("from ") && l.len() < 8 {
-            if let Some((cand, c)) = lines
-                .iter()
-                .skip(i + 1)
-                .find(|(t, _)| is_vendor_candidate(t))
-            {
-                return (Some(clean_vendor(cand)), Some(*c));
+        if !line_starts_with_from_marker(t) {
+            continue;
+        }
+        if let Some((idx, (cand, c))) = lines
+            .iter()
+            .enumerate()
+            .skip(i + 1)
+            .find(|(_, (t, _))| is_vendor_candidate(&leading_name(t)))
+            .map(|(idx, pair)| (idx, pair))
+        {
+            let mut name = clean_vendor(&leading_name(cand));
+            // Join a wrapped continuation line (e.g. legal-form suffix) when the
+            // next line is still name-like and not an address/heading.
+            if let Some((next, _)) = lines.get(idx + 1) {
+                if is_name_continuation(next) {
+                    name = format!("{} {}", name, next.trim());
+                }
             }
+            return (Some(name), Some(*c));
         }
     }
-    // Otherwise the first company-like line.
+
+    // 2) Known-issuer sniff: AWS invoices have no "from" marker but always
+    //    mention the AWS account / billing console.
+    if lines.iter().any(|(t, _)| {
+        let l = t.to_lowercase();
+        l.contains("aws account") || l.contains("aws.amazon.com")
+            || l.contains("amazon web services")
+    }) {
+        let conf = lines.first().map(|(_, c)| *c);
+        return (Some("Amazon Web Services".to_string()), conf);
+    }
+
+    // 3) Fallback: the first company-like line anywhere.
     lines
         .iter()
         .find(|(t, _)| is_vendor_candidate(t))
         .map(|(t, c)| (Some(clean_vendor(t)), Some(*c)))
         .unwrap_or((None, None))
+}
+
+/// The leading company-name portion of a (possibly column-merged) line. Pdfium
+/// flattens the FROM/TO columns into one line — "Amazon Online Germany GmbH
+/// Zavora Technologies Ltd Invoice Date: …" — so we cut at the point where the
+/// recipient/label text begins: the customer name ("Zavora"), a field label, or
+/// a long run, keeping the issuer name only.
+fn leading_name(line: &str) -> String {
+    let t = line.trim();
+    // Cut at common right-column boundaries.
+    const CUTS: [&str; 8] = [
+        "Zavora", "Invoice Number", "Invoice Date", "Invoice Period",
+        "Invoice Currency", "Client:", "Payment", "Tax Number",
+    ];
+    let mut end = t.len();
+    for cut in CUTS {
+        if let Some(pos) = t.find(cut) {
+            end = end.min(pos);
+        }
+    }
+    t[..end].trim().to_string()
+}
+
+/// True when a line is, or begins with, a "from"/issuer marker
+/// (English/French/Spanish/German/Italian). Handles both the standalone marker
+/// line and the column-merged "FROM TO …" / "DE À …" prefix.
+fn line_starts_with_from_marker(t: &str) -> bool {
+    let l = t.trim().to_lowercase();
+    let l = l.trim_end_matches(':').trim();
+    // Exact standalone markers.
+    if matches!(
+        l,
+        "from" | "from to" | "de" | "de à" | "de a" | "da a" | "da à" | "da"
+            | "desde" | "von" | "von an"
+    ) {
+        return true;
+    }
+    // Prefix form on a column-merged line: "from to  invoice number: …",
+    // "de à  …". Require a word boundary so "fromage" can't match.
+    for m in ["from to ", "from ", "de à ", "de a ", "da a ", "desde "] {
+        if l.starts_with(m) {
+            return true;
+        }
+    }
+    false
+}
+
+/// True when a line looks like a continuation of a company name on the line
+/// above: short, letter-led, not an address/number/heading line. Recognises the
+/// common legal-form fragments that wrap (e.g. "México S. de R.L. de C.V.",
+/// "Société à responsabilité limitée").
+fn is_name_continuation(t: &str) -> bool {
+    let trimmed = t.trim();
+    if trimmed.len() < 2 || trimmed.len() > 48 {
+        return false;
+    }
+    // Must start with a letter (addresses start with a number / "PO Box").
+    if !trimmed.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    // Address / contact / id continuations are NOT name parts.
+    const STOP: [&str; 12] = [
+        "po box", "box ", "street", "str.", "road", "blvd", "avenue", "ave ",
+        "vat", "tax", "numéro", "número",
+    ];
+    if STOP.iter().any(|s| lower.contains(s)) {
+        return false;
+    }
+    // No digits (postal/house numbers) and not a date.
+    if trimmed.chars().any(|c| c.is_ascii_digit()) || parse_any_date(trimmed).is_some() {
+        return false;
+    }
+    // Positive signal: a legal-form fragment, or a very short Title-Case tail.
+    let legal = ["s. de", "r.l.", "c.v.", "s.a", "sas", "gmbh", "inc", "ltd",
+        "llc", "limited", "responsabilité", "limitée"];
+    legal.iter().any(|s| lower.contains(s)) || trimmed.split_whitespace().count() <= 4
 }
 
 /// True when a line could be a merchant/vendor name: it has letters, is not a
@@ -525,15 +634,27 @@ fn is_vendor_candidate(t: &str) -> bool {
         return false;
     }
     let lower = trimmed.to_lowercase();
-    // Generic headings / field labels that precede or surround the real name.
-    const HEADINGS: [&str; 26] = [
+    // Generic headings / field labels that precede or surround the real name,
+    // across the languages our suppliers issue in (EN/FR/ES/DE).
+    const HEADINGS: [&str; 42] = [
         "invoice", "receipt", "statement", "bill to", "bill from", "page ",
         "date", "order", "customer", "description", "details", "subtotal",
         "amount", "tax ", "from to", "from", "to", "client", "payment",
         "campaign", "vat number", "tax number", "account number", "address",
         "po box", "attn",
+        // French
+        "de à", "de a", "facture", "récapitulatif", "recapitulatif",
+        "numéro", "numero", "nom du",
+        // Spanish
+        "desde", "para", "factura", "cargos", "número", "numero", "régimen",
+        "regimen",
     ];
     if HEADINGS.iter().any(|h| lower.starts_with(h) || lower == h.trim()) {
+        return false;
+    }
+    // Sentence-like prose (long lines with several lowercase words) is never a
+    // company name — rejects the FAQ/boilerplate paragraphs.
+    if trimmed.len() > 45 && trimmed.split_whitespace().count() > 7 {
         return false;
     }
     true
@@ -950,6 +1071,67 @@ mod tests {
         assert_eq!(r.total, Some(Decimal::new(1_05, 2)), "French tax-inclusive total");
     }
 
+
+    #[test]
+    fn vendor_after_from_marker_english() {
+        let content = "From\nAmazon Advertising LLC\nPO Box 24651\nTo\nZavora Technologies Ltd\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Advertising LLC"));
+    }
+
+    #[test]
+    fn vendor_after_from_to_combined_marker() {
+        let content = "FROM TO\nAmazon Online Germany GmbH\nMarcel-Breuer-Str. 12\nVAT Number: DE288084764\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Online Germany GmbH"));
+    }
+
+    #[test]
+    fn vendor_after_french_and_spanish_markers() {
+        let fr = "DE À\nAmazon Online France SAS\n67 Boulevard du Général Leclerc\n";
+        assert_eq!(rest(fr).vendor_name.as_deref(), Some("Amazon Online France SAS"));
+        // Spanish: name wraps onto a second line with the legal form.
+        let es = "DESDE\nServicios Comerciales Amazon\nMéxico S. de R.L. de C.V.\nBlvd. Manuel Ávila Camacho 261\n";
+        assert_eq!(
+            rest(es).vendor_name.as_deref(),
+            Some("Servicios Comerciales Amazon México S. de R.L. de C.V.")
+        );
+    }
+
+    #[test]
+    fn vendor_canada_entity() {
+        let content = "From\nAmazon Advertising Canada, Inc\n120 Bremner Blvd 26th Floor\nTo\nZavora Technologies Ltd\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Advertising Canada, Inc"));
+    }
+
+    #[test]
+    fn vendor_aws_without_from_marker() {
+        let content = "Invoice\nEmail or talk to us about your AWS account or bill, visit console.aws.amazon.com/support\nAccount number:\n971994957690\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Web Services"));
+    }
+
+    #[test]
+    fn vendor_skips_address_and_prose() {
+        // The line after "From" is the name, not the PO Box; prose is rejected.
+        let content = "From\nAmazon Advertising LLC\nPO Box 24651\nWhy doesn't my invoice match what I see in Campaign Manager?\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Advertising LLC"));
+    }
+
+    #[test]
+    fn vendor_from_column_merged_line_pdfium() {
+        // Pdfium flattens the FROM/TO columns: the marker has trailing text and
+        // the issuer name leads the next (merged) line. Cut at the recipient
+        // name / field labels.
+        let content = "amazonacvertising Tame EUR 2.42\n\
+            FROM TO Invoice Number: CDKS7J9BX-3\n\
+            Amazon Online Germany GmbH Zavora Technologies Ltd Invoice Date: 02-04-2025\n\
+            Marcel-Breuer-Str. 12, Muenchen, Client: Sponsored ads - Invoice Period: 02-03-2025\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Online Germany GmbH"));
+    }
+
+    #[test]
+    fn vendor_italian_da_marker() {
+        let content = "amazonacve\nDA\nAmazon Online Italy SRL\nViale Monte Grappa 3/5, Milan,\n20124, Italy\n";
+        assert_eq!(rest(content).vendor_name.as_deref(), Some("Amazon Online Italy SRL"));
+    }
 
     #[test]
     fn still_handles_simple_kenyan_vat_invoice() {
