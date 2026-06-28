@@ -85,6 +85,9 @@ export default function DashboardPage() {
     <div>
       <PageHeader title="Dashboard" subtitle="Financial overview" />
 
+      {/* Setup checklist stays until every step is done, then collapses. */}
+      <DashboardOnboarding summary={s} hideWhenComplete />
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard title="Cash & Bank" value={formatCurrency(s.cash_and_bank)} icon={<Wallet className="w-6 h-6" />} onClick={() => navigate('/banking')} />

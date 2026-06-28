@@ -17,7 +17,7 @@ export function isNewTenant(summary?: Summary | null): boolean {
     && (summary.payment_count ?? 0) === 0;
 }
 
-export default function DashboardOnboarding({ summary }: { summary?: Summary | null }) {
+export default function DashboardOnboarding({ summary, hideWhenComplete = false }: { summary?: Summary | null; hideWhenComplete?: boolean }) {
   const navigate = useNavigate();
 
   // Cheap reads to detect which setup steps are already done. The onboarding
@@ -57,8 +57,14 @@ export default function DashboardOnboarding({ summary }: { summary?: Summary | n
   // The first not-yet-done step is the one we nudge the user toward.
   const nextIndex = steps.findIndex((s) => !s.done);
 
+  // When mounted above the full dashboard, collapse once every step is done so
+  // it stops taking space; the new-tenant view keeps it (hideWhenComplete=false).
+  if (hideWhenComplete && completed === steps.length) {
+    return null;
+  }
+
   return (
-    <div className="card p-8">
+    <div className="card p-8 mb-6">
       <div className="flex items-center gap-3 mb-2">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center">
           <Sparkles className="w-5 h-5 text-white" />
