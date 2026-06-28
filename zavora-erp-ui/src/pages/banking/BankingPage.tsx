@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, extractBankStatement, getTransactions, generateReport } from '../../api/client';
+import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, extractBankStatement, getTransactions, generateReport, getAccounts } from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/format';
-import type { BankAccount } from '../../types';
+import type { BankAccount, Account } from '../../types';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -273,8 +273,20 @@ function CreateBankAccountModal({ onClose }: { onClose: () => void }) {
     bank_name: '',
     account_number: '',
     currency: 'KES',
+    gl_account: '1020',
   });
   const [error, setError] = useState<string | null>(null);
+
+  // GL accounts to back this bank account — asset accounts (cash/bank), so a
+  // USD or M-Pesa account can map to its own ledger account instead of all
+  // defaulting to the single KES bank GL.
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['accounts'],
+    queryFn: () => getAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+  const bankGlOptions = accounts
+    .filter((a) => a.account_type === 'Asset' && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) => createBankAccount(data),
@@ -359,6 +371,23 @@ function CreateBankAccountModal({ onClose }: { onClose: () => void }) {
               <option value="TZS">TZS - Tanzania Shilling</option>
               <option value="UGX">UGX - Uganda Shilling</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">GL Account</label>
+            <select
+              className="input w-full"
+              value={form.gl_account}
+              onChange={(e) => setForm({ ...form, gl_account: e.target.value })}
+            >
+              {bankGlOptions.map((a) => (
+                <option key={a.code} value={a.code}>{a.code} — {a.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              The ledger account this bank account posts to. Use a distinct account per
+              currency (e.g. USD → "Bank Account - USD") so balances don't co-mingle.
+            </p>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
