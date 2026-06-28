@@ -21,8 +21,9 @@ tracing = { workspace = true }
 validator = { workspace = true }
 async-trait = "0.1"
 
-# Authentication: JWT signing/verification and Argon2id password hashing
-jsonwebtoken = "9"
+# Authentication: JWT signing/verification and Argon2id password hashing.
+# jsonwebtoken v10 needs an explicit crypto provider; rust_crypto is pure-Rust.
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 argon2 = "0.5"
 rand = "0.8"
 
