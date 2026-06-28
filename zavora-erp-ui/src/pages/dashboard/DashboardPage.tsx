@@ -55,7 +55,7 @@ export default function DashboardPage() {
     return (
       <div>
         <PageHeader title="Dashboard" subtitle="Financial overview" />
-        <DashboardOnboarding />
+        <DashboardOnboarding summary={data} />
       </div>
     );
   }
