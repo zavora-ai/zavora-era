@@ -412,17 +412,26 @@ pub async fn provision_tenant_with_hash(
     let mut tx = pool.begin().await?;
 
     // 4. entity_settings: organisation name + KES base currency + KenyaStandard
-    //    COA template; remaining columns fall back to their schema defaults
-    //    (Req 2.2, 3.1, 12.1).
+    //    COA template. The branding `company_name` defaults to the organisation
+    //    name so documents (invoices/estimates) carry the tenant's name out of
+    //    the box; the owner can edit it later in Settings. Remaining columns fall
+    //    back to their schema defaults (Req 2.2, 3.1, 12.1).
+    let branding = serde_json::json!({
+        "company_name": req.organization_name,
+        "primary_color": "#1a56db",
+        "font": "Inter",
+        "kra_pin": req.kra_pin,
+    });
     sqlx::query(
         r#"INSERT INTO entity_settings
-               (entity_id, organization_name, organization_type, kra_pin, base_currency, coa_template)
-           VALUES ($1, $2, $3, $4, 'KES', 'KenyaStandard')"#,
+               (entity_id, organization_name, organization_type, kra_pin, base_currency, coa_template, branding)
+           VALUES ($1, $2, $3, $4, 'KES', 'KenyaStandard', $5)"#,
     )
     .bind(entity_id)
     .bind(&req.organization_name)
     .bind(&req.organization_type)
     .bind(&req.kra_pin)
+    .bind(&branding)
     .execute(&mut *tx)
     .await?;
 
