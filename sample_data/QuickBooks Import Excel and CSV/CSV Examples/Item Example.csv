@@ -1,5 +1,0 @@
-TYPE (REQUIRED),NAME (REQUIRED),REIMBURSABLE CHARGE,DESCRIPTION,TAX CODE,ACCOUNT (REQUIRED),EXPENSE/COGS Account,ASSET ACCOUNT,DEPOSIT TO (ACCOUNT),DESCRIPTION ON PURCHASE TRANSACTIONS,ON HAND,COST,PREFERRED VENDOR,TAX AGENCY,PRICE/AMOUNT or %/RATE,ITEM IS INACTIVE,REORDER POINT,TOTAL VALUE,AS OF (DATE MM/DD/YYYY),PAYMENT METHOD,MANUFACTURER'S PART NUMBER
-Non-Inventory Part,Non-Inventory,,A non inventory sales item,Tax,Sales income,,,,Buying non inventory for resale,,,,,10,No,,,,,123456789
-Inventory Part,Computer,,An Inventory Sales Item,Tax,Sales income,Cost Of Goods Sold,Other Asset,,Replenishing Inventory,10,299,,,1000,No,8,10000,12/31/2006,,654987321
-Service,Hourly Service,,Our Hourly charge,Tax,Sales income,,,,Hourly Charge,,,,,95,No,,,,,
-Other Charge,Other Charge Item,,Other Charge Example,Tax,Sales income,,,,Other Charges,,,,,10,No,,,,,

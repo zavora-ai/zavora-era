@@ -28,3 +28,7 @@ zavora-erp-ui/dist/
 __pycache__/
 *.pyc
 .playwright-cli/
+.pdfium/
+
+# Sample + real company data (bank statements, PIN, invoices) — never commit
+sample_data/
