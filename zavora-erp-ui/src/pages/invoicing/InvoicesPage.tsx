@@ -27,7 +27,15 @@ export default function InvoicesPage() {
     ? (searchParams.get('status') as string)
     : 'all';
   const [filter, setFilter] = useState<string>(initialFilter);
+  // Deep-link from a customer's "New Invoice": /invoices?new=1&customer=<id>
+  // opens the create form pre-filled for that customer.
+  const newCustomerId = searchParams.get('customer') || '';
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') setShowCreate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
 
   const { page, limit, offset, setPage } = usePagination();
@@ -138,7 +146,7 @@ export default function InvoicesPage() {
       <DataTable columns={columns} data={filtered} loading={isLoading} onRowClick={(r) => navigate(`/invoices/${r.id}`)} emptyMessage="No invoices yet. Create your first invoice to get paid." />
       <PaginationControls page={page} limit={limit} total={invoicesTotal} onPage={setPage} />
 
-      {showCreate && <CreateInvoiceModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateInvoiceModal initialCustomerId={newCustomerId} onClose={() => setShowCreate(false)} />}
       {editId && <CreateInvoiceModal editId={editId} onClose={() => setEditId(null)} />}
       {writeOffInv && <WriteOffModal invoice={writeOffInv} onClose={() => setWriteOffInv(null)} onDone={() => { invalidate(); setWriteOffInv(null); }} />}
       {sendInv && <SendInvoiceModal invoice={sendInv} customer={(Array.isArray(customers) ? customers : []).find((c) => c.id === sendInv.customer_id)} onClose={() => setSendInv(null)} onDone={() => { invalidate(); setSendInv(null); }} />}
@@ -309,7 +317,7 @@ function WriteOffModal({ invoice, onClose, onDone }: { invoice: any; onClose: ()
   );
 }
 
-function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () => void }) {
+function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: string; initialCustomerId?: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
@@ -321,7 +329,7 @@ function CreateInvoiceModal({ editId, onClose }: { editId?: string; onClose: () 
   const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
   const [form, setForm] = useState({
-    customer_id: '',
+    customer_id: initialCustomerId || '',
     invoice_date: today,
     due_date: defaultDue,
     po_number: '',

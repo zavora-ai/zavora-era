@@ -87,7 +87,7 @@ export default function CustomerDetailPage() {
             <button onClick={() => setShowSend(true)} className="btn-secondary">
               <Send className="w-4 h-4" /> Send Statement
             </button>
-            <button onClick={() => navigate('/invoices')} className="btn-primary">
+            <button onClick={() => navigate(`/invoices?new=1&customer=${id}`)} className="btn-primary">
               <FileText className="w-4 h-4" /> New Invoice
             </button>
           </div>
