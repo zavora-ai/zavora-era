@@ -171,6 +171,8 @@ fn ocr_result_to_ui(
         "total_confidence": r.total_confidence.unwrap_or(overall),
         "vat_amount": r.vat_amount.unwrap_or(rust_decimal::Decimal::ZERO),
         "vat_amount_confidence": r.vat_amount_confidence.unwrap_or(overall),
+        "currency": r.currency.clone().unwrap_or_default(),
+        "currency_confidence": r.currency_confidence.unwrap_or(overall),
         "line_items": line_items,
         "suggested_vendor_id": suggested_vendor_id,
         "suggested_vendor_name": suggested_vendor_name,

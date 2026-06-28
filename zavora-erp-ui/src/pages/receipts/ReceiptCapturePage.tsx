@@ -33,6 +33,8 @@ interface OcrResult {
   total_confidence: number;
   vat_amount: number;
   vat_amount_confidence: number;
+  currency?: string;
+  currency_confidence?: number;
   line_items: OcrLineItem[];
   suggested_vendor_id?: string;
   suggested_vendor_name?: string;
@@ -348,7 +350,10 @@ function ReviewPanel({
   const { data: settings } = useQuery<any>({ queryKey: ['settings'], queryFn: () => getSettings().then((r) => r.data) });
   const baseCurrency: string = settings?.base_currency ?? 'KES';
   const { data: fxRates = [] } = useQuery<any[]>({ queryKey: ['fx-rates'], queryFn: () => getFxRates().then((r) => (Array.isArray(r.data) ? r.data : [])) });
-  const [currency, setCurrency] = useState(baseCurrency);
+  // Seed the currency from what the parser detected on the document, falling
+  // back to base currency. The user can still change it.
+  const detectedCurrency = (ocrResult.currency || '').toUpperCase();
+  const [currency, setCurrency] = useState(detectedCurrency || baseCurrency);
   const [fxRate, setFxRate] = useState('1');
   const [fxTouched, setFxTouched] = useState(false);
   const lookupSpot = (ccy: string, d: string): number | null => {
@@ -502,7 +507,8 @@ function ReviewPanel({
                 value={currency}
                 onChange={(e) => { setCurrency(e.target.value); setFxTouched(false); }}
               >
-                {[baseCurrency, 'USD', 'EUR', 'GBP', 'KES']
+                {[baseCurrency, 'USD', 'EUR', 'GBP', 'KES', detectedCurrency]
+                  .filter((c) => c)
                   .filter((c, i, a) => a.indexOf(c) === i)
                   .map((c) => (
                     <option key={c} value={c}>{c}</option>
