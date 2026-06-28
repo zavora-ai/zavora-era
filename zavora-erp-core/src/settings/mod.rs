@@ -30,6 +30,7 @@ pub struct MonthDay {
 
 /// Branding configuration for documents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BrandingConfig {
     pub company_name: String,
     pub logo_url: Option<String>,
@@ -43,6 +44,25 @@ pub struct BrandingConfig {
     pub address: Option<String>,
     pub kra_pin: Option<String>,
     pub vat_number: Option<String>,
+}
+
+impl Default for BrandingConfig {
+    fn default() -> Self {
+        Self {
+            company_name: "My Company".to_string(),
+            logo_url: None,
+            primary_color: "#1a56db".to_string(),
+            secondary_color: None,
+            font: "Inter".to_string(),
+            footer_text: None,
+            website: None,
+            phone: None,
+            email: None,
+            address: None,
+            kra_pin: None,
+            vat_number: None,
+        }
+    }
 }
 
 /// Document numbering sequences.

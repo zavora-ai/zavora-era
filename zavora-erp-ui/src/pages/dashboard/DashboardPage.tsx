@@ -55,7 +55,7 @@ export default function DashboardPage() {
     return (
       <div>
         <PageHeader title="Dashboard" subtitle="Financial overview" />
-        <DashboardOnboarding />
+        <DashboardOnboarding summary={data} />
       </div>
     );
   }
@@ -84,6 +84,9 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Financial overview" />
+
+      {/* Setup checklist stays until every step is done, then collapses. */}
+      <DashboardOnboarding summary={s} hideWhenComplete />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
