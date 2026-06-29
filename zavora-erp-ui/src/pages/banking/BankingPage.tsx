@@ -110,7 +110,7 @@ export default function BankingPage() {
       {/* Total cash across all accounts */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm text-gray-500">
-          Total balance across {bankAccounts.length} account{bankAccounts.length === 1 ? '' : 's'}:{' '}
+          Total balance across {bankAccounts.length} account{bankAccounts.length === 1 ? '' : 's'} (KES carrying value):{' '}
           <span className="font-semibold text-gray-900">{formatCurrency(totalCash)}</span>
         </div>
         <button className="btn-primary flex items-center gap-2" onClick={() => setShowCreate(true)}>
@@ -154,8 +154,17 @@ export default function BankingPage() {
               <p className="text-xs text-gray-400 mb-2">
                 ••••{ba.account_number.slice(-4)} · {ba.currency}
               </p>
-              {/* Account balance from the GL */}
-              <p className="text-xl font-bold text-gray-900 mb-2">{formatCurrency(balanceFor(ba.gl_account), ba.currency)}</p>
+              {/* Bank balance in the account's OWN currency (the bank
+                  sub-ledger / reconciliation figure), summed from the native
+                  transaction-currency amounts on the linked GL account. The
+                  trial balance is functional-currency only (KES) and must not
+                  be relabelled as the account currency. */}
+              <p className="text-xl font-bold text-gray-900 mb-1">{formatCurrency(Number((ba as any).balance ?? 0), ba.currency)}</p>
+              {/* For a foreign-currency account, also show the KES carrying
+                  value (the balance-sheet figure from the functional GL). */}
+              {ba.currency !== 'KES' && (
+                <p className="text-xs text-gray-400 mb-2">≈ {formatCurrency(balanceFor(ba.gl_account), 'KES')} carrying value</p>
+              )}
               {/* Feed status badge */}
               <div className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${ba.feed_enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

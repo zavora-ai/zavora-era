@@ -20,7 +20,35 @@ pub async fn list_accounts(
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(r).unwrap_or_default())),
+        Ok(r) => {
+            // Enrich each account with its balance in the account's OWN currency.
+            // The trial balance/GL detail report only in functional (base)
+            // currency, so a USD account would otherwise show its KES-equivalent.
+            // Here we sum the native transaction-currency amounts on the linked
+            // GL account (posted entries only) so the displayed balance matches
+            // the bank's own currency.
+            let mut out = Vec::with_capacity(r.len());
+            for acct in &r {
+                let bal = sqlx::query_scalar::<_, rust_decimal::Decimal>(
+                    r#"SELECT COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0)
+                       FROM journal_lines jl
+                       JOIN journal_entries je ON je.id = jl.entry_id
+                       WHERE jl.entity_id = $1 AND jl.account_code = $2
+                         AND je.status = 'posted'"#,
+                )
+                .bind(ctx.entity_id)
+                .bind(&acct.gl_account)
+                .fetch_one(state.engine.pool())
+                .await
+                .unwrap_or_default();
+                let mut v = serde_json::to_value(acct).unwrap_or_default();
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("balance".to_string(), serde_json::json!(bal.to_string()));
+                }
+                out.push(v);
+            }
+            Ok(Json(serde_json::Value::Array(out)))
+        }
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }
