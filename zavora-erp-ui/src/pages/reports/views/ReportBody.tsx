@@ -22,6 +22,7 @@ import BudgetVsActualView from './BudgetVsActualView';
 import DimensionalAnalysisView from './DimensionalAnalysisView';
 import EquityChangesView from './EquityChangesView';
 import CashFlowDirectView from './CashFlowDirectView';
+import CashFlowView from './CashFlowView';
 import GlDetailView from './GlDetailView';
 import AgeingView from './AgeingView';
 import RawJsonView from './RawJsonView';
@@ -68,6 +69,8 @@ export default function ReportBody({ result, onDrill }: { result: any; onDrill?:
       return <EquityChangesView c={c} />;
     case 'CashFlowDirect':
       return <CashFlowDirectView c={c} />;
+    case 'CashFlow':
+      return <CashFlowView c={c} />;
     case 'GlDetail':
       return <GlDetailView c={c} />;
     case 'ArAgeing':
