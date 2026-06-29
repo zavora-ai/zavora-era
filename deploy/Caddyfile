@@ -1,24 +1,30 @@
-# Caddy reverse proxy for erp.zavora.ai
-# - Terminates HTTPS with an automatic Let's Encrypt certificate (issued once
-#   DNS for erp.zavora.ai points at this server's public IP).
-# - Proxies API calls (/api/*) to the api container on :8080.
-# - Serves the built React SPA for everything else, with history-API fallback.
+# Caddy config for erp.zavora.ai BEHIND the Lightsail CDN (CloudFront).
+#
+# The Lightsail CDN terminates TLS for both the *.cloudfront.net domain and the
+# custom domain (erp.zavora.ai) and fetches from this origin over plain HTTP on
+# port 80. Therefore Caddy must serve HTTP only and must NOT redirect to HTTPS
+# (an HTTPS redirect here causes a redirect loop through the CDN).
+#
+# - Listens on :80 (HTTP), no automatic TLS, no HTTP→HTTPS redirect.
+# - Proxies /api/* and /health to the API container.
+# - Serves the built React SPA with history-API fallback for everything else.
 
-erp.zavora.ai {
+{
+	# Global: disable automatic HTTPS entirely (the CDN does TLS).
+	auto_https off
+}
+
+:80 {
 	encode gzip zstd
 
-	# API → backend. The UI calls /api/v1/...; the backend routes are under
-	# /api/v1 as well, so pass the path through unchanged.
 	handle /api/* {
 		reverse_proxy api:8080
 	}
 
-	# Health check passthrough (no /api prefix on the backend health route).
 	handle /health {
 		reverse_proxy api:8080
 	}
 
-	# Static SPA.
 	handle {
 		root * /srv
 		try_files {path} /index.html
