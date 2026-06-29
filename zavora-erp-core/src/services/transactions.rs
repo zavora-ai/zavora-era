@@ -59,6 +59,27 @@ pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequ
     };
 
     let base_currency = engine.config_for(entity_id).await?.base_currency.clone();
+    // The bank line is denominated in the bank account's currency; resolve it
+    // and the FX rate to base on the transaction date so a foreign-currency
+    // statement posts at its correct functional (base) value rather than 1:1.
+    let acct_currency = sqlx::query_scalar::<_, String>(
+        "SELECT currency FROM bank_accounts WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(txn.bank_account)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .map(|c| c.trim().to_string())
+    .unwrap_or_else(|| base_currency.clone());
+
+    let fx_rate = if acct_currency == base_currency {
+        Decimal::ONE
+    } else {
+        crate::services::fx::get_rate(engine, entity_id, &acct_currency, &base_currency, txn.value_date).await?
+    };
+    let line_currency = acct_currency.clone();
+    let line_fx = if fx_rate == Decimal::ONE { None } else { Some(fx_rate) };
+
     let description = req
         .description
         .clone()
@@ -69,8 +90,8 @@ pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequ
         account_code: req.account_code.clone(),
         debit: if txn.debit.is_some() { Some(amount) } else { None },
         credit: if txn.debit.is_some() { None } else { Some(amount) },
-        currency: base_currency.clone(),
-        fx_rate: None,
+        currency: line_currency.clone(),
+        fx_rate: line_fx,
         description: Some(description.clone()),
         dimensions: None,
     };
@@ -78,8 +99,8 @@ pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequ
         account_code: bank_gl,
         debit: if txn.debit.is_some() { None } else { Some(amount) },
         credit: if txn.debit.is_some() { Some(amount) } else { None },
-        currency: base_currency,
-        fx_rate: None,
+        currency: line_currency,
+        fx_rate: line_fx,
         description: Some(description.clone()),
         dimensions: None,
     };

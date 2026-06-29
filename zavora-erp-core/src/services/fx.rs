@@ -255,7 +255,7 @@ pub async fn run_fx_revaluation(
 
 /// Get the exchange rate for a currency pair on a given date.
 /// Falls back to the most recent rate before that date.
-async fn get_rate(
+pub(crate) async fn get_rate(
     engine: &ErpEngine,
     entity_id: Uuid,
     from_ccy: &str,

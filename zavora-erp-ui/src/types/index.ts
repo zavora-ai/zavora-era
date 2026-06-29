@@ -531,6 +531,7 @@ export interface CategorisationTransaction {
   id: string;
   entity_id: string;
   bank_account_id: string;
+  currency?: string;
   date: string;
   description: string;
   amount: number;

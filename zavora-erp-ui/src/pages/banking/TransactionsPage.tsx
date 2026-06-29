@@ -218,7 +218,7 @@ export default function TransactionsPage() {
                     }`}
                   >
                     {txn.amount > 0 ? '+' : ''}
-                    {formatCurrency(txn.amount)}
+                    {formatCurrency(txn.amount, txn.currency || 'KES')}
                   </span>
 
                   {/* Action buttons for uncategorised */}
@@ -358,7 +358,7 @@ function SplitModal({ txn, onClose }: { txn: CategorisationTransaction; onClose:
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-gray-50 rounded-lg p-3 flex justify-between text-sm">
           <span className="text-gray-500">Original Amount</span>
-          <span className="font-semibold">{formatCurrency(Math.abs(txn.amount))}</span>
+          <span className="font-semibold">{formatCurrency(Math.abs(txn.amount), txn.currency || 'KES')}</span>
         </div>
 
         <div className="space-y-3">
@@ -592,7 +592,7 @@ function ManualAssignModal({ txn, onClose }: { txn: CategorisationTransaction; o
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-gray-50 rounded-lg p-3 flex justify-between text-sm">
           <span className="text-gray-500">Amount</span>
-          <span className="font-semibold">{formatCurrency(txn.amount)}</span>
+          <span className="font-semibold">{formatCurrency(txn.amount, txn.currency || 'KES')}</span>
         </div>
 
         {/* AI suggestion hint */}
