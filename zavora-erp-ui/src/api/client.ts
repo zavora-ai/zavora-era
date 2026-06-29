@@ -111,7 +111,7 @@ export const createUser = (data: {
 }) => api.post('/users', data);
 
 // === Dashboard ===
-export const getDashboard = () => api.get('/dashboard');
+export const getDashboard = (asAt?: string) => api.get('/dashboard', { params: asAt ? { as_at: asAt } : {} });
 
 // === Accounts ===
 export const getAccounts = () => api.get('/accounts');

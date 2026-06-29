@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { getDashboard } from '../../api/client';
 import type { DashboardSummary } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { getWorkDate, realToday } from '../../utils/workDate';
 import StatCard from '../../components/shared/StatCard';
 import PageHeader from '../../components/shared/PageHeader';
 import { SkeletonCard } from '../../components/shared/Skeleton';
@@ -20,9 +22,18 @@ const EXPENSE_COLORS = ['#1a56db', '#7e3af2', '#f59e0b', '#0694a2', '#e74694', '
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  // Align the dashboard to the user's "work-as-of" date when set, so figures
+  // reflect the period being worked in rather than the wall-clock date.
+  const [workDate, setWorkDate] = useState<string | null>(getWorkDate());
+  useEffect(() => {
+    const onChange = () => setWorkDate(getWorkDate());
+    window.addEventListener('zavora:workdate-changed', onChange);
+    return () => window.removeEventListener('zavora:workdate-changed', onChange);
+  }, []);
+  const asAtActive = !!workDate && workDate !== realToday();
   const { data, isLoading, isError, refetch } = useQuery<DashboardSummary>({
-    queryKey: ['dashboard'],
-    queryFn: () => getDashboard().then(r => r.data),
+    queryKey: ['dashboard', workDate ?? 'today'],
+    queryFn: () => getDashboard(workDate ?? undefined).then(r => r.data),
   });
 
   if (isLoading) {
@@ -84,6 +95,13 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Financial overview" />
+
+      {asAtActive && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>📅</span>
+          <span>Showing figures <strong>as at {formatDate(workDate!)}</strong> (your working date), not today. Receivables/payables, cash and net income reflect this date.</span>
+        </div>
+      )}
 
       {/* Setup checklist stays until every step is done, then collapses. */}
       <DashboardOnboarding summary={s} hideWhenComplete />

@@ -1,15 +1,23 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Query, State}, Json};
 use std::sync::Arc;
 
 use crate::AppState;
 use crate::middleware::auth::AuthContext;
 use super::err_response;
 
+#[derive(serde::Deserialize)]
+pub struct DashboardQuery {
+    /// Optional "as at" date (YYYY-MM-DD) so the dashboard aligns to the user's
+    /// work-as-of date instead of the wall-clock date.
+    pub as_at: Option<chrono::NaiveDate>,
+}
+
 pub async fn summary(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
+    Query(q): Query<DashboardQuery>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let summary = match state.engine.dashboard_summary(ctx.entity_id).await {
+    let summary = match state.engine.dashboard_summary_as_at(ctx.entity_id, q.as_at).await {
         Ok(s) => s,
         Err(e) => return Err(err_response(e)),
     };
