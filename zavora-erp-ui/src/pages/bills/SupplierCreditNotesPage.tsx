@@ -9,6 +9,7 @@ import {
 } from '../../api/client';
 import type { Vendor, Bill, Account, SupplierCreditNote } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import { hasRole, ROLES_CREATE } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -72,7 +73,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
   const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
   const [error, setError] = useState<string | null>(null);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = workToday();
   const [form, setForm] = useState({
     vendor_id: '',
     applies_to_bill: '',

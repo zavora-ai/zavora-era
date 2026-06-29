@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions, createSupplierCreditNote, getFxRates, getSettings } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -182,7 +183,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
 
   const isEdit = !!editId;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = workToday();
 
   function emptyLine() {
     // Blank account: product lines derive it from the posting-group matrix; a

@@ -4,6 +4,7 @@ import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getB
 import api from '../../api/client';
 import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
@@ -381,7 +382,7 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     method: 'BankTransfer',
     reference: '',
     party_id: '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: workToday(),
     bank_account_id: '',
     funding_source: 'bank' as 'bank' | 'director', // pay-from: company bank vs director's loan / owner funds
     funding_account: '4200', // GL account when funding_source = 'director'

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getEstimates, createEstimate, updateEstimate, deleteEstimate, getEstimate, convertEstimate, sendEstimate, acceptEstimate, declineEstimate, getCustomers, getProducts } from '../../api/client';
 import type { Estimate, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import { hasRole, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -204,8 +205,8 @@ function CreateEstimateModal({ onClose, editId }: { onClose: () => void; editId?
     enabled: !!editId,
   });
 
-  const today = new Date().toISOString().split('T')[0];
-  const defaultExpiry = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+  const today = workToday();
+  const defaultExpiry = new Date(new Date(workToday()).getTime() + 30 * 86400000).toISOString().split('T')[0];
 
   const [form, setForm] = useState({
     customer_id: '',

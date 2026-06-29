@@ -1,0 +1,80 @@
+# Production stack for erp.zavora.ai
+#   caddy   — HTTPS reverse proxy + static UI (ports 80/443)
+#   api     — Rust API (internal :8080)
+#   postgres— database (internal, volume-backed)
+#   redis   — sessions/cache (internal)
+#   xberg   — OCR sidecar (internal :8000), image loaded from a tar on the host
+#
+# Secrets/config come from deploy/.env.prod (NOT committed). Bring up with:
+#   docker compose -f docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: zavora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zavora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-zavora_era}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zavora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: zavora-redis
+    restart: unless-stopped
+
+  xberg:
+    image: xberg:core
+    container_name: zavora-xberg
+    restart: unless-stopped
+    command: ["xberg", "serve", "--host", "0.0.0.0", "--port", "8000"]
+
+  api:
+    build:
+      context: .
+      dockerfile: zavora-erp-api/Dockerfile
+    container_name: zavora-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-zavora}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zavora_era}
+      REDIS_URL: redis://redis:6379
+      BIND_ADDR: 0.0.0.0:8080
+      APP_ENV: production
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set in .env.prod}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set in .env.prod}
+      NOTIF_ENC_KEY: ${NOTIF_ENC_KEY:?set in .env.prod}
+      OCR_PROVIDER: xberg
+      XBERG_URL: http://xberg:8000
+      RUST_LOG: ${RUST_LOG:-info,zavora_erp_api=info}
+
+  caddy:
+    build:
+      context: .
+      dockerfile: zavora-erp-ui/Dockerfile
+    container_name: zavora-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

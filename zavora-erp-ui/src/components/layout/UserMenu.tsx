@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut } from 'lucide-react';
+import { ChevronDown, LogOut, CalendarClock } from 'lucide-react';
 import { getIdentity, logout, clearSession } from '../../api/client';
+import { getWorkDate, setWorkDate, realToday } from '../../utils/workDate';
 
 export default function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [workDate, setWorkDateState] = useState<string>(getWorkDate() ?? '');
   const ref = useRef<HTMLDivElement>(null);
 
   const identity = getIdentity() as
@@ -46,6 +48,12 @@ export default function UserMenu() {
     }
   };
 
+  const applyWorkDate = (v: string) => {
+    setWorkDateState(v);
+    setWorkDate(v || null);
+  };
+  const workDateActive = !!workDate && workDate !== realToday();
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -57,7 +65,9 @@ export default function UserMenu() {
         </div>
         <div className="hidden sm:block text-left leading-tight">
           <p className="text-[13px] font-medium text-gray-700 truncate max-w-[140px]">{displayName}</p>
-          {role && <p className="text-[11px] text-gray-400 truncate">{role}</p>}
+          {workDateActive
+            ? <p className="text-[11px] text-amber-600 truncate" title="New documents default to this date">📅 {workDate}</p>
+            : (role && <p className="text-[11px] text-gray-400 truncate">{role}</p>)}
         </div>
         <ChevronDown className="w-4 h-4 text-gray-400" />
       </button>
@@ -67,6 +77,26 @@ export default function UserMenu() {
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-medium text-gray-800 truncate">{displayName}</p>
             {email && <p className="text-xs text-gray-400 truncate">{email}</p>}
+          </div>
+          {/* Work-as-of date: per-user default date for new documents. */}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-1">
+              <CalendarClock className="w-3.5 h-3.5" /> Working as of
+            </label>
+            <input
+              type="date"
+              value={workDate}
+              onChange={(e) => applyWorkDate(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-md px-2 py-1.5 focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+            />
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-[11px] text-gray-400">
+                {workDateActive ? 'New documents default to this date.' : 'New documents use today.'}
+              </p>
+              {workDateActive && (
+                <button onClick={() => applyWorkDate('')} className="text-[11px] text-indigo-600 hover:underline">Reset</button>
+              )}
+            </div>
           </div>
           <button
             onClick={handleLogout}

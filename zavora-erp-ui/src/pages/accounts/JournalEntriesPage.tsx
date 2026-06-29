@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJournalEntries, createJournalEntry, getAccounts, reverseJournalEntry } from '../../api/client';
 import type { JournalEntry, Account } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import { hasRole, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -163,7 +164,7 @@ function CreateJournalEntryModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = workToday();
 
   const [form, setForm] = useState({
     date: today,

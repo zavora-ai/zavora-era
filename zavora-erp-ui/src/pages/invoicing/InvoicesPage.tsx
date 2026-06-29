@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates, getFxRates, getSettings } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
+import { workToday } from '../../utils/workDate';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -349,8 +350,8 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
 
   const isEdit = !!editId;
 
-  const today = new Date().toISOString().split('T')[0];
-  const defaultDue = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+  const today = workToday();
+  const defaultDue = new Date(new Date(today).getTime() + 30 * 86400000).toISOString().split('T')[0];
 
   const [form, setForm] = useState({
     customer_id: initialCustomerId || '',
