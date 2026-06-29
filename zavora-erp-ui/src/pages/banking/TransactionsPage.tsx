@@ -14,7 +14,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { ArrowLeftRight, Sparkles, Split, Merge, Ban, Check, Search } from 'lucide-react';
 
-type FilterStatus = 'all' | 'uncategorised' | 'categorised' | 'excluded';
+type FilterStatus = 'all' | 'uncategorised' | 'categorised' | 'posted' | 'excluded';
 
 export default function TransactionsPage() {
   const [filter, setFilter] = useState<FilterStatus>('uncategorised');
@@ -104,7 +104,7 @@ export default function TransactionsPage() {
       {/* Filter tabs */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-1 border-b border-gray-200">
-          {(['uncategorised', 'categorised', 'excluded', 'all'] as FilterStatus[]).map((f) => (
+          {(['uncategorised', 'posted', 'excluded', 'all'] as FilterStatus[]).map((f) => (
             <button
               key={f}
               onClick={() => { setFilter(f); setSelectedIds([]); }}
