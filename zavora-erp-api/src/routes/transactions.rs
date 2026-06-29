@@ -86,8 +86,9 @@ pub async fn categorise(
     require_role(ROLES_CREATE, &ctx, "categorise transaction").map_err(err_response)?;
     let mut cat_req = req;
     cat_req.transaction_id = id;
+    cat_req.categorised_by = zavora_erp_core::AgentOrUserId::User(ctx.user_id);
     match svc::categorise(&state.engine, ctx.entity_id, cat_req).await {
-        Ok(()) => Ok(Json(serde_json::json!({ "status": "categorised" }))),
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "posted" }))),
         Err(e) => Err(err_response(e)),
     }
 }
