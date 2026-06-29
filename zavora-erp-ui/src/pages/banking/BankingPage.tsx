@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Landmark, ArrowLeftRight, CheckCircle2, AlertTriangle, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, getTransactions, generateReport } from '../../api/client';
+import { getBankAccounts, createBankAccount, deleteBankAccount, importStatement, extractBankStatement, getTransactions, generateReport, getAccounts } from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/format';
-import type { BankAccount } from '../../types';
+import type { BankAccount, Account } from '../../types';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -110,7 +110,7 @@ export default function BankingPage() {
       {/* Total cash across all accounts */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm text-gray-500">
-          Total balance across {bankAccounts.length} account{bankAccounts.length === 1 ? '' : 's'}:{' '}
+          Total balance across {bankAccounts.length} account{bankAccounts.length === 1 ? '' : 's'} (KES carrying value):{' '}
           <span className="font-semibold text-gray-900">{formatCurrency(totalCash)}</span>
         </div>
         <button className="btn-primary flex items-center gap-2" onClick={() => setShowCreate(true)}>
@@ -154,8 +154,17 @@ export default function BankingPage() {
               <p className="text-xs text-gray-400 mb-2">
                 ••••{ba.account_number.slice(-4)} · {ba.currency}
               </p>
-              {/* Account balance from the GL */}
-              <p className="text-xl font-bold text-gray-900 mb-2">{formatCurrency(balanceFor(ba.gl_account), ba.currency)}</p>
+              {/* Bank balance in the account's OWN currency (the bank
+                  sub-ledger / reconciliation figure), summed from the native
+                  transaction-currency amounts on the linked GL account. The
+                  trial balance is functional-currency only (KES) and must not
+                  be relabelled as the account currency. */}
+              <p className="text-xl font-bold text-gray-900 mb-1">{formatCurrency(Number((ba as any).balance ?? 0), ba.currency)}</p>
+              {/* For a foreign-currency account, also show the KES carrying
+                  value (the balance-sheet figure from the functional GL). */}
+              {ba.currency !== 'KES' && (
+                <p className="text-xs text-gray-400 mb-2">≈ {formatCurrency(balanceFor(ba.gl_account), 'KES')} carrying value</p>
+              )}
               {/* Feed status badge */}
               <div className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${ba.feed_enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -244,7 +253,7 @@ export default function BankingPage() {
         <h3 className="font-medium mb-4">Bank Reconciliation</h3>
         <p className="text-sm text-gray-500 mb-4">
           Three-pass matching algorithm: Exact match → Near match (2-day window) → AI suggestion.
-          Import statements in MT940, OFX, or CSV format.
+          Import statements as CSV, MT940, OFX, PDF, or Excel (M-Pesa / bank exports).
         </p>
         <div className="flex gap-3">
           <button className="btn-primary" onClick={() => setShowImport(true)} disabled={bankAccounts.length === 0}>
@@ -273,8 +282,20 @@ function CreateBankAccountModal({ onClose }: { onClose: () => void }) {
     bank_name: '',
     account_number: '',
     currency: 'KES',
+    gl_account: '1020',
   });
   const [error, setError] = useState<string | null>(null);
+
+  // GL accounts to back this bank account — asset accounts (cash/bank), so a
+  // USD or M-Pesa account can map to its own ledger account instead of all
+  // defaulting to the single KES bank GL.
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['accounts'],
+    queryFn: () => getAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+  const bankGlOptions = accounts
+    .filter((a) => a.account_type === 'Asset' && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) => createBankAccount(data),
@@ -361,6 +382,23 @@ function CreateBankAccountModal({ onClose }: { onClose: () => void }) {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">GL Account</label>
+            <select
+              className="input w-full"
+              value={form.gl_account}
+              onChange={(e) => setForm({ ...form, gl_account: e.target.value })}
+            >
+              {bankGlOptions.map((a) => (
+                <option key={a.code} value={a.code}>{a.code} — {a.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              The ledger account this bank account posts to. Use a distinct account per
+              currency (e.g. USD → "Bank Account - USD") so balances don't co-mingle.
+            </p>
+          </div>
+
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={mutation.isPending}>
@@ -386,10 +424,74 @@ function ImportStatementModal({
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ line_count: number; format: string } | null>(null);
+  // PDF / Excel review flow.
+  const [mode, setMode] = useState<'file' | 'pdf'>('file');
+  type PdfRow = { value_date: string; description: string; debit: string | null; credit: string | null; balance: string | null; confidence: number };
+  const [pdfRows, setPdfRows] = useState<PdfRow[] | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [provider, setProvider] = useState<string | null>(null);
+  type Recon = { summary_paid_in: string; summary_paid_out: string; detail_paid_in: string; detail_paid_out: string; balanced: boolean };
+  const [recon, setRecon] = useState<Recon | null>(null);
+
+  const onPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setExtracting(true);
+    setPdfRows(null);
+    setRecon(null);
+    setFilename(file.name);
+    try {
+      const res = await extractBankStatement(file);
+      setProvider(res.data?.provider ?? null);
+      setRecon(res.data?.reconciliation ?? null);
+      const rows: PdfRow[] = (res.data?.rows ?? []).map((r: any) => ({
+        value_date: r.value_date,
+        description: r.description ?? '',
+        debit: r.debit ?? null,
+        credit: r.credit ?? null,
+        balance: r.balance ?? null,
+        confidence: r.confidence ?? 0,
+      }));
+      setPdfRows(rows);
+      if (rows.length === 0) setError('No transaction rows detected. Check the file, or import a CSV/OFX export instead.');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to read the statement.');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // A row is suspect if low-confidence, has no/invalid date, or has both sides.
+  const rowInvalid = (r: PdfRow) =>
+    !/^\d{4}-\d{2}-\d{2}$/.test(r.value_date) || (!!r.debit && !!r.credit);
+  const rowSuspect = (r: PdfRow) => r.confidence < 0.7 || rowInvalid(r);
+
+  const updateRow = (i: number, patch: Partial<PdfRow>) =>
+    setPdfRows((rows) => rows!.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const dropRow = (i: number) => setPdfRows((rows) => rows!.filter((_, idx) => idx !== i));
+
+  // Build the deterministic 5-column CSV from the reviewed rows and commit it
+  // through the normal importer, so the trusted pipeline does the real work.
+  const confirmPdf = () => {
+    const rows = (pdfRows ?? []).filter((r) => r.debit || r.credit);
+    if (rows.length === 0) { setError('Nothing to import — every row is empty or dropped.'); return; }
+    const bothSides = rows.find((r) => r.debit && r.credit);
+    if (bothSides) { setError(`A row has both a debit and a credit (${bothSides.description || bothSides.value_date}). Clear one side before importing.`); return; }
+    const badDate = rows.find((r) => !/^\d{4}-\d{2}-\d{2}$/.test(r.value_date));
+    if (badDate) { setError(`Fix the date "${badDate.value_date}" (use YYYY-MM-DD) before importing.`); return; }
+    const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const csv = ['Date,Description,Debit,Credit,Balance']
+      .concat(rows.map((r) => [r.value_date, esc(r.description), r.debit ?? '', r.credit ?? '', r.balance ?? ''].join(',')))
+      .join('\n');
+    setContent(csv);
+    mutation.mutate(undefined);
+  };
+
 
   const mutation = useMutation({
-    mutationFn: () =>
-      importStatement({ bank_account_id: bankAccountId, filename: filename || 'statement.csv', content }),
+    mutationFn: (overrideContent?: string) =>
+      importStatement({ bank_account_id: bankAccountId, filename: filename || 'statement.csv', content: overrideContent ?? content }),
     onSuccess: (res: any) => {
       setError(null);
       setResult({ line_count: res?.data?.line_count ?? 0, format: res?.data?.format ?? 'CSV' });
@@ -422,7 +524,7 @@ function ImportStatementModal({
       setError('Upload a file or paste statement content');
       return;
     }
-    mutation.mutate();
+    mutation.mutate(undefined);
   };
 
   return (
@@ -444,22 +546,80 @@ function ImportStatementModal({
         )}
 
         {!result && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
+          <>
+            {/* Source tabs */}
+            <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+              <button type="button" onClick={() => { setMode('file'); setError(null); }} className={`px-3 py-1.5 rounded-md text-sm font-medium ${mode === 'file' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>CSV / MT940 / OFX</button>
+              <button type="button" onClick={() => { setMode('pdf'); setError(null); }} className={`px-3 py-1.5 rounded-md text-sm font-medium ${mode === 'pdf' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>PDF / Excel</button>
+            </div>
+
+            <div className="mb-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Bank Account</label>
-              <select
-                className="input w-full"
-                value={bankAccountId}
-                onChange={(e) => setBankAccountId(e.target.value)}
-              >
+              <select className="input w-full" value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
                 {bankAccounts.map((ba) => (
-                  <option key={ba.id} value={ba.id}>
-                    {ba.name} — {ba.bank_name} ({ba.currency})
-                  </option>
+                  <option key={ba.id} value={ba.id}>{ba.name} — {ba.bank_name} ({ba.currency})</option>
                 ))}
               </select>
             </div>
 
+            {mode === 'pdf' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">PDF or Excel statement</label>
+                  <input type="file" accept="application/pdf,.pdf,.xlsx,.xls,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="input w-full" onChange={onPdf} disabled={extracting} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Digital PDFs and M-Pesa/bank Excel exports are read for review — debit vs credit is inferred from the running balance. Check and edit every row before importing. Scanned PDFs need the OCR service.
+                  </p>
+                </div>
+                {extracting && <p className="text-sm text-gray-500">Extracting…</p>}
+                {pdfRows && pdfRows.length > 0 && (
+                  <>
+                    <div className="max-h-72 overflow-auto border rounded-lg">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr className="text-left text-gray-500">
+                            <th className="px-2 py-1.5">Date</th><th className="px-2 py-1.5">Description</th>
+                            <th className="px-2 py-1.5 text-right">Debit</th><th className="px-2 py-1.5 text-right">Credit</th>
+                            <th className="px-2 py-1.5 text-right">Balance</th><th className="px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {pdfRows.map((r, i) => (
+                            <tr key={i} className={rowSuspect(r) ? 'bg-amber-50' : ''} title={rowSuspect(r) ? 'Please verify — low confidence, missing/invalid date, or both sides filled' : undefined}>
+                              <td className="px-1 py-1"><input className="input text-xs py-0.5 w-24" value={r.value_date} onChange={(e) => updateRow(i, { value_date: e.target.value })} /></td>
+                              <td className="px-1 py-1"><input className="input text-xs py-0.5 w-full" value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} /></td>
+                              <td className="px-1 py-1"><input className="input text-xs py-0.5 w-20 text-right" value={r.debit ?? ''} onChange={(e) => updateRow(i, { debit: e.target.value || null })} /></td>
+                              <td className="px-1 py-1"><input className="input text-xs py-0.5 w-20 text-right" value={r.credit ?? ''} onChange={(e) => updateRow(i, { credit: e.target.value || null })} /></td>
+                              <td className="px-1 py-1"><input className="input text-xs py-0.5 w-20 text-right" value={r.balance ?? ''} onChange={(e) => updateRow(i, { balance: e.target.value || null })} /></td>
+                              <td className="px-1 py-1 text-center"><button type="button" onClick={() => dropRow(i)} className="text-gray-400 hover:text-red-600" title="Drop row"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {recon && (
+                      <div className={`mb-2 rounded-md px-3 py-2 text-xs ${recon.balanced ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+                        {recon.balanced
+                          ? `✓ Reconciles to the statement Summary — money in ${recon.summary_paid_in}, money out ${recon.summary_paid_out}.`
+                          : `⚠ Does not match the Summary totals. Detail in/out = ${recon.detail_paid_in}/${recon.detail_paid_out} vs Summary ${recon.summary_paid_in}/${recon.summary_paid_out}. Review before importing.`}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">{pdfRows.length} rows{provider ? ` · read by ${provider === 'pdfium-local' ? 'local PDF reader' : provider === 'xlsx' ? 'Excel reader' : provider}` : ''} · amber = verify before importing</p>
+                      <div className="flex gap-3">
+                        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+                        <button type="button" className="btn-primary" disabled={mutation.isPending} onClick={confirmPdf}>
+                          {mutation.isPending ? 'Importing…' : 'Confirm & Import'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {mode === 'file' && (
+              <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Statement file (CSV / MT940 / OFX)</label>
               <input type="file" accept=".csv,.mt940,.sta,.940,.ofx,.qfx,text/csv" className="input w-full" onChange={onFile} />
@@ -487,6 +647,8 @@ function ImportStatementModal({
               </button>
             </div>
           </form>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -45,6 +45,10 @@ pub struct OcrResult {
     pub date: Option<NaiveDate>,
     pub total: Option<Decimal>,
     pub vat_amount: Option<Decimal>,
+    /// Detected document currency (e.g. "USD", "EUR"). `None` when the parser
+    /// cannot infer it; the review UI then defaults to the base currency.
+    #[serde(default)]
+    pub currency: Option<String>,
     pub line_items: Vec<OcrLineItem>,
     pub confidence: f32,
     pub raw_text: Option<String>,
@@ -57,6 +61,8 @@ pub struct OcrResult {
     pub total_confidence: Option<f32>,
     #[serde(default)]
     pub vat_amount_confidence: Option<f32>,
+    #[serde(default)]
+    pub currency_confidence: Option<f32>,
 }
 
 /// A receipt capture record.
@@ -87,6 +93,13 @@ pub struct ConfirmReceiptRequest {
     pub capture_id: Uuid,
     pub vendor_id: Uuid,
     pub account_code: Option<String>,
+    /// Document currency (e.g. USD/EUR for a foreign invoice). Defaults to the
+    /// tenant base currency when omitted.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Exchange rate to base currency for `currency`. Defaults to 1.0.
+    #[serde(default)]
+    pub fx_rate: Option<Decimal>,
     pub adjustments: Option<ReceiptAdjustments>,
 }
 

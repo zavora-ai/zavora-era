@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getVendors, createVendor, assignPostingGroups } from '../../api/client';
+import { getVendors, createVendor, updateVendor, assignPostingGroups } from '../../api/client';
 import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Vendor } from '../../types';
 import PageHeader from '../../components/shared/PageHeader';
@@ -31,36 +31,37 @@ export default function VendorsPage() {
         actions={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Add a Vendor</button>}
       />
       <DataTable columns={columns} data={vendors} loading={isLoading} onRowClick={(r) => navigate(`/vendors/${r.id}`)} emptyMessage="No vendors yet. Add suppliers to start tracking bills and payments." />
-      {showCreate && <CreateVendorModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <VendorFormModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
 
-function CreateVendorModal({ onClose }: { onClose: () => void }) {
+export function VendorFormModal({ vendor, onClose }: { vendor?: Vendor; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const isEdit = !!vendor;
   const [tab, setTab] = useState<'details' | 'tax' | 'bank'>('details');
 
   const [form, setForm] = useState({
-    name: '',
+    name: vendor?.name ?? '',
     contact_person: '',
-    email: '',
-    phone: '',
+    email: vendor?.email?.[0]?.email ?? '',
+    phone: vendor?.phone?.[0]?.number ?? '',
     // Address
-    address_1: '',
-    address_2: '',
-    city: '',
-    county: '',
-    postal: '',
-    country: 'Kenya',
+    address_1: vendor?.address?.line1 ?? '',
+    address_2: vendor?.address?.line2 ?? '',
+    city: vendor?.address?.city ?? '',
+    county: vendor?.address?.county ?? '',
+    postal: vendor?.address?.postal_code ?? '',
+    country: vendor?.address?.country ?? 'Kenya',
     // Tax & WHT
-    kra_pin: '',
-    vat_number: '',
-    wht_category: '',
-    resident: true,
+    kra_pin: vendor?.kra_pin ?? '',
+    vat_number: vendor?.vat_number ?? '',
+    wht_category: vendor?.wht_category ?? '',
+    resident: vendor?.resident ?? true,
     // Payment
-    currency: 'KES',
-    payment_terms: 'Net30',
-    default_expense_account: '7900',
+    currency: vendor?.currency ?? 'KES',
+    payment_terms: vendor?.payment_terms ?? 'Net30',
+    default_expense_account: vendor?.default_expense_account ?? '7900',
     // Bank
     bank_name: '',
     bank_branch: '',
@@ -68,19 +69,21 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
     bank_account_number: '',
     bank_swift: '',
     // Notes
-    notes: '',
+    notes: vendor?.notes ?? '',
   });
-  const [genGroup, setGenGroup] = useState('');
-  const [vatGroup, setVatGroup] = useState('');
+  const [genGroup, setGenGroup] = useState(vendor?.general_business_group_id ?? '');
+  const [vatGroup, setVatGroup] = useState(vendor?.vat_business_group_id ?? '');
 
   const mutation = useMutation({
-    mutationFn: (data: any) => createVendor(data),
+    mutationFn: (data: any) => (isEdit ? updateVendor(vendor!.id, data) : createVendor(data)),
     onSuccess: async (resp: any) => {
-      const id = resp?.data?.id ?? resp?.data;
+      const id = isEdit ? vendor!.id : (resp?.data?.id ?? resp?.data);
       if (id && (genGroup || vatGroup)) {
         try { await assignPostingGroups({ kind: 'vendor', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
       }
-      queryClient.invalidateQueries({ queryKey: ['vendors'] }); onClose();
+      queryClient.invalidateQueries({ queryKey: ['vendors'] });
+      if (isEdit) queryClient.invalidateQueries({ queryKey: ['vendor', vendor!.id] });
+      onClose();
     },
   });
 
@@ -125,7 +128,7 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Add a Vendor" size="lg">
+    <Modal open={true} onClose={onClose} title={isEdit ? 'Edit Vendor' : 'Add a Vendor'} size="lg">
       <form onSubmit={handleSubmit}>
         <div className="flex gap-1 mb-6 border-b">
           {(['details', 'tax', 'bank'] as const).map((t) => (
@@ -152,6 +155,19 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
                 <select className="input" value={form.payment_terms} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })}>
                   <option value="DueOnReceipt">Due on Receipt</option><option value="Net7">Net 7</option><option value="Net14">Net 14</option><option value="Net30">Net 30</option><option value="Net45">Net 45</option><option value="Net60">Net 60</option>
                 </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Currency</label>
+                <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                  <option value="KES">KES - Kenya Shilling</option>
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="GBP">GBP - British Pound</option>
+                  <option value="ZAR">ZAR - South African Rand</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Default currency for this vendor's bills (foreign suppliers bill in their own currency)</p>
               </div>
             </div>
             <PostingGroupFields scope="party" generalId={genGroup} vatId={vatGroup} onGeneral={setGenGroup} onVat={setVatGroup} />
@@ -208,10 +224,20 @@ function CreateVendorModal({ onClose }: { onClose: () => void }) {
 
             {selectedRate && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm font-medium text-blue-900">Applicable rate:</p>
+                <p className="text-sm font-medium text-blue-900">Applicable rate ({form.resident ? 'resident' : 'non-resident'}):</p>
                 <p className="text-sm text-blue-700 mt-1">
-                  Resident: <strong>{selectedRate.resident}</strong> · Non-resident: <strong>{selectedRate.nonResident}</strong>
+                  <span className={form.resident ? 'font-bold underline' : ''}>Resident {selectedRate.resident}</span>
+                  {' · '}
+                  <span className={!form.resident ? 'font-bold underline' : ''}>Non-resident {selectedRate.nonResident}</span>
                 </p>
+              </div>
+            )}
+
+            {!form.resident && !form.wht_category && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                This is a <strong>non-resident</strong> vendor. Payments for services, royalties, management or
+                professional fees to non-residents are often subject to Kenyan withholding tax (commonly 20%,
+                or a lower treaty rate). Set a WHT category above if it applies — confirm with your tax advisor.
               </div>
             )}
 

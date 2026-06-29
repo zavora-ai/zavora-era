@@ -253,7 +253,7 @@ pub async fn create_and_post_in_tx(
 
     let now = Utc::now();
     let entry_id = Uuid::new_v4();
-    let number = generate_journal_number_in_tx(tx, engine, entity_id).await?;
+    let number = generate_journal_number_in_tx(tx, engine, entity_id, req.date).await?;
 
     // Build journal lines with rounded transaction and functional amounts.
     let mut lines: Vec<JournalLine> = req
@@ -438,6 +438,7 @@ async fn generate_journal_number_in_tx(
     tx: &mut PgTx<'_>,
     engine: &ErpEngine,
     entity_id: Uuid,
+    date: chrono::NaiveDate,
 ) -> ErpResult<String> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"UPDATE entity_settings
@@ -455,7 +456,7 @@ async fn generate_journal_number_in_tx(
 
     let cfg = engine.config_for(entity_id).await?;
     let prefix = &cfg.sequences.journal_prefix;
-    let fiscal_year = chrono::Utc::now().format("%Y").to_string();
+    let fiscal_year = crate::services::periods::fiscal_year_for_date(engine, entity_id, date).await;
 
     if cfg.sequences.year_reset {
         Ok(format!("{}-{}-{:04}", prefix, fiscal_year, row))

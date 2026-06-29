@@ -105,10 +105,18 @@ pub struct ImportedTransactionRow {
 /// Request to categorise a transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoriseRequest {
+    #[serde(default = "Uuid::nil")]
     pub transaction_id: Uuid,
     pub account_code: AccountCode,
     pub description: Option<String>,
+    /// Set from the authenticated user by the API route; the client need not
+    /// supply it. Defaults to a system agent so deserialization never fails.
+    #[serde(default = "default_categoriser")]
     pub categorised_by: AgentOrUserId,
+}
+
+fn default_categoriser() -> AgentOrUserId {
+    AgentOrUserId::Agent("system".to_string())
 }
 
 /// Request to split a transaction into multiple GL parts.

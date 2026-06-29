@@ -34,8 +34,11 @@ pub struct PostingSetup {
     pub vat_output: String,
     /// VAT Input (claimable) — incurred on purchases.
     pub vat_input: String,
-    /// Withholding Tax payable to KRA.
+    /// Withholding Tax payable to KRA (WHT this entity withholds from vendors).
     pub wht_payable: String,
+    /// Withholding Tax receivable — WHT credits withheld by customers from this
+    /// entity's income (a prepaid income-tax asset).
+    pub wht_receivable: String,
 
     // --- Foreign exchange ---
     pub realised_fx_gain: String,
@@ -58,6 +61,23 @@ pub struct PostingSetup {
     pub default_sales: String,
     pub default_purchase: String,
     pub default_expense: String,
+
+    // --- Inventory ---
+    /// Inventory asset (stock on hand) control account.
+    pub inventory_asset: String,
+    /// Cost of goods sold.
+    pub cost_of_goods_sold: String,
+    /// Goods-Received-Not-Invoiced clearing. Credited when stock is received
+    /// without a vendor bill (standalone receipt); the later bill debits it.
+    pub inventory_clearing: String,
+
+    // --- Fixed assets ---
+    /// Fixed-asset (cost) control account.
+    pub fixed_asset: String,
+    /// Accumulated depreciation (contra-asset).
+    pub accumulated_depreciation: String,
+    /// Depreciation expense.
+    pub depreciation_expense: String,
 
     // --- Payroll ---
     pub salaries_expense: String,
@@ -85,6 +105,7 @@ impl Default for PostingSetup {
             vat_output: "3100".to_string(),
             vat_input: "1300".to_string(),
             wht_payable: "3210".to_string(),
+            wht_receivable: "1310".to_string(),
             realised_fx_gain: "8120".to_string(),
             realised_fx_loss: "8130".to_string(),
             unrealised_fx_gain: "8100".to_string(),
@@ -95,9 +116,19 @@ impl Default for PostingSetup {
             // "Rounding" GL account via the posting-setup UI.
             rounding_adjustment: "7900".to_string(),
             default_bank: "1020".to_string(),
-            default_sales: "5000".to_string(),
-            default_purchase: "6000".to_string(),
+            // Services-first defaults (Zavora): sales → Service Revenue, purchases →
+            // Software/Cloud/Subscriptions. Goods sellers can repoint these in Settings.
+            default_sales: "5100".to_string(),
+            default_purchase: "7350".to_string(),
             default_expense: "7900".to_string(),
+            inventory_asset: "1300".to_string(),
+            cost_of_goods_sold: "6000".to_string(),
+            // Goods received not invoiced — a current liability/accrual. Defaults
+            // to AP control; a tenant can point this at a dedicated GRNI account.
+            inventory_clearing: "3010".to_string(),
+            fixed_asset: "2500".to_string(),
+            accumulated_depreciation: "2600".to_string(),
+            depreciation_expense: "7600".to_string(),
             salaries_expense: "7010".to_string(),
             nssf_employer_expense: "7020".to_string(),
             housing_levy_employer_expense: "7030".to_string(),

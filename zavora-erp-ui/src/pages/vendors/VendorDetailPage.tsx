@@ -9,8 +9,10 @@ import DataTable, { type Column } from '../../components/shared/DataTable';
 import { SkeletonCard } from '../../components/shared/Skeleton';
 import ErrorRetry from '../../components/shared/ErrorRetry';
 import {
-  ArrowLeft, Building2, Mail, Phone, CreditCard, Receipt, FileMinus, FilePlus2,
+  ArrowLeft, Building2, Mail, Phone, CreditCard, Receipt, FileMinus, FilePlus2, Pencil,
 } from 'lucide-react';
+import { VendorFormModal } from './VendorsPage';
+import type { Vendor } from '../../types';
 
 // The enriched vendor record returned by GET /vendors/{id}.
 interface VendorDetail {
@@ -40,6 +42,7 @@ export default function VendorDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('bills');
+  const [showEdit, setShowEdit] = useState(false);
 
   const { data: vendor, isLoading, isError, refetch } = useQuery<VendorDetail>({
     queryKey: ['vendor', id],
@@ -123,6 +126,9 @@ export default function VendorDetailPage() {
             <button onClick={() => navigate('/vendors')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
+            <button onClick={() => setShowEdit(true)} className="btn-secondary">
+              <Pencil className="w-4 h-4" /> Edit
+            </button>
             <button onClick={() => navigate(`/bills?new=1&vendor=${id}`)} className="btn-secondary">
               <FilePlus2 className="w-4 h-4" /> New Bill
             </button>
@@ -202,6 +208,12 @@ export default function VendorDetailPage() {
             <p className="mt-2 text-xs text-gray-400 flex items-center gap-1"><FileMinus className="w-3.5 h-3.5" /> Credit notes reverse AP and input VAT.</p>
           )}
         </div>
+      )}
+      {showEdit && (
+        <VendorFormModal
+          vendor={vendor as unknown as Vendor}
+          onClose={() => { setShowEdit(false); refetch(); }}
+        />
       )}
     </div>
   );

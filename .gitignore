@@ -28,3 +28,13 @@ zavora-erp-ui/dist/
 __pycache__/
 *.pyc
 .playwright-cli/
+.pdfium/
+
+# Sample + real company data (bank statements, PIN, invoices) — never commit
+sample_data/
+
+# Screenshot artifacts (Playwright captures, ad-hoc PNGs)
+*.png
+
+# Local DB backups (contain real tenant data — never commit)
+backups/

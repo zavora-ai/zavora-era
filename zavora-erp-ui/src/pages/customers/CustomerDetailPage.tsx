@@ -7,15 +7,17 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import SendStatementDialog from './SendStatementDialog';
+import { CustomerFormModal } from './CustomersPage';
 import {
   ArrowLeft, Send, Mail, Phone, CreditCard,
-  FileText, User, Building2
+  FileText, User, Building2, Pencil
 } from 'lucide-react';
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showSend, setShowSend] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const { data: customer, isLoading } = useQuery<Customer>({
     queryKey: ['customer', id],
@@ -83,6 +85,9 @@ export default function CustomerDetailPage() {
           <div className="flex items-center gap-2">
             <button onClick={() => navigate('/customers')} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Back
+            </button>
+            <button onClick={() => setShowEdit(true)} className="btn-secondary">
+              <Pencil className="w-4 h-4" /> Edit
             </button>
             <button onClick={() => setShowSend(true)} className="btn-secondary">
               <Send className="w-4 h-4" /> Send Statement
@@ -192,6 +197,7 @@ export default function CustomerDetailPage() {
       </div>
 
       {showSend && <SendStatementDialog customer={customer} onClose={() => setShowSend(false)} />}
+      {showEdit && <CustomerFormModal customer={customer} onClose={() => setShowEdit(false)} />}
     </div>
   );
 }

@@ -47,6 +47,20 @@ pub async fn list(
     .into_iter()
     .collect();
 
+    // Resolve bank-account id -> currency so each line displays in the
+    // statement's own currency (a USD account's amounts are USD, not KES).
+    let currencies: std::collections::HashMap<uuid::Uuid, String> =
+        sqlx::query_as::<_, (uuid::Uuid, String)>(
+            "SELECT id, currency FROM bank_accounts WHERE entity_id = $1",
+        )
+        .bind(ctx.entity_id)
+        .fetch_all(state.engine.pool())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, c)| (id, c.trim().to_string()))
+        .collect();
+
     // Map the raw DB rows onto the contract the UI consumes (status/amount/date,
     // signed amount = credit − debit, resolved account names).
     let out: Vec<serde_json::Value> = rows
@@ -57,10 +71,12 @@ pub async fn list(
                 .to_f64()
                 .unwrap_or(0.0);
             let assigned_name = r.assigned_account.as_ref().and_then(|c| names.get(c).cloned());
+            let currency = currencies.get(&r.bank_account).cloned().unwrap_or_else(|| "KES".to_string());
             serde_json::json!({
                 "id": r.id,
                 "entity_id": r.entity_id,
                 "bank_account_id": r.bank_account,
+                "currency": currency,
                 "date": r.value_date,
                 "description": r.description,
                 "reference": r.reference,
@@ -86,8 +102,9 @@ pub async fn categorise(
     require_role(ROLES_CREATE, &ctx, "categorise transaction").map_err(err_response)?;
     let mut cat_req = req;
     cat_req.transaction_id = id;
+    cat_req.categorised_by = zavora_erp_core::AgentOrUserId::User(ctx.user_id);
     match svc::categorise(&state.engine, ctx.entity_id, cat_req).await {
-        Ok(()) => Ok(Json(serde_json::json!({ "status": "categorised" }))),
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "posted" }))),
         Err(e) => Err(err_response(e)),
     }
 }

@@ -7,6 +7,14 @@ use crate::parties::VendorRow;
 use crate::payments::receipt_capture::*;
 use crate::types::AgentOrUserId;
 
+/// Overall OCR confidence at or above which a capture is auto-marked `reviewed`;
+/// below it the capture is flagged `needs_review` for mandatory human review.
+const CONFIDENCE_REVIEW_THRESHOLD: f32 = 0.7;
+
+/// Minimum normalised name-similarity for an OCR-extracted vendor name to be
+/// auto-matched to an existing vendor record.
+const VENDOR_MATCH_THRESHOLD: f64 = 0.6;
+
 /// Submit a receipt for OCR processing.
 /// In production, this would call Azure AI Content Understanding.
 /// Here we store the capture record and return it for manual review.
@@ -52,9 +60,8 @@ pub async fn process_ocr_result(
         None
     };
 
-    // Step 2: Determine status based on confidence score
-    // If confidence < 0.7: flag for mandatory human review
-    let status = if result.confidence < 0.7 {
+    // Step 2: Determine status based on confidence score.
+    let status = if result.confidence < CONFIDENCE_REVIEW_THRESHOLD {
         "needs_review"
     } else {
         "reviewed"
@@ -159,9 +166,9 @@ async fn fuzzy_match_vendor(engine: &ErpEngine, entity_id: Uuid, extracted_name:
         }
     }
 
-    // Only return a match if similarity exceeds threshold (0.6)
+    // Only return a match if similarity exceeds the configured threshold.
     match best_match {
-        Some((id, score)) if score > 0.6 => Ok(Some(id)),
+        Some((id, score)) if score > VENDOR_MATCH_THRESHOLD => Ok(Some(id)),
         _ => Ok(None),
     }
 }
@@ -291,7 +298,14 @@ pub async fn confirm_and_create_bill(
     // recompute the VAT — this reproduces the receipt's gross without
     // double-counting. When VAT is zero we mark the line OutOfScope so no VAT is
     // added at all.
-    let lines = build_bill_lines(adj, total, vat_amount, &description, account_code.as_deref());
+    // Whether the entity reclaims input VAT. A non-registered entity treats any
+    // purchase VAT as part of the cost (no recoverable input-VAT line).
+    let vat_registered = engine
+        .config_for(entity_id)
+        .await
+        .map(|c| c.tax_config.vat_registered)
+        .unwrap_or(false);
+    let lines = build_bill_lines(adj, total, vat_amount, &description, account_code.as_deref(), vat_registered);
 
     // Create bill
     let bill_req = crate::ap::CreateBillRequest {
@@ -299,13 +313,40 @@ pub async fn confirm_and_create_bill(
         vendor_invoice_number: None,
         issue_date: Some(date),
         due_date: None,
-        currency: None,
-        fx_rate: None,
+        // Foreign-currency receipts (e.g. Amazon Ads in USD/EUR): carry the
+        // confirmed currency + rate so the bill posts at functional value.
+        currency: req.currency.clone(),
+        fx_rate: req.fx_rate,
         lines,
         notes: Some("Created from receipt capture".to_string()),
     };
 
     let bill = crate::services::bills::create_bill(engine, entity_id, bill_req, confirmed_by).await?;
+
+    // Auto-attach the captured source document to the new bill, so the posted
+    // record carries its own evidence (best practice: every bill keeps the
+    // invoice/receipt it was created from). The capture stored the original
+    // upload as a base64 data-URL in `image_url`; decode it and link a copy.
+    if let Some((mime, bytes)) = decode_data_url(&capture_row.image_url) {
+        let ext = mime_extension(&mime);
+        let filename = format!("{}-source.{}", bill.number, ext);
+        if let Err(e) = crate::services::attachments::upload(
+            engine,
+            entity_id,
+            "bill",
+            bill.id,
+            &filename,
+            &mime,
+            &bytes,
+            confirmed_by,
+        )
+        .await
+        {
+            // Non-fatal: the bill is already created; log and continue so a
+            // storage hiccup never blocks posting.
+            tracing::warn!(bill_id = %bill.id, error = %e, "failed to auto-attach receipt source to bill");
+        }
+    }
 
     // Update capture record
     sqlx::query(
@@ -318,6 +359,30 @@ pub async fn confirm_and_create_bill(
     .await?;
 
     Ok(bill)
+}
+
+/// Decode a `data:<mime>;base64,<payload>` URL into `(mime, bytes)`. Returns
+/// `None` for non-data URLs or malformed payloads.
+fn decode_data_url(url: &str) -> Option<(String, Vec<u8>)> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let rest = url.strip_prefix("data:")?;
+    let (meta, payload) = rest.split_once(',')?;
+    let mime = meta.strip_suffix(";base64").unwrap_or(meta);
+    let mime = if mime.is_empty() { "application/octet-stream" } else { mime };
+    let bytes = STANDARD.decode(payload).ok()?;
+    Some((mime.to_string(), bytes))
+}
+
+/// Map a MIME type to a sensible file extension for the stored attachment name.
+fn mime_extension(mime: &str) -> &'static str {
+    match mime {
+        m if m.contains("pdf") => "pdf",
+        m if m.contains("png") => "png",
+        m if m.contains("jpeg") || m.contains("jpg") => "jpg",
+        m if m.contains("webp") => "webp",
+        m if m.contains("gif") => "gif",
+        _ => "bin",
+    }
 }
 
 /// Build the bill lines for a confirmed receipt.
@@ -339,6 +404,7 @@ fn build_bill_lines(
     vat_amount: rust_decimal::Decimal,
     description: &str,
     account_code: Option<&str>,
+    vat_registered: bool,
 ) -> Vec<crate::invoicing::CreateInvoiceLineRequest> {
     use rust_decimal::Decimal;
 
@@ -378,14 +444,24 @@ fn build_bill_lines(
         }
     }
 
-    // Single line(s) derived from the VAT-inclusive receipt total. The cardinal
-    // rule: the posted bill's gross MUST equal the receipt total exactly,
-    // whatever the tax rate. The bill engine adds VAT *on top* of unit_price for
-    // rated lines, so we only use a rated treatment when the receipt's VAT
-    // actually matches that rate (within rounding) — e.g. Kenyan 16%. For any
-    // other rate (foreign invoices, 8%, etc.) we post the net as an OutOfScope
-    // line plus a separate OutOfScope "VAT/Tax" line, so nothing is re-computed
-    // and the gross reconciles to the cent.
+    // When the entity is NOT VAT-registered, any VAT on a purchase is
+    // irrecoverable and is part of the cost — post the FULL gross to the expense
+    // as a single OutOfScope line (never split VAT to a recoverable input
+    // account). This mirrors how the foreign SaaS bills (Google/GoDaddy) were
+    // booked and keeps a non-registered entity's books free of a phantom
+    // VAT-receivable balance.
+    if !vat_registered {
+        return vec![mk(description.to_string(), total, crate::types::VatTreatment::OutOfScope)];
+    }
+
+    // VAT-registered: single line(s) derived from the VAT-inclusive receipt
+    // total. The cardinal rule: the posted bill's gross MUST equal the receipt
+    // total exactly, whatever the tax rate. The bill engine adds VAT *on top* of
+    // unit_price for rated lines, so we only use a rated treatment when the
+    // receipt's VAT actually matches that rate (within rounding) — e.g. Kenyan
+    // 16%. For any other rate (foreign invoices, 8%, etc.) we post the net as an
+    // OutOfScope line plus a separate OutOfScope "VAT/Tax" line, so nothing is
+    // re-computed and the gross reconciles to the cent.
     if vat_amount > Decimal::ZERO && total > vat_amount {
         let net = total - vat_amount;
         let standard_vat = (net * crate::types::VatTreatment::Standard16.rate())
@@ -418,8 +494,23 @@ struct CaptureRow {
 #[cfg(test)]
 mod tests {
     use super::build_bill_lines;
+    use super::{decode_data_url, mime_extension};
     use crate::types::VatTreatment;
     use rust_decimal::Decimal;
+
+    #[test]
+    fn decode_data_url_roundtrip() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let bytes = b"%PDF-1.4 hello";
+        let url = format!("data:application/pdf;base64,{}", STANDARD.encode(bytes));
+        let (mime, out) = decode_data_url(&url).expect("decodes");
+        assert_eq!(mime, "application/pdf");
+        assert_eq!(out, bytes);
+        assert_eq!(mime_extension(&mime), "pdf");
+        // Non-data URLs and garbage return None rather than panicking.
+        assert!(decode_data_url("https://example.com/x.pdf").is_none());
+        assert!(decode_data_url("data:application/pdf;base64,!!notb64!!").is_none());
+    }
 
     /// Reproduce the bill engine's per-line gross: unit_price + VAT-on-top.
     fn line_gross(unit_price: Decimal, vat: &VatTreatment) -> Decimal {
@@ -437,8 +528,8 @@ mod tests {
 
     #[test]
     fn kenyan_16pct_receipt_uses_single_rated_line() {
-        // 1160 incl. 160 VAT == 16% of 1000 net.
-        let lines = build_bill_lines(None, Decimal::new(1160, 0), Decimal::new(160, 0), "Acme", None);
+        // 1160 incl. 160 VAT == 16% of 1000 net. (VAT-registered entity.)
+        let lines = build_bill_lines(None, Decimal::new(1160, 0), Decimal::new(160, 0), "Acme", None, true);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].vat_treatment, Some(VatTreatment::Standard16));
         assert_eq!(total_gross(&lines), Decimal::new(1160, 0));
@@ -448,18 +539,32 @@ mod tests {
     fn foreign_tax_rate_reconciles_via_out_of_scope_lines() {
         // US invoice: total 162.37, tax 10.47 (~6.9%, NOT 16%). Must still total
         // exactly 162.37 — the regression that posted 176.20 before the fix.
+        // (VAT-registered entity.)
         let total = Decimal::new(162_37, 2);
         let vat = Decimal::new(10_47, 2);
-        let lines = build_bill_lines(None, total, vat, "StripesShop", None);
+        let lines = build_bill_lines(None, total, vat, "StripesShop", None, true);
         assert_eq!(lines.len(), 2, "net + tax as out-of-scope lines");
         assert!(lines.iter().all(|l| l.vat_treatment == Some(VatTreatment::OutOfScope)));
         assert_eq!(total_gross(&lines), total);
     }
 
     #[test]
+    fn non_vat_registered_folds_vat_into_expense() {
+        // A non-VAT-registered entity must NOT split VAT to a recoverable input
+        // account: the full gross posts as one OutOfScope line on the expense.
+        let total = Decimal::new(61_36, 2); // Amazon Ads USD, incl. 8.46 VAT
+        let vat = Decimal::new(8_46, 2);
+        let lines = build_bill_lines(None, total, vat, "Amazon Advertising", None, false);
+        assert_eq!(lines.len(), 1, "single full-gross expense line");
+        assert_eq!(lines[0].vat_treatment, Some(VatTreatment::OutOfScope));
+        assert_eq!(lines[0].unit_price, Some(total));
+        assert_eq!(total_gross(&lines), total);
+    }
+
+    #[test]
     fn no_vat_posts_single_out_of_scope_line() {
         let total = Decimal::new(500, 0);
-        let lines = build_bill_lines(None, total, Decimal::ZERO, "Cash sale", None);
+        let lines = build_bill_lines(None, total, Decimal::ZERO, "Cash sale", None, true);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].vat_treatment, Some(VatTreatment::OutOfScope));
         assert_eq!(total_gross(&lines), total);

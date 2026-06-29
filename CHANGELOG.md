@@ -8,9 +8,114 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-06-28 — Multi-currency onboarding hardening (real-company validation)
+
+Surfaced while setting up a real Kenyan services company end-to-end through the
+UI (not VAT-registered; trades heavily in USD/EUR). See `docs/UI_GAPS.md`.
+
+#### Added
+- **Bank account → GL account selector.** The Add Bank Account form now lets you
+  choose which ledger account a bank account posts to (asset, non-control;
+  defaults to the KES bank GL). Previously every account silently defaulted to
+  one GL code, so a USD account and an M-Pesa till co-mingled with the KES bank
+  in a single ledger account — breaking per-account balances and FX revaluation
+  of the foreign account. The backend already accepted `gl_account`; only the UI
+  was missing it. (`BankingPage`.)
+- **Future fiscal periods can be locked.** `close_period` now permits a **soft
+  close from `Future`** (previously rejected outright), and the Periods page
+  shows the Soft Close action on future periods. Future periods are postable, so
+  they must be lockable — e.g. to stop stray postings into the auto-seeded next
+  year while back-booking a prior one. Hard close still requires a prior soft
+  close. (`services::periods`, `PeriodsPage`.)
+- **WHT rates self-heal at startup.** Migration 021 seeds the statutory KRA WHT
+  rates once with `ON CONFLICT DO NOTHING`, so a wiped/restored volume could
+  leave the table empty while the migration ledger still showed 021 applied —
+  making every WHT lookup silently resolve to 0 (tax not withheld). Startup now
+  backfills any missing statutory category via `wht::ensure_seeded`, without
+  overwriting an admin's customised rate.
+- **Services-first chart of accounts & posting defaults.** The Kenya Standard
+  seed gained `1310 WHT Receivable`, `1610 Unpaid Share Capital`, `5250 Royalty
+  Income`, and `7350 Software, Cloud & Subscriptions`; default sales → `5100`
+  Service Revenue and default purchase → `7350` (was goods-centric). New
+  non-registered tenants default to **VAT Exempt** so they never accidentally
+  charge output VAT, and the Products form derives its tax-treatment default from
+  the company's VAT registration.
+- **Company statutory fields + editable currency/year-end.** Settings → Company
+  now captures **Registration Number**, **Registered Address**, and **Phone**
+  (`BrandingConfig.registration_number`), and makes **Base Currency** and
+  **Fiscal Year-End** editable (previously read-only). Non-resident vendors are
+  prompted that WHT may apply on services/royalties.
+
+#### Fixed
+- **FX Rates page crash.** The exchange-rate `rate` arrives from the API as a
+  JSON string (Rust `Decimal` serialises to a string); the FX Rates table called
+  `rate.toFixed(4)`, throwing and blanking the page after a rate was saved. Now
+  coerces with `Number()` before formatting.
+- **Posting Accounts control-account picker.** A/R and A/P roles now correctly
+  include control accounts in their picker (they *are* the GL control accounts);
+  other roles still exclude them.
+
 ### 2026-06-28 — User-driven tenant management & OCR receipt capture
 
 #### Added
+- **PDF / spreadsheet bank-statement import (review-before-commit).** Most Kenyan
+  banks issue PDF statements and M-Pesa issues XLSX; `POST /bank/import/extract`
+  sends the file to the xberg extraction sidecar (PDF text layer, OCR for scans,
+  or spreadsheet cells), parses the text into candidate transaction rows with
+  per-row confidence, and returns them **without writing anything**. The Banking
+  import dialog gained a **PDF tab** with an editable review table
+  (date/description/debit/credit/balance; low-confidence rows flagged; drop bad
+  rows); **Confirm** serialises the reviewed rows to CSV and commits through the
+  existing deterministic CSV importer, so idempotency, dedup and the
+  categorisation queue stay the single source of truth. OCR'd financial rows are
+  never auto-committed. (`services::statement_pdf`.)
+  - **M-Pesa statements parse cleanly** (dedicated parser; validated against a
+    real merchant XLSX — 28/28 transactions, totals reconcile to the statement
+    summary to the cent).
+  - **Generic bank PDFs** are best-effort: PDF text extraction often scrambles
+    multi-column tables, so the generic parser is a starting point that the user
+    must review/correct. **Per-bank templates** for the common banks are the
+    planned next step.
+- **Inventory now posts to the general ledger.** Standalone **Receive Stock** and
+  **Issue Stock** previously updated quantities/value but never touched the GL,
+  leaving inventory off-ledger (trial balance didn't reflect stock). They now
+  post journals within the same transaction — receipt: DR Inventory / CR
+  Goods-Received-Not-Invoiced clearing; issue: DR COGS / CR Inventory — and each
+  stock movement is linked to its journal entry (`stock_movements.journal_entry_id`,
+  migration 034). `PostingSetup` gained `inventory_asset`, `cost_of_goods_sold`,
+  and `inventory_clearing` accounts. The transaction-scoped `_in_tx` variants
+  used during invoice posting stay GL-free, so invoices still single-book COGS
+  (no double-posting). Verified: Inventory/GRNI/COGS balances tie to the
+  subledger.
+- **Posting-group assignment on master records.** Customers, vendors and products
+  now have **Posting Groups** selectors on their create forms (business group +
+  VAT group / product group + VAT product group), so the BC-style matrices are
+  actually usable — a customer assigned to e.g. an "Export" business group routes
+  its A/R to that group's control account. Verified end-to-end (export-group
+  invoice posted A/R to the group account, not the default). Group ids are
+  surfaced on the list/detail responses.
+- **Customer Payment History report.** New report listing every receipt from a
+  customer over a period — date, payment number, method, reference, amount, and
+  the portion still unapplied (on-account) — with totals. Available in the
+  report catalogue (party + period controls), rendered in the UI, and CSV-
+  exportable. Previously this report type silently returned an empty body.
+- **Consolidation: FX translation + intercompany elimination.** The consolidated
+  trial balance now **translates** each entity's functional balances into a
+  chosen `presentation_currency` via `exchange_rates` (latest rate on/before the
+  date; 1:1 when already in that currency, flagged in `untranslated` when no rate
+  is on file), and **eliminates intercompany AR/AP** between the consolidated
+  entities — receivables/payables to a party whose KRA PIN matches a sister
+  entity — surfaced in an `eliminations` section. Previously it only summed
+  functional amounts and flagged mixed currencies.
+- **M-Pesa STK Push (Daraja) client.** Real Lipa-na-M-Pesa STK Push: OAuth token
+  + `processrequest` via a new `payments::daraja` client, wired to
+  `POST /payments/mpesa-stk-push` (resolves the invoice balance + customer phone,
+  triggers the prompt, returns the checkout request id). Deployment-gated by
+  `MPESA_CONSUMER_KEY`/`SECRET`/`SHORTCODE`/`PASSKEY`/`CALLBACK_URL` (sandbox vs
+  production via `MPESA_ENV`); returns a clear "not configured" error when the
+  credentials are absent. _Note: the outbound Daraja calls require live Safaricom
+  credentials and have not been exercised end-to-end; the password/timestamp/
+  MSISDN helpers are unit-tested._
 - **Per-tenant notification providers (self-service).** Each tenant can now
   configure its **own** delivery credentials in **Settings → Providers** — SMTP
   (email), Africa's Talking (SMS), Twilio (WhatsApp) — instead of relying only

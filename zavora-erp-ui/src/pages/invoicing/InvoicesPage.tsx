@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates } from '../../api/client';
+import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates, getFxRates, getSettings } from '../../api/client';
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
@@ -79,8 +79,18 @@ export default function InvoicesPage() {
     { key: 'customer_id', header: 'Customer', render: (r) => <span className="text-gray-900">{customerName(r.customer_id)}</span> },
     { key: 'issue_date', header: 'Issued', render: (r) => formatDate(r.issue_date) },
     { key: 'due_date', header: 'Due Date', render: (r) => <span className={r.status === 'overdue' ? 'text-red-600 font-medium' : ''}>{formatDate(r.due_date)}</span> },
-    { key: 'gross_total', header: 'Total', render: (r) => <span className="font-medium">{formatCurrency(r.gross_total)}</span>, className: 'text-right' },
-    { key: 'balance_due', header: 'Amount Due', render: (r) => <span className="font-bold">{formatCurrency(r.balance_due)}</span>, className: 'text-right' },
+    { key: 'gross_total', header: 'Total', render: (r) => (
+      <div className="text-right">
+        <span className="font-medium">{formatCurrency(r.gross_total, r.currency)}</span>
+        {r.currency !== 'KES' && <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.gross_total) * Number(r.fx_rate || 1), 'KES')}</p>}
+      </div>
+    ), className: 'text-right' },
+    { key: 'balance_due', header: 'Amount Due', render: (r) => (
+      <div className="text-right">
+        <span className="font-bold">{formatCurrency(r.balance_due, r.currency)}</span>
+        {r.currency !== 'KES' && <p className="text-xs text-gray-400 font-normal">≈ {formatCurrency(Number(r.balance_due) * Number(r.fx_rate || 1), 'KES')}</p>}
+      </div>
+    ), className: 'text-right' },
     {
       key: 'actions', header: '',
       render: (r) => (
@@ -322,6 +332,20 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ['customers'], queryFn: () => getCustomers().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: dimensionTypes = [] } = useQuery<any[]>({ queryKey: ['dimensions'], queryFn: () => getDimensions().then(r => Array.isArray(r.data) ? r.data : []) });
+  // Stored spot rates (the fx_rates table) + base currency, used to auto-fill
+  // the invoice exchange rate on the transaction date.
+  const { data: fxRates = [] } = useQuery<any[]>({ queryKey: ['fx-rates'], queryFn: () => getFxRates().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: settings } = useQuery<any>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
+  const baseCurrency: string = settings?.base_currency ?? 'KES';
+
+  /** Spot rate (foreign -> base) for `ccy` on/just-before `date` from fx_rates. */
+  const lookupSpotRate = (ccy: string, date: string): number | null => {
+    if (ccy === baseCurrency) return 1;
+    const matches = fxRates
+      .filter((r) => r.from_ccy === ccy && r.to_ccy === baseCurrency && r.rate_date <= date)
+      .sort((a, b) => (a.rate_date < b.rate_date ? 1 : -1));
+    return matches.length ? Number(matches[0].rate) : null;
+  };
 
   const isEdit = !!editId;
 
@@ -337,6 +361,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
     notes: '',
     footer: 'Thank you for your business!',
     currency: 'KES',
+    fx_rate: '1',
     discount_type: 'none' as 'none' | 'percent' | 'fixed',
     discount_value: 0,
     send_on_save: false,
@@ -370,6 +395,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
         notes: inv.notes || '',
         footer: 'Thank you for your business!',
         currency: inv.currency || 'KES',
+        fx_rate: inv.fx_rate != null ? String(inv.fx_rate) : '1',
         discount_type: 'none',
         discount_value: 0,
         send_on_save: false,
@@ -377,6 +403,21 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
     }
   }, [existingInvoice, isEdit]);
 
+  // Auto-fill the exchange rate from the stored spot rates whenever the currency
+  // or invoice date changes — unless the user has manually overridden it. For
+  // the base currency the rate is always 1. If no spot rate is on file the field
+  // is left for the user to enter (and flagged in the UI).
+  const fxTouched = useRef(false);
+  useEffect(() => {
+    if (fxTouched.current) return;
+    if (form.currency === baseCurrency) {
+      if (form.fx_rate !== '1') setForm((f) => ({ ...f, fx_rate: '1' }));
+      return;
+    }
+    const spot = lookupSpotRate(form.currency, form.invoice_date);
+    if (spot != null) setForm((f) => ({ ...f, fx_rate: String(spot) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.currency, form.invoice_date, fxRates, baseCurrency]);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
 
@@ -453,6 +494,8 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
     e.preventDefault();
     mutation.mutate({
       customer_id: form.customer_id,
+      currency: form.currency,
+      fx_rate: Number(form.fx_rate) || 1,
       issue_date: form.invoice_date,
       due_date: form.due_date,
       lines: form.lines.map(l => ({
@@ -486,7 +529,13 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
               <select
                 className="input"
                 value={form.customer_id}
-                onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+                onChange={(e) => {
+                  const cust = customers.find((c) => c.id === e.target.value);
+                  // Default the invoice currency to the customer's currency (the
+                  // fx auto-fill effect then picks the spot rate for the date).
+                  setForm((f) => ({ ...f, customer_id: e.target.value, currency: cust?.currency || f.currency }));
+                  fxTouched.current = false;
+                }}
                 required
               >
                 <option value="">Choose a customer...</option>
@@ -530,7 +579,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
               </div>
               <div>
                 <label className="label">Currency</label>
-                <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                <select className="input" value={form.currency} onChange={(e) => { fxTouched.current = false; setForm({ ...form, currency: e.target.value }); }}>
                   <option value="KES">KES - Kenya Shilling</option>
                   <option value="USD">USD - US Dollar</option>
                   <option value="EUR">EUR - Euro</option>
@@ -538,6 +587,29 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
                 </select>
               </div>
             </div>
+            {form.currency !== baseCurrency && (
+              <div className="grid grid-cols-2 gap-3 items-start">
+                <div>
+                  <label className="label">Exchange Rate (1 {form.currency} = ? {baseCurrency})</label>
+                  <input
+                    type="number" step="0.0001" min="0"
+                    className="input font-mono"
+                    value={form.fx_rate}
+                    onChange={(e) => { fxTouched.current = true; setForm({ ...form, fx_rate: e.target.value }); }}
+                    placeholder="e.g. 129.2155"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {lookupSpotRate(form.currency, form.invoice_date) != null
+                      ? <>Spot rate for {form.invoice_date} (editable — enter your bank/contract rate if different).</>
+                      : <span className="text-amber-600">No spot rate on file for this date — enter the rate manually or add it under FX Rates.</span>}
+                  </p>
+                </div>
+                <div className="pt-6 text-sm text-gray-600">
+                  ≈ <span className="font-medium">{formatCurrency(grandTotal * (Number(form.fx_rate) || 0), baseCurrency)}</span>
+                  <span className="text-gray-400"> in {baseCurrency} at {form.fx_rate || '—'}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -597,7 +669,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
                   </select>
                 </div>
                 <div className="col-span-1 text-right text-sm font-medium">
-                  {formatCurrency(line.quantity * line.unit_price)}
+                  {formatCurrency(line.quantity * line.unit_price, form.currency)}
                 </div>
                 <div className="col-span-1 text-center">
                   <button type="button" onClick={() => removeLine(i)} className="text-gray-400 hover:text-red-500 text-lg" disabled={form.lines.length === 1}>×</button>
@@ -634,7 +706,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">{formatCurrency(subtotal)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, form.currency)}</span>
             </div>
 
             {/* Discount */}
@@ -650,26 +722,32 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
                   <input type="number" className="input text-xs py-0.5 px-2 w-16" value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: +e.target.value })} />
                 )}
               </div>
-              <span>{discount > 0 ? `-${formatCurrency(discount)}` : '—'}</span>
+              <span>{discount > 0 ? `-${formatCurrency(discount, form.currency)}` : '—'}</span>
             </div>
 
             {/* Tax lines */}
             {Object.entries(taxByRate).map(([rate, amount]) => (
               <div key={rate} className="flex justify-between text-sm">
                 <span className="text-gray-600">VAT ({rate}%)</span>
-                <span>{formatCurrency(amount)}</span>
+                <span>{formatCurrency(amount, form.currency)}</span>
               </div>
             ))}
 
             <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold">
               <span>Total ({form.currency})</span>
-              <span>{formatCurrency(grandTotal)}</span>
+              <span>{formatCurrency(grandTotal, form.currency)}</span>
             </div>
 
             <div className="border-t pt-3 mt-3 flex justify-between text-sm text-gray-600">
               <span>Balance Due</span>
-              <span className="font-bold text-lg text-gray-900">{formatCurrency(grandTotal)}</span>
+              <span className="font-bold text-lg text-gray-900">{formatCurrency(grandTotal, form.currency)}</span>
             </div>
+            {form.currency !== baseCurrency && (
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Equivalent in {baseCurrency}</span>
+                <span>{formatCurrency(grandTotal * (Number(form.fx_rate) || 0), baseCurrency)} @ {form.fx_rate || '—'}</span>
+              </div>
+            )}
           </div>
         </div>
 

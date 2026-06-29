@@ -128,6 +128,22 @@ pub struct RecordPaymentRequest {
     pub reference: Option<String>,
     pub bank_account_id: Option<Uuid>,
     pub applications: Vec<PaymentApplicationRequest>,
+    /// Withholding tax withheld by the customer on this receipt, in BASE currency
+    /// (KES) — KRA WHT is always denominated in KES regardless of invoice currency.
+    /// On a customer receipt this books a WHT-receivable (income-tax credit) asset;
+    /// the receipt clears the full AR as cash + WHT. `None`/0 = no WHT.
+    #[serde(default)]
+    pub wht_amount: Option<Decimal>,
+    /// Optional override for the WHT account (defaults to posting `wht_receivable`).
+    #[serde(default)]
+    pub wht_account: Option<String>,
+    /// Non-cash funding source: when set, the payment is funded from this GL
+    /// account (e.g. `4200` Directors Loans for an owner-funded purchase) instead
+    /// of a bank account — the "Bank" leg credits/debits this account. Lets a bill
+    /// be settled by the director personally without touching a company cash
+    /// account. Takes precedence over `bank_account_id` when present.
+    #[serde(default)]
+    pub funding_account: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

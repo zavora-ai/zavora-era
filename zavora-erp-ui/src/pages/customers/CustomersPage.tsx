@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getCustomers, createCustomer, assignPostingGroups } from '../../api/client';
+import { getCustomers, createCustomer, updateCustomer, assignPostingGroups } from '../../api/client';
 import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
 import type { Customer } from '../../types';
 import { formatDate, formatCurrency } from '../../utils/format';
@@ -50,36 +50,37 @@ export default function CustomersPage() {
         }
       />
       <DataTable columns={columns} data={customers} loading={isLoading} onRowClick={(r) => navigate(`/customers/${r.id}`)} emptyMessage="No customers yet. Add your first customer to start invoicing." />
-      {showCreate && <CreateCustomerModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <CustomerFormModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
 
-function CreateCustomerModal({ onClose }: { onClose: () => void }) {
+export function CustomerFormModal({ customer, onClose }: { customer?: Customer; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const isEdit = !!customer;
 
   const [form, setForm] = useState({
     // Basic info
-    name: '',
+    name: customer?.name ?? '',
     first_name: '',
     last_name: '',
-    company_name: '',
+    company_name: customer?.name ?? '',
     account_number: '',
     // Contact
-    email: '',
-    phone: '',
-    mobile: '',
+    email: customer?.email?.[0]?.email ?? '',
+    phone: customer?.phone?.find((p) => p.label !== 'Mobile')?.number ?? '',
+    mobile: customer?.phone?.find((p) => p.label === 'Mobile')?.number ?? '',
     website: '',
     // Tax
-    kra_pin: '',
-    vat_number: '',
+    kra_pin: customer?.kra_pin ?? '',
+    vat_number: customer?.vat_number ?? '',
     // Billing address
-    billing_address_1: '',
-    billing_address_2: '',
-    billing_city: '',
-    billing_county: '',
-    billing_postal: '',
-    billing_country: 'Kenya',
+    billing_address_1: customer?.address?.line1 ?? '',
+    billing_address_2: customer?.address?.line2 ?? '',
+    billing_city: customer?.address?.city ?? '',
+    billing_county: customer?.address?.county ?? '',
+    billing_postal: customer?.address?.postal_code ?? '',
+    billing_country: customer?.address?.country ?? 'Kenya',
     // Shipping address
     shipping_same: true,
     shipping_address_1: '',
@@ -89,23 +90,25 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
     shipping_postal: '',
     shipping_country: 'Kenya',
     // Settings
-    currency: 'KES',
-    payment_terms: 'Net30',
-    credit_limit: '',
+    currency: customer?.currency ?? 'KES',
+    payment_terms: customer?.payment_terms ?? 'Net30',
+    credit_limit: customer?.credit_limit ? String(customer.credit_limit) : '',
     // Notes
-    notes: '',
+    notes: customer?.notes ?? '',
   });
-  const [genGroup, setGenGroup] = useState('');
-  const [vatGroup, setVatGroup] = useState('');
+  const [genGroup, setGenGroup] = useState(customer?.general_business_group_id ?? '');
+  const [vatGroup, setVatGroup] = useState(customer?.vat_business_group_id ?? '');
 
   const mutation = useMutation({
-    mutationFn: (data: any) => createCustomer(data),
+    mutationFn: (data: any) =>
+      isEdit ? updateCustomer(customer!.id, data) : createCustomer(data),
     onSuccess: async (resp: any) => {
-      const id = resp?.data?.id ?? resp?.data;
+      const id = isEdit ? customer!.id : (resp?.data?.id ?? resp?.data);
       if (id && (genGroup || vatGroup)) {
         try { await assignPostingGroups({ kind: 'customer', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
       }
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      if (isEdit) queryClient.invalidateQueries({ queryKey: ['customer', customer!.id] });
       onClose();
     },
   });
@@ -140,7 +143,7 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'details' | 'address' | 'settings'>('details');
 
   return (
-    <Modal open={true} onClose={onClose} title="Add a Customer" size="lg">
+    <Modal open={true} onClose={onClose} title={isEdit ? 'Edit Customer' : 'Add a Customer'} size="lg">
       <form onSubmit={handleSubmit}>
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b">
@@ -325,7 +328,9 @@ function CreateCustomerModal({ onClose }: { onClose: () => void }) {
         {/* Submit */}
         <div className="flex justify-between items-center pt-6 mt-6 border-t">
           <p className="text-xs text-gray-400">
-            {form.company_name || form.first_name ? `Creating: ${form.company_name || `${form.first_name} ${form.last_name}`}` : 'Fill in customer details'}
+            {isEdit
+              ? `Editing: ${customer!.name}`
+              : (form.company_name || form.first_name ? `Creating: ${form.company_name || `${form.first_name} ${form.last_name}`}` : 'Fill in customer details')}
           </p>
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>

@@ -4,14 +4,145 @@ use uuid::Uuid;
 
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
+use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
 use crate::transactions::*;
 
-/// Categorise a transaction (assign a GL account).
+/// Categorise a transaction: assign the contra GL account, **post the
+/// double-entry journal** (bank vs contra), link it, and mark the line posted.
+///
+/// The categorisation queue exists to turn an imported bank line into a ledger
+/// entry. Tagging an account without posting would leave the bank GL and the
+/// contra account untouched — the books wouldn't move — so categorising posts
+/// the journal immediately:
+///   * money out (debit line): DR contra account / CR bank GL
+///   * money in  (credit line): DR bank GL / CR contra account
+/// Idempotent-ish: a line already linked to a journal entry is not re-posted.
 pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequest) -> ErpResult<()> {
+    // Load the transaction.
+    let txn = sqlx::query_as::<_, ImportedTransactionRow>(
+        "SELECT * FROM imported_transactions WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.transaction_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound {
+        entity_type: "ImportedTransaction".to_string(),
+        id: req.transaction_id,
+    })?;
+
+    // Don't double-post a line that was already posted to the ledger.
+    if txn.journal_entry_id.is_some() {
+        return Err(ErpError::ValidationFailed {
+            message: "Transaction is already posted to the ledger.".to_string(),
+        });
+    }
+
+    let amount = txn.debit.or(txn.credit).unwrap_or(Decimal::ZERO);
+    if amount == Decimal::ZERO {
+        return Err(ErpError::ValidationFailed {
+            message: "Transaction has no debit or credit amount to post.".to_string(),
+        });
+    }
+
+    // Resolve the bank's GL account (per bank account), else the tenant default.
+    let bank_gl = match sqlx::query_scalar::<_, String>(
+        "SELECT gl_account FROM bank_accounts WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(txn.bank_account)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    {
+        Some(a) => a,
+        None => engine.posting_for(entity_id).await?.default_bank.clone(),
+    };
+
+    let base_currency = engine.config_for(entity_id).await?.base_currency.clone();
+    // The bank line is denominated in the bank account's currency; resolve it
+    // and the FX rate to base on the transaction date so a foreign-currency
+    // statement posts at its correct functional (base) value rather than 1:1.
+    let acct_currency = sqlx::query_scalar::<_, String>(
+        "SELECT currency FROM bank_accounts WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(txn.bank_account)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .map(|c| c.trim().to_string())
+    .unwrap_or_else(|| base_currency.clone());
+
+    let fx_rate = if acct_currency == base_currency {
+        Decimal::ONE
+    } else {
+        // Use the month rate (IAS 21 periodic rate) — consistent across a
+        // month's foreign receipts (e.g. monthly KDP royalties) and immaterial
+        // vs daily for a stable currency.
+        crate::services::fx::get_month_rate(engine, entity_id, &acct_currency, &base_currency, txn.value_date).await?
+    };
+    let line_currency = acct_currency.clone();
+    let line_fx = if fx_rate == Decimal::ONE { None } else { Some(fx_rate) };
+
+    let description = req
+        .description
+        .clone()
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| txn.description.clone());
+
+    let contra = CreateJournalLineRequest {
+        account_code: req.account_code.clone(),
+        debit: if txn.debit.is_some() { Some(amount) } else { None },
+        credit: if txn.debit.is_some() { None } else { Some(amount) },
+        currency: line_currency.clone(),
+        fx_rate: line_fx,
+        description: Some(description.clone()),
+        dimensions: None,
+    };
+    let bank = CreateJournalLineRequest {
+        account_code: bank_gl,
+        debit: if txn.debit.is_some() { None } else { Some(amount) },
+        credit: if txn.debit.is_some() { Some(amount) } else { None },
+        currency: line_currency,
+        fx_rate: line_fx,
+        description: Some(description.clone()),
+        dimensions: None,
+    };
+    // Money out → contra first (DR), bank (CR). Money in → bank first (DR), contra (CR).
+    let lines = if txn.debit.is_some() { vec![contra, bank] } else { vec![bank, contra] };
+
+    let period = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM fiscal_periods WHERE entity_id = $1 AND start_date <= $2 AND end_date >= $2",
+    )
+    .bind(entity_id)
+    .bind(txn.value_date)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::ValidationFailed {
+        message: format!("No fiscal period found for date {}", txn.value_date),
+    })?;
+
+    let je = crate::services::journal::create_and_post(
+        engine,
+        entity_id,
+        CreateJournalEntryRequest {
+            date: txn.value_date,
+            source: JournalSource::Payment,
+            source_id: None,
+            reference: txn.reference.clone(),
+            description,
+            lines,
+            post_immediately: true,
+        },
+        period,
+        req.categorised_by.clone(),
+    )
+    .await?;
+
     sqlx::query(
-        "UPDATE imported_transactions SET assigned_account = $1, category_status = 'categorised' WHERE id = $2 AND entity_id = $3",
+        "UPDATE imported_transactions SET assigned_account = $1, category_status = 'posted', journal_entry_id = $2 WHERE id = $3 AND entity_id = $4",
     )
     .bind(&req.account_code)
+    .bind(je.id)
     .bind(req.transaction_id)
     .bind(entity_id)
     .execute(engine.pool())

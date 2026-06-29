@@ -125,8 +125,17 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = cash_flow_direct(engine, entity_id, req.parameters).await?;
             ReportContent::CashFlowDirect(report)
         }
-        _ => {
-            ReportContent::Generic(serde_json::json!({"message": "Report type not yet implemented"}))
+        ReportType::CustomerPaymentHistory => {
+            let report = customer_payment_history(engine, entity_id, req.parameters).await?;
+            ReportContent::CustomerPaymentHistory(report)
+        }
+        // Any future report type without a generator fails loudly rather than
+        // returning a fake-success body.
+        #[allow(unreachable_patterns)]
+        other => {
+            return Err(crate::error::ErpError::ValidationFailed {
+                message: format!("Report type {other:?} is not implemented yet"),
+            });
         }
     };
 
@@ -1398,6 +1407,27 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             output.extend_from_slice(format!(",Opening cash,{}\n", r.opening_cash).as_bytes());
             output.extend_from_slice(format!(",Closing cash,{}\n", r.closing_cash).as_bytes());
         }
+        ReportContent::CustomerPaymentHistory(r) => {
+            output.extend_from_slice(b"Date,Payment No,Method,Reference,Amount,Unapplied,Status\n");
+            for l in &r.lines {
+                output.extend_from_slice(
+                    format!(
+                        "{},{},{},{},{},{},{}\n",
+                        l.date,
+                        csv_escape(&l.number),
+                        csv_escape(&l.method),
+                        csv_escape(&l.reference),
+                        l.amount,
+                        l.unapplied,
+                        csv_escape(&l.status),
+                    )
+                    .as_bytes(),
+                );
+            }
+            output.extend_from_slice(
+                format!("Total,,,,{},{},\n", r.total_received, r.total_unapplied).as_bytes(),
+            );
+        }
         ReportContent::Generic(_) => {
             output.extend_from_slice(b"Report type does not support CSV export\n");
         }
@@ -1556,6 +1586,102 @@ struct StatementRow {
     reference: String,
     charge: Decimal,
     payment: Decimal,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PaymentHistoryRow {
+    payment_date: NaiveDate,
+    number: String,
+    method: serde_json::Value,
+    reference: String,
+    amount: Decimal,
+    unapplied: Decimal,
+    status: String,
+}
+
+/// Render a payment `method` JSON value into a human label. The method is stored
+/// either as a bare string (`"Cash"`) or a single-key object (`{"MPesa": {...}}`)
+/// depending on whether the variant carries data; handle both.
+fn method_label(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(map) => map.keys().next().cloned().unwrap_or_else(|| "Other".to_string()),
+        _ => "Other".to_string(),
+    }
+}
+
+/// Customer payment history: every receipt from one customer in the period.
+async fn customer_payment_history(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<CustomerPaymentHistoryReport> {
+    let today = Utc::now().date_naive();
+    let period_to = params.period_to.unwrap_or(today);
+    let period_from = params
+        .period_from
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(period_to.year(), 1, 1).unwrap());
+
+    let customer_id = params.customer_id.ok_or_else(|| crate::error::ErpError::ValidationFailed {
+        message: "A customer must be selected for the payment history report".to_string(),
+    })?;
+
+    let customer_name: String = sqlx::query_scalar(
+        "SELECT name FROM customers WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(customer_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| crate::error::ErpError::NotFound {
+        entity_type: "customer".to_string(),
+        id: customer_id,
+    })?;
+
+    // Customer receipts are payments with party_id = customer and a
+    // customer-receipt payment_type. Exclude voided/failed.
+    let rows = sqlx::query_as::<_, PaymentHistoryRow>(
+        "SELECT payment_date, number, method, reference, amount, unapplied, status
+         FROM payments
+         WHERE entity_id = $1 AND party_id = $2
+           AND status NOT IN ('voided', 'failed', 'cancelled')
+           AND payment_date BETWEEN $3 AND $4
+         ORDER BY payment_date, number",
+    )
+    .bind(entity_id)
+    .bind(customer_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut total_received = Decimal::ZERO;
+    let mut total_unapplied = Decimal::ZERO;
+    let mut lines = Vec::with_capacity(rows.len());
+    for r in &rows {
+        total_received += r.amount;
+        total_unapplied += r.unapplied;
+        lines.push(PaymentHistoryLine {
+            date: r.payment_date,
+            number: r.number.clone(),
+            method: method_label(&r.method),
+            reference: r.reference.clone(),
+            amount: r.amount,
+            unapplied: r.unapplied,
+            status: r.status.clone(),
+        });
+    }
+
+    Ok(CustomerPaymentHistoryReport {
+        customer_id,
+        customer_name,
+        period_from,
+        period_to,
+        payment_count: lines.len() as u32,
+        lines,
+        total_received,
+        total_unapplied,
+    })
 }
 
 /// Customer or vendor statement: opening balance + dated charges/payments with a

@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProducts, createProduct, assignPostingGroups } from '../../api/client';
+import { getProducts, createProduct, updateProduct, deleteProduct, assignPostingGroups, getSettings, getAccounts } from '../../api/client';
 import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
-import type { Product } from '../../types';
+import type { Product, Account } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, Package, Tag } from 'lucide-react';
+import { Plus, Package, Tag, Pencil, Trash2 } from 'lucide-react';
 
 export default function ProductsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const queryClient = useQueryClient();
   const { data: products = [], isLoading } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteProduct(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to delete product.'),
+  });
+
+  const handleDelete = (p: Product) => {
+    if (confirm(`Delete "${p.name}"? This can't be undone. (Blocked if it's used on any transaction — deactivate instead.)`)) {
+      deleteMutation.mutate(p.id);
+    }
+  };
 
   const columns: Column<Product>[] = [
     {
@@ -29,11 +43,20 @@ export default function ProductsPage() {
       )
     },
     { key: 'product_type', header: 'Type', render: (r) => <span className={r.product_type === 'Service' ? 'badge-info' : r.product_type === 'Goods' ? 'badge-success' : 'badge-warning'}>{r.product_type}</span> },
-    { key: 'unit_price', header: 'Price', render: (r) => r.unit_price ? formatCurrency(r.unit_price) : <span className="text-gray-400">Variable</span>, className: 'text-right' },
+    { key: 'unit_price', header: 'Price', render: (r) => (r.unit_price != null && Number(r.unit_price) > 0) ? formatCurrency(Number(r.unit_price), r.currency) : <span className="text-gray-400">Variable</span>, className: 'text-right' },
     { key: 'uom', header: 'Unit' },
     { key: 'vat_treatment', header: 'Tax', render: (r) => r.vat_treatment === 'Standard16' ? 'VAT 16%' : r.vat_treatment === 'ZeroRated' ? 'Zero Rated' : 'Exempt' },
     { key: 'sales_account', header: 'Income Acct', render: (r) => <span className="font-mono text-xs">{r.sales_account}</span> },
     { key: 'track_inventory', header: 'Inventory', render: (r) => r.track_inventory ? <span className="badge-success">Tracked</span> : <span className="text-gray-400">—</span> },
+    {
+      key: 'actions', header: '', className: 'text-right',
+      render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={(e) => { e.stopPropagation(); setEditing(r); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Pencil className="w-4 h-4" /></button>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(r); }} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete" disabled={deleteMutation.isPending}><Trash2 className="w-4 h-4" /></button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -43,43 +66,73 @@ export default function ProductsPage() {
         subtitle="Items you sell or buy — auto-fill invoices and bills"
         actions={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Add Product or Service</button>}
       />
-      <DataTable columns={columns} data={products} loading={isLoading} emptyMessage="No products or services. Add items to auto-fill your invoices." />
-      {showCreate && <CreateProductModal onClose={() => setShowCreate(false)} />}
+      <DataTable columns={columns} data={products} loading={isLoading} onRowClick={(r) => setEditing(r)} emptyMessage="No products or services. Add items to auto-fill your invoices." />
+      {showCreate && <ProductFormModal onClose={() => setShowCreate(false)} />}
+      {editing && <ProductFormModal product={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function CreateProductModal({ onClose }: { onClose: () => void }) {
+function ProductFormModal({ product, onClose }: { product?: Product; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const isEdit = !!product;
   const [form, setForm] = useState({
-    name: '',
-    description: '',
-    product_type: 'Service' as 'Service' | 'Goods' | 'Expense',
-    unit_price: '',
-    currency: 'KES',
-    uom: 'Each',
+    name: product?.name ?? '',
+    description: product?.description ?? '',
+    product_type: (product?.product_type ?? 'Service') as 'Service' | 'Goods' | 'Expense',
+    unit_price: product?.unit_price != null ? String(product.unit_price) : '',
+    currency: product?.currency ?? 'KES',
+    uom: product?.uom ?? 'Each',
     // Accounts
-    sales_account: '5100',
-    purchase_account: '6000',
+    sales_account: product?.sales_account ?? '5100',
+    purchase_account: product?.purchase_account ?? '7350',
     // Tax
-    vat_treatment: 'Standard16',
+    vat_treatment: product?.vat_treatment ?? 'Exempt',
     // Inventory
-    track_inventory: false,
+    track_inventory: product?.track_inventory ?? false,
     sku: '',
     opening_stock: '',
   });
-  const [genGroup, setGenGroup] = useState('');
-  const [vatGroup, setVatGroup] = useState('');
+  const [genGroup, setGenGroup] = useState(product?.general_product_group_id ?? '');
+  const [vatGroup, setVatGroup] = useState(product?.vat_product_group_id ?? '');
+
+  // Default the tax treatment from the company's VAT registration: VAT-registered
+  // businesses default new items to Standard 16%, others to Exempt (so a company
+  // that isn't VAT-registered never accidentally charges output VAT). Respects a
+  // manual choice once the user picks a rate.
+  const { data: cfg } = useQuery({ queryKey: ['settings'], queryFn: () => getSettings().then((r) => r.data) });
+  const vatTouched = useRef(false);
+  useEffect(() => {
+    // Only auto-default for a NEW product — never override an existing product's
+    // saved VAT treatment when editing.
+    if (cfg && !isEdit && !vatTouched.current) {
+      setForm((f) => ({ ...f, vat_treatment: cfg.tax_config?.vat_registered ? 'Standard16' : 'Exempt' }));
+    }
+  }, [cfg, isEdit]);
+
+  // Account pickers are driven by the live chart of accounts, not a hardcoded
+  // list — so any revenue/expense account (e.g. 5250 Royalty, 7350 Software)
+  // is selectable. These are the per-product *fallback* accounts; the primary
+  // routing is the posting-group matrix (business × product group).
+  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])) });
+  const incomeAccounts = accounts
+    .filter((a) => (a.account_type === 'Revenue' || a.account_type === 'ContraRevenue') && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const expenseAccounts = accounts
+    .filter((a) => a.account_type === 'Expense' && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
 
   const mutation = useMutation({
-    mutationFn: (data: any) => createProduct(data),
+    mutationFn: (data: any) => (isEdit ? updateProduct(product!.id, data) : createProduct(data)),
     onSuccess: async (resp: any) => {
-      const id = resp?.data?.id ?? resp?.data;
-      if (id && (genGroup || vatGroup)) {
+      const id = isEdit ? product!.id : (resp?.data?.id ?? resp?.data);
+      // Always sync posting groups on edit (allow clearing); on create only if set.
+      if (id && (isEdit || genGroup || vatGroup)) {
         try { await assignPostingGroups({ kind: 'product', id, general_group_id: genGroup || undefined, vat_group_id: vatGroup || undefined }); } catch { /* non-fatal */ }
       }
       queryClient.invalidateQueries({ queryKey: ['products'] }); onClose();
     },
+    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to save product.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -99,7 +152,7 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Add Product or Service" size="lg">
+    <Modal open={true} onClose={onClose} title={isEdit ? 'Edit Product or Service' : 'Add Product or Service'} size="lg">
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Type selection */}
         <div>
@@ -138,10 +191,7 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="label">Default Price</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{form.currency}</span>
-              <input type="number" step="0.01" className="input pl-12" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
-            </div>
+            <input type="number" step="0.01" className="input" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} placeholder="0.00" />
             <p className="text-xs text-gray-400 mt-1">Can be changed per invoice</p>
           </div>
           <div>
@@ -177,7 +227,7 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
               { value: 'Exempt', label: 'Exempt', desc: 'Financial services, land' },
             ].map(opt => (
               <label key={opt.value} className={`p-3 rounded-lg border cursor-pointer transition-colors ${form.vat_treatment === opt.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input type="radio" name="vat" value={opt.value} checked={form.vat_treatment === opt.value} onChange={(e) => setForm({ ...form, vat_treatment: e.target.value })} className="sr-only" />
+                <input type="radio" name="vat" value={opt.value} checked={form.vat_treatment === opt.value} onChange={(e) => { vatTouched.current = true; setForm({ ...form, vat_treatment: e.target.value }); }} className="sr-only" />
                 <p className="text-sm font-medium">{opt.label}</p>
                 <p className="text-xs text-gray-500">{opt.desc}</p>
               </label>
@@ -192,18 +242,19 @@ function CreateProductModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="label">Income Account <span className="text-gray-400 font-normal">(fallback when sold)</span></label>
             <select className="input" value={form.sales_account} onChange={(e) => setForm({ ...form, sales_account: e.target.value })}>
-              <option value="5000">5000 — Sales Revenue</option>
-              <option value="5100">5100 — Service Revenue</option>
-              <option value="5200">5200 — Other Income</option>
+              {!incomeAccounts.some((a) => a.code === form.sales_account) && form.sales_account && (
+                <option value={form.sales_account}>{form.sales_account} — (not in chart)</option>
+              )}
+              {incomeAccounts.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Expense Account <span className="text-gray-400 font-normal">(when purchased)</span></label>
             <select className="input" value={form.purchase_account} onChange={(e) => setForm({ ...form, purchase_account: e.target.value })}>
-              <option value="6000">6000 — Cost of Goods Sold</option>
-              <option value="6100">6100 — Direct Materials</option>
-              <option value="7300">7300 — Office Supplies</option>
-              <option value="7900">7900 — Miscellaneous Expenses</option>
+              {!expenseAccounts.some((a) => a.code === form.purchase_account) && form.purchase_account && (
+                <option value={form.purchase_account}>{form.purchase_account} — (not in chart)</option>
+              )}
+              {expenseAccounts.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
         </div>

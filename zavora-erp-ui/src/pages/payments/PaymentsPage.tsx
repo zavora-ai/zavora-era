@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills } from '../../api/client';
+import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills, getBankAccounts, getAccounts } from '../../api/client';
 import api from '../../api/client';
 import type { Payment } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -9,6 +9,7 @@ import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
 import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
+import Attachments from '../../components/shared/Attachments';
 import { Plus, ArrowRightLeft } from 'lucide-react';
 
 type TabKey = 'all' | 'unapplied';
@@ -65,6 +66,7 @@ export default function PaymentsPage() {
 
 function AllPaymentsTab() {
   const { page, limit, offset, setPage } = usePagination();
+  const [viewing, setViewing] = useState<Payment | null>(null);
   const { data: resp, isLoading } = useQuery({
     queryKey: ['payments', offset, limit],
     queryFn: () => getPayments({ limit, offset }).then((r) => r.data),
@@ -85,7 +87,19 @@ function AllPaymentsTab() {
         ),
     },
     { key: 'payment_date', header: 'Date', render: (r) => formatDate(r.payment_date) },
-    { key: 'amount', header: 'Amount', render: (r) => formatCurrency(r.amount), className: 'text-right' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      className: 'text-right',
+      render: (r) => (
+        <div>
+          <span className="font-medium">{formatCurrency(r.amount, r.currency)}</span>
+          {r.currency !== 'KES' && (
+            <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.amount) * Number(r.fx_rate || 1), 'KES')}</p>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'method',
       header: 'Method',
@@ -104,9 +118,41 @@ function AllPaymentsTab() {
 
   return (
     <>
-      <DataTable columns={columns} data={payments} loading={isLoading} emptyMessage="No payments recorded." />
+      <DataTable columns={columns} data={payments} loading={isLoading} onRowClick={(r) => setViewing(r)} emptyMessage="No payments recorded." />
       <PaginationControls page={page} limit={limit} total={total} onPage={setPage} />
+      {viewing && <PaymentDetailModal payment={viewing} onClose={() => setViewing(null)} />}
     </>
+  );
+}
+
+/** Read-only payment summary + attachments (receipt, WHT certificate, remittance advice). */
+function PaymentDetailModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
+  const method = (() => {
+    const m: any = payment.method;
+    if (m?.Mpesa) return 'M-Pesa';
+    if (m?.BankTransfer) return 'Bank Transfer';
+    if (m?.Card) return 'Card';
+    if (m === 'Cash') return 'Cash';
+    return 'Other';
+  })();
+  return (
+    <Modal open={true} onClose={onClose} title={`Payment ${payment.number}`}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div><span className="text-gray-500">Date</span><p className="font-medium">{formatDate(payment.payment_date)}</p></div>
+          <div><span className="text-gray-500">Type</span><p className="font-medium">{payment.payment_type === 'customer_payment' ? 'Customer receipt' : 'Vendor payment'}</p></div>
+          <div><span className="text-gray-500">Amount</span><p className="font-medium">{formatCurrency(payment.amount, payment.currency)}{payment.currency !== 'KES' && <span className="text-xs text-gray-400"> · ≈ {formatCurrency(Number(payment.amount) * Number(payment.fx_rate || 1), 'KES')}</span>}</p></div>
+          <div><span className="text-gray-500">Method</span><p className="font-medium">{method}</p></div>
+          <div className="col-span-2"><span className="text-gray-500">Reference</span><p className="font-medium">{payment.reference || '—'}</p></div>
+        </div>
+        <div className="border-t pt-4">
+          <Attachments linkedType="payment" linkedId={payment.id} label="Attachments (receipt, WHT certificate, remittance advice)" />
+        </div>
+        <div className="flex justify-end pt-2 border-t">
+          <button type="button" onClick={onClose} className="btn-secondary">Close</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -145,12 +191,24 @@ function UnappliedPaymentsTab() {
         </span>
       ),
     },
-    { key: 'amount', header: 'Amount', render: (r) => formatCurrency(r.amount), className: 'text-right' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      className: 'text-right',
+      render: (r) => (
+        <div>
+          <span className="font-medium">{formatCurrency(r.amount, r.currency)}</span>
+          {r.currency !== 'KES' && (
+            <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.amount) * Number(r.fx_rate || 1), 'KES')}</p>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'unapplied',
       header: 'Unapplied Balance',
       render: (r) => (
-        <span className="font-semibold text-amber-600">{formatCurrency(r.unapplied)}</span>
+        <span className="font-semibold text-amber-600">{formatCurrency(r.unapplied, r.currency)}</span>
       ),
       className: 'text-right',
     },
@@ -318,13 +376,18 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     // API contract: serde expects snake_case PaymentType ('customer_payment' | 'vendor_payment').
     payment_type: 'customer_payment',
     amount: 0,
+    currency: 'KES',
+    fx_rate: 1,
     method: 'BankTransfer',
     reference: '',
     party_id: '',
     payment_date: new Date().toISOString().split('T')[0],
     bank_account_id: '',
+    funding_source: 'bank' as 'bank' | 'director', // pay-from: company bank vs director's loan / owner funds
+    funding_account: '4200', // GL account when funding_source = 'director'
     apply_to_document_id: '',
     apply_amount: 0,
+    wht_amount: 0, // withholding tax withheld by the customer (KES), customer receipts only
   });
 
   const isCustomer = form.payment_type === 'customer_payment';
@@ -338,6 +401,19 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
     queryKey: ['vendors'],
     queryFn: () => getVendors().then((r) => r.data),
   });
+  const { data: bankAccounts = [] } = useQuery<any[]>({
+    queryKey: ['bank-accounts'],
+    queryFn: () => getBankAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+  // Liability/equity accounts that can fund a payment off-bank (e.g. Directors
+  // Loans, owner's capital) — used when 'Paid from' is the director.
+  const { data: accounts = [] } = useQuery<any[]>({
+    queryKey: ['accounts'],
+    queryFn: () => getAccounts().then((r) => (Array.isArray(r.data) ? r.data : [])),
+  });
+  const fundingAccounts = accounts
+    .filter((a) => (a.account_type === 'Liability' || a.account_type === 'Equity') && a.is_active && !a.is_control)
+    .sort((a, b) => a.code.localeCompare(b.code));
   const parties = isCustomer ? customers : vendors;
 
   // Open documents to apply against, scoped to the selected party.
@@ -390,10 +466,18 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
       party_id: form.party_id,
       payment_date: form.payment_date,
       amount: form.amount,
+      currency: form.currency,
+      fx_rate: form.fx_rate,
       method,
       reference: form.reference,
-      bank_account_id: form.bank_account_id || undefined,
+      bank_account_id: form.funding_source === 'bank' ? (form.bank_account_id || undefined) : undefined,
+      // Off-bank funding (director's loan / owner funds): the payment's bank leg
+      // posts to this GL account instead of a cash account.
+      funding_account: form.funding_source === 'director' ? form.funding_account : undefined,
       applications,
+      // WHT withheld by the customer (KES). The receipt clears the full invoice
+      // as cash (amount) + WHT, posting the credit to WHT Receivable.
+      wht_amount: isCustomer && form.wht_amount > 0 ? form.wht_amount : undefined,
     });
   };
 
@@ -429,9 +513,9 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="label">Amount (KES) *</label>
+            <label className="label">Amount ({form.currency}) *</label>
             <input
               type="number"
               className="input"
@@ -441,6 +525,18 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
               required
             />
           </div>
+          <div>
+            <label className="label">Currency</label>
+            <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value, fx_rate: e.target.value === 'KES' ? 1 : form.fx_rate })}>
+              <option value="KES">KES</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">FX Rate → KES</label>
+            <input type="number" step="0.0001" className="input" value={form.fx_rate} disabled={form.currency === 'KES'} onChange={(e) => setForm({ ...form, fx_rate: +e.target.value })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Payment Date *</label>
             <input
@@ -468,13 +564,42 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div>
-            <label className="label">Bank Account</label>
-            <input
+            <label className="label">Paid {isCustomer ? 'into' : 'from'}</label>
+            <select
               className="input"
-              value={form.bank_account_id}
-              onChange={(e) => setForm({ ...form, bank_account_id: e.target.value })}
-              placeholder="Optional — bank account ID"
-            />
+              value={form.funding_source}
+              onChange={(e) => setForm({ ...form, funding_source: e.target.value as 'bank' | 'director' })}
+            >
+              <option value="bank">Bank account</option>
+              <option value="director">Director's loan / owner funds</option>
+            </select>
+            {form.funding_source === 'bank' ? (
+              <select
+                className="input mt-2"
+                value={form.bank_account_id}
+                onChange={(e) => setForm({ ...form, bank_account_id: e.target.value })}
+              >
+                <option value="">Default / unspecified</option>
+                {bankAccounts.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <select
+                  className="input mt-2"
+                  value={form.funding_account}
+                  onChange={(e) => setForm({ ...form, funding_account: e.target.value })}
+                >
+                  {fundingAccounts.map((a) => (
+                    <option key={a.code} value={a.code}>{a.code} — {a.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {isCustomer ? 'Funds received by the director on the company\u2019s behalf' : 'Paid by the director personally — credits the director\u2019s loan instead of a company bank account.'}
+                </p>
+              </>
+            )}
           </div>
         </div>
         <div>
@@ -501,6 +626,9 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
                     ...form,
                     apply_to_document_id: e.target.value,
                     apply_amount: doc ? Number(doc.balance_due ?? 0) : form.apply_amount,
+                    // Match the receipt currency/rate to the document being settled.
+                    currency: doc?.currency ?? form.currency,
+                    fx_rate: doc ? Number(doc.fx_rate ?? 1) : form.fx_rate,
                   });
                 }}
                 disabled={!form.party_id}
@@ -527,6 +655,30 @@ function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           </div>
           <p className="text-xs text-gray-400 mt-1">Leave blank to record as unapplied payment</p>
         </div>
+
+        {isCustomer && (
+          <div>
+            <label className="label">Withholding Tax withheld (KES)</label>
+            <input
+              type="number"
+              step="0.01"
+              className="input"
+              value={form.wht_amount}
+              onChange={(e) => setForm({ ...form, wht_amount: +e.target.value })}
+              placeholder="0.00"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              If the customer withheld 5% WHT, enter the certificate amount (in KES). The cash received above
+              plus this WHT clears the full invoice; the WHT posts to <span className="font-mono">1310 WHT Receivable</span>.
+            </p>
+            {form.wht_amount > 0 && form.apply_amount > 0 && (
+              <p className="text-xs text-blue-600 mt-1">
+                Cash {Number(form.amount).toFixed(2)} + WHT {Number(form.wht_amount).toFixed(2)} clears invoice balance {Number(form.apply_amount).toFixed(2)}.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-end gap-3 pt-4 border-t">
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancel

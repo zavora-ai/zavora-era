@@ -19,7 +19,10 @@ pub async fn create_customer(
         None => engine.config_for(entity_id).await?.base_currency.clone(),
     };
     let payment_terms = req.payment_terms.unwrap_or(crate::types::PaymentTerms::Net30);
-    let ar_account = req.ar_account.unwrap_or_else(|| "1200".to_string());
+    let ar_account = match req.ar_account {
+        Some(a) => a,
+        None => engine.posting_for(entity_id).await?.accounts_receivable.clone(),
+    };
     let reminder_policy = req.reminder_policy.unwrap_or_default();
 
     sqlx::query(
@@ -63,7 +66,10 @@ pub async fn create_vendor(
         None => engine.config_for(entity_id).await?.base_currency.clone(),
     };
     let payment_terms = req.payment_terms.unwrap_or(crate::types::PaymentTerms::Net30);
-    let ap_account = req.ap_account.unwrap_or_else(|| "3010".to_string());
+    let ap_account = match req.ap_account {
+        Some(a) => a,
+        None => engine.posting_for(entity_id).await?.accounts_payable.clone(),
+    };
 
     sqlx::query(
         r#"INSERT INTO vendors 

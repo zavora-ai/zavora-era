@@ -926,15 +926,19 @@ pub async fn post_unmatched(engine: &ErpEngine, entity_id: Uuid, req: PostUnmatc
         id: req.statement_line_id,
     })?;
 
-    // Determine the bank GL account for this bank account
-    let bank_gl_account = sqlx::query_scalar::<_, String>(
+    // Determine the bank GL account for this bank account, falling back to the
+    // tenant's configured default bank account (not a hardcoded code).
+    let bank_gl_account = match sqlx::query_scalar::<_, String>(
         "SELECT gl_account FROM bank_accounts WHERE id = $1 AND entity_id = $2",
     )
     .bind(txn.bank_account)
     .bind(entity_id)
     .fetch_optional(engine.pool())
     .await?
-    .unwrap_or_else(|| "1020".to_string()); // Default to bank account code
+    {
+        Some(a) => a,
+        None => engine.posting_for(entity_id).await?.default_bank.clone(),
+    };
 
     let amount = txn.debit.or(txn.credit).unwrap_or(Decimal::ZERO);
     if amount == Decimal::ZERO {

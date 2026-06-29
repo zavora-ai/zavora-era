@@ -52,6 +52,10 @@ pub struct VendorRow {
     pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub general_business_group_id: Option<Uuid>,
+    #[serde(default)]
+    pub vat_business_group_id: Option<Uuid>,
 }
 
 /// Request to create a vendor.

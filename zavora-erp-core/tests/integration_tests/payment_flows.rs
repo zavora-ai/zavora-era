@@ -182,6 +182,9 @@ fn customer_payment(
             document_id: invoice_id,
             amount,
         }],
+        wht_amount: None,
+        wht_account: None,
+        funding_account: None,
     }
 }
 

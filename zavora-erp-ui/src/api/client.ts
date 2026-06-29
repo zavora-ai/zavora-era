@@ -199,7 +199,10 @@ export const createEmployee = (data: any) => api.post('/employees', data);
 
 // === Products ===
 export const getProducts = () => api.get('/products');
+export const getProduct = (id: string) => api.get(`/products/${id}`);
 export const createProduct = (data: any) => api.post('/products', data);
+export const updateProduct = (id: string, data: any) => api.put(`/products/${id}`, data);
+export const deleteProduct = (id: string) => api.delete(`/products/${id}`);
 
 // === Invoices ===
 export const getInvoices = (params?: PageParams) => api.get('/invoices', { params });
@@ -300,6 +303,12 @@ export const getBankRecs = (bankAccountId?: string) =>
 export const createBankAccount = (data: any) => api.post('/bank-accounts', data);
 export const deleteBankAccount = (id: string) => api.delete(`/bank-accounts/${id}`);
 export const importStatement = (data: any) => api.post('/bank/import', data);
+// PDF / Excel bank-statement extraction (review-before-commit). Returns candidate rows.
+export const extractBankStatement = (file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post('/bank/import/extract', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 export const reconcileStatement = (id: string) => api.post(`/bank/reconcile/${id}`);
 export const confirmMatch = (data: any) => api.post('/bank/confirm-match', data);
 
@@ -317,6 +326,7 @@ export const runDepreciation = () => api.post('/assets/depreciation/run');
 // === FX Rates ===
 export const getFxRates = () => api.get('/fx-rates');
 export const upsertFxRate = (data: any) => api.post('/fx-rates', data);
+export const deleteFxRate = (id: string) => api.delete(`/fx-rates/${id}`);
 export const runFxRevaluation = () => api.post('/fx/revaluation');
 
 // === Audit ===
@@ -332,6 +342,19 @@ export const captureReceipt = (formData: FormData) =>
   api.post('/receipts/capture', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 export const confirmReceipt = (data: { capture_id: string; vendor_id: string; adjustments: any }) =>
   api.post('/receipts/confirm', data);
+
+// === Document attachments (source files linked to bills/invoices/etc.) ===
+export const getAttachments = (linked_type: string, linked_id: string) =>
+  api.get('/attachments', { params: { linked_type, linked_id } });
+export const uploadAttachment = (linked_type: string, linked_id: string, file: File) => {
+  const fd = new FormData();
+  fd.append('linked_type', linked_type);
+  fd.append('linked_id', linked_id);
+  fd.append('file', file);
+  return api.post('/attachments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const getAttachment = (id: string) => api.get(`/attachments/${id}`);
+export const deleteAttachment = (id: string) => api.delete(`/attachments/${id}`);
 
 // === Accounts Seed ===
 export const seedAccounts = () => api.post('/accounts/seed');

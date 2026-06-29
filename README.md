@@ -154,8 +154,9 @@ and return `{ data, total_count, limit, offset, has_more }`.
 - `POST /payments/mpesa-callback` — M-Pesa Daraja webhook (idempotent)
 
 ### Banking & Transactions
-- `GET|POST /bank-accounts`, `DELETE /bank-accounts/{id}`
+- `GET|POST /bank-accounts`, `DELETE /bank-accounts/{id}` — each account is linked to a GL account (choose per currency so balances don't co-mingle)
 - `POST /bank/import` — import a statement (CSV / MT940 / OFX) into the categorisation queue (idempotent)
+- `POST /bank/import/extract` — extract candidate rows from a **PDF** or **Excel** statement (PDFium text + balance-delta / calamine) for review before committing
 - `POST /bank/confirm-match` — confirm a suggested match
 - `GET /bank/reconciliations`, `POST /bank/reconciliations/compute|complete`, `POST /bank/reconcile/{id}`
 - `GET /transactions` — categorisation queue

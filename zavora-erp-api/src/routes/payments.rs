@@ -29,21 +29,36 @@ pub async fn get_one(
     }
 }
 
+// Flat query struct: `#[serde(flatten)]` is NOT supported by the urlencoded
+// query deserializer, so list the fields explicitly.
+#[derive(serde::Deserialize)]
+pub struct PaymentListQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    /// `status=unapplied` returns only payments that still carry unapplied credit.
+    pub status: Option<String>,
+}
+
 pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
-    axum::extract::Query(page): axum::extract::Query<crate::routes::pagination::PaginationParams>,
+    axum::extract::Query(q): axum::extract::Query<PaymentListQuery>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments WHERE entity_id = $1")
+    let page = crate::routes::pagination::PaginationParams { limit: q.limit, offset: q.offset };
+    let page = &page;
+    // The "Unapplied" tab requests only payments that still have credit to allocate.
+    let filter = if q.status.as_deref() == Some("unapplied") { " AND unapplied > 0" } else { "" };
+
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM payments WHERE entity_id = $1{filter}"))
         .bind(ctx.entity_id).fetch_one(state.engine.pool()).await.unwrap_or(0);
     let rows = sqlx::query_as::<_, PaymentRow>(
-        "SELECT * FROM payments WHERE entity_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+        &format!("SELECT * FROM payments WHERE entity_id = $1{filter} ORDER BY created_at DESC LIMIT $2 OFFSET $3"),
     )
     .bind(ctx.entity_id).bind(page.effective_limit()).bind(page.effective_offset())
     .fetch_all(state.engine.pool())
     .await;
     match rows {
-        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, &page)).unwrap_or_default())),
+        Ok(r) => Ok(Json(serde_json::to_value(crate::routes::pagination::PaginatedResponse::new(r, total, page)).unwrap_or_default())),
         Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
     }
 }
@@ -72,7 +87,28 @@ pub async fn mpesa_callback(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MpesaCallbackWrapper>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    match svc::record_mpesa_payment(&state.engine, state.engine.entity_id(), req.invoice_id, req.callback).await {
+    // This webhook is unauthenticated (Daraja calls it), so the tenant cannot be
+    // derived from a JWT. Resolve it from the invoice the payment is for — NOT
+    // the process-global startup entity, which would mis-post in multi-tenant
+    // deployments.
+    let entity_id = match sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT entity_id FROM invoices WHERE id = $1",
+    )
+    .bind(req.invoice_id)
+    .fetch_optional(state.engine.pool())
+    .await
+    {
+        Ok(Some(eid)) => eid,
+        Ok(None) => {
+            return Err(err_response(zavora_erp_core::ErpError::NotFound {
+                entity_type: "Invoice".to_string(),
+                id: req.invoice_id,
+            }))
+        }
+        Err(e) => return Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    };
+
+    match svc::record_mpesa_payment(&state.engine, entity_id, req.invoice_id, req.callback).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
@@ -81,8 +117,8 @@ pub async fn mpesa_callback(
 #[derive(serde::Deserialize)]
 pub struct MpesaStkPushBody {
     pub invoice_id: uuid::Uuid,
+    /// Optional override; falls back to the customer's primary phone.
     #[serde(default)]
-    #[allow(dead_code)] // part of the request contract; used once a Daraja gateway is configured
     pub phone: Option<String>,
 }
 
@@ -121,10 +157,61 @@ pub async fn mpesa_stk_push(
         }));
     }
 
-    // Daraja gateway integration is provisioned outside this deployment.
-    Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
-        message: "M-Pesa STK Push gateway is not configured for this deployment.".to_string(),
-    }))
+    // Build the Daraja client from deployment credentials. Absent → clear error.
+    let client = match zavora_erp_core::payments::daraja::DarajaClient::from_env() {
+        Some(c) => c,
+        None => {
+            return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+                message: "M-Pesa STK Push is not configured on this deployment (set MPESA_CONSUMER_KEY/SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_URL).".to_string(),
+            }));
+        }
+    };
+
+    // Resolve the amount due and a phone number for the prompt.
+    let (number, balance_due, customer_phone) = sqlx::query_as::<_, (String, rust_decimal::Decimal, serde_json::Value)>(
+        "SELECT i.number, i.balance_due, COALESCE(c.phone, '[]'::jsonb)
+         FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+         WHERE i.id = $1 AND i.entity_id = $2",
+    )
+    .bind(req.invoice_id)
+    .bind(ctx.entity_id)
+    .fetch_one(state.engine.pool())
+    .await
+    .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)))?;
+
+    // Prefer the explicit phone in the request, else the customer's primary phone.
+    let phone = req.phone.clone().or_else(|| {
+        serde_json::from_value::<Vec<zavora_erp_core::types::ContactPhone>>(customer_phone)
+            .ok()
+            .and_then(|ps| ps.into_iter().find(|p| !p.number.is_empty()).map(|p| p.number))
+    });
+    let phone = match phone {
+        Some(p) => p,
+        None => {
+            return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+                message: "No phone number for the STK Push. Provide one or set the customer's phone.".to_string(),
+            }))
+        }
+    };
+
+    if balance_due <= rust_decimal::Decimal::ZERO {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: "Invoice has no outstanding balance to collect.".to_string(),
+        }));
+    }
+
+    match client
+        .stk_push(&phone, balance_due, &number, &format!("Payment for {number}"))
+        .await
+    {
+        Ok(r) => Ok(Json(serde_json::json!({
+            "checkout_request_id": r.checkout_request_id,
+            "merchant_request_id": r.merchant_request_id,
+            "response_code": r.response_code,
+            "customer_message": r.customer_message,
+        }))),
+        Err(e) => Err(err_response(e)),
+    }
 }
 
 /// POST /payments/apply — Apply unapplied payment funds to a target document.

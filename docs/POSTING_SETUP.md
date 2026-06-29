@@ -8,9 +8,10 @@ model (Business Central / SAP style) that later phases build on.
 ## How it works
 
 - `PostingSetup` (`zavora-erp-core/src/posting/mod.rs`) holds the account code for
-  each accounting role: control accounts (AR/AP), clearing (unapplied payments),
-  tax (VAT output/input, WHT), FX (realised/unrealised), equity (retained
-  earnings), default income/expense, and the payroll statutory accounts.
+  each accounting role: control accounts (AR/AP), clearing (unapplied payments,
+  GRNI inventory clearing), tax (VAT output/input, WHT), FX (realised/unrealised),
+  equity (retained earnings), default income/expense, inventory (asset, COGS,
+  clearing), and the payroll statutory accounts.
 - It is stored per entity in `entity_settings.posting_setup` (JSONB). An empty
   object falls back to `PostingSetup::default()`, which mirrors the seeded Kenya
   Standard chart of accounts — so existing entities keep working with no config.
@@ -36,12 +37,20 @@ API:
 | Posting path | Accounts resolved from posting setup |
 |---|---|
 | Invoice post / credit note | `accounts_receivable`, `vat_output`, `default_sales` |
-| Bill line default | `default_expense` |
+| Bill line default | `default_expense` (default `7350` Software/Cloud for services-first tenants) |
+| Inventory receipt (standalone) | `inventory_asset`, `inventory_clearing` (GRNI) |
+| Inventory issue (standalone) | `cost_of_goods_sold`, `inventory_asset` |
 | Payments | `accounts_receivable`, `accounts_payable`, `unapplied_payments`, `wht_payable`, `default_bank` |
 | FX (payment) | `realised_fx_gain`, `realised_fx_loss` |
 | FX revaluation | `unrealised_fx_gain`, `unrealised_fx_loss` |
 | Year-end close | `retained_earnings` |
 | Payroll posting | `salaries_expense`, `nssf_employer_expense`, `housing_levy_employer_expense`, `paye_payable`, `nssf_payable`, `sha_payable`, `helb_payable`, `housing_levy_payable`, `net_pay_payable` |
+
+> **Per-bank-account GL override.** `default_bank` is only the fallback. Each
+> `bank_accounts` row carries its own `gl_account` (chosen on the Add Bank Account
+> form), so cash postings for that account hit its ledger account — keep a
+> distinct GL per currency (e.g. KES → 1020, M-Pesa → 1030, USD → 1040) so
+> balances don't co-mingle and the foreign account can be revalued cleanly.
 
 ## Known issue surfaced by this work
 

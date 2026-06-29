@@ -19,9 +19,10 @@ pub async fn create_asset(
     let asset_number = format!("FA-{:06}", id.as_fields().0 % 1_000_000);
     let residual = req.residual_value.unwrap_or(Decimal::ZERO);
     let useful_life = req.useful_life_months.unwrap_or(60);
-    let gl_asset = req.gl_asset_account.unwrap_or_else(|| "2500".to_string());
-    let gl_accum = req.gl_accum_depr_account.unwrap_or_else(|| "2600".to_string());
-    let gl_expense = req.gl_depr_expense.unwrap_or_else(|| "7600".to_string());
+    let posting = engine.posting_for(entity_id).await?;
+    let gl_asset = req.gl_asset_account.unwrap_or_else(|| posting.fixed_asset.clone());
+    let gl_accum = req.gl_accum_depr_account.unwrap_or_else(|| posting.accumulated_depreciation.clone());
+    let gl_expense = req.gl_depr_expense.unwrap_or_else(|| posting.depreciation_expense.clone());
 
     sqlx::query(
         r#"INSERT INTO fixed_assets 

@@ -14,7 +14,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { ArrowLeftRight, Sparkles, Split, Merge, Ban, Check, Search } from 'lucide-react';
 
-type FilterStatus = 'all' | 'uncategorised' | 'categorised' | 'excluded';
+type FilterStatus = 'all' | 'uncategorised' | 'categorised' | 'posted' | 'excluded';
 
 export default function TransactionsPage() {
   const [filter, setFilter] = useState<FilterStatus>('uncategorised');
@@ -104,7 +104,7 @@ export default function TransactionsPage() {
       {/* Filter tabs */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-1 border-b border-gray-200">
-          {(['uncategorised', 'categorised', 'excluded', 'all'] as FilterStatus[]).map((f) => (
+          {(['uncategorised', 'posted', 'excluded', 'all'] as FilterStatus[]).map((f) => (
             <button
               key={f}
               onClick={() => { setFilter(f); setSelectedIds([]); }}
@@ -218,7 +218,7 @@ export default function TransactionsPage() {
                     }`}
                   >
                     {txn.amount > 0 ? '+' : ''}
-                    {formatCurrency(txn.amount)}
+                    {formatCurrency(txn.amount, txn.currency || 'KES')}
                   </span>
 
                   {/* Action buttons for uncategorised */}
@@ -358,7 +358,7 @@ function SplitModal({ txn, onClose }: { txn: CategorisationTransaction; onClose:
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-gray-50 rounded-lg p-3 flex justify-between text-sm">
           <span className="text-gray-500">Original Amount</span>
-          <span className="font-semibold">{formatCurrency(Math.abs(txn.amount))}</span>
+          <span className="font-semibold">{formatCurrency(Math.abs(txn.amount), txn.currency || 'KES')}</span>
         </div>
 
         <div className="space-y-3">
@@ -592,7 +592,7 @@ function ManualAssignModal({ txn, onClose }: { txn: CategorisationTransaction; o
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-gray-50 rounded-lg p-3 flex justify-between text-sm">
           <span className="text-gray-500">Amount</span>
-          <span className="font-semibold">{formatCurrency(txn.amount)}</span>
+          <span className="font-semibold">{formatCurrency(txn.amount, txn.currency || 'KES')}</span>
         </div>
 
         {/* AI suggestion hint */}

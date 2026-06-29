@@ -30,6 +30,10 @@ dotenvy = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 base64 = "0.22"
 async-trait = "0.1"
+# Local PDF text-layer extraction (digital bank statements & invoices). Binds the
+# Pdfium engine at runtime via dlopen, so no native lib is required to build; the
+# libpdfium dynamic library must be present at runtime (PDFIUM_LIB_PATH or system).
+pdfium-render = "0.8"
 
 [dev-dependencies]
 proptest = "1"

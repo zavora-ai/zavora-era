@@ -25,4 +25,7 @@ pub mod messaging;
 pub mod scheduler;
 pub mod ocr;
 pub mod ocr_provider;
+pub mod statement_pdf;
+pub mod statement_xlsx;
+pub mod attachments;
 pub mod wht;

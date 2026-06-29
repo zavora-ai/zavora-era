@@ -15,6 +15,8 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+# Excel/ODS statement import (M-Pesa & bank .xlsx exports) — pure Rust, no native deps.
+calamine = { version = "0.26", features = ["dates"] }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

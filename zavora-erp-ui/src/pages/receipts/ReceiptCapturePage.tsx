@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import api, { getVendors } from '../../api/client';
+import api, { getVendors, getFxRates, getSettings } from '../../api/client';
 import type { Vendor } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
@@ -33,6 +33,8 @@ interface OcrResult {
   total_confidence: number;
   vat_amount: number;
   vat_amount_confidence: number;
+  currency?: string;
+  currency_confidence?: number;
   line_items: OcrLineItem[];
   suggested_vendor_id?: string;
   suggested_vendor_name?: string;
@@ -136,6 +138,9 @@ export default function ReceiptCapturePage() {
     mutationFn: (payload: {
       capture_id: string;
       vendor_id: string;
+      currency?: string;
+      fx_rate?: number;
+      account_code?: string;
       adjustments: {
         vendor_name: string;
         date: string;
@@ -315,6 +320,8 @@ function ReviewPanel({
   onConfirm: (payload: {
     capture_id: string;
     vendor_id: string;
+    currency?: string;
+    fx_rate?: number;
     adjustments: {
       vendor_name: string;
       date: string;
@@ -337,6 +344,32 @@ function ReviewPanel({
   const [lineItems, setLineItems] = useState<OcrLineItem[]>(
     ocrResult.line_items,
   );
+
+  // Multi-currency: capture the document currency + spot rate so a foreign
+  // receipt (e.g. Amazon Ads in USD/EUR) posts at functional value instead of 1:1.
+  const { data: settings } = useQuery<any>({ queryKey: ['settings'], queryFn: () => getSettings().then((r) => r.data) });
+  const baseCurrency: string = settings?.base_currency ?? 'KES';
+  const { data: fxRates = [] } = useQuery<any[]>({ queryKey: ['fx-rates'], queryFn: () => getFxRates().then((r) => (Array.isArray(r.data) ? r.data : [])) });
+  // Seed the currency from what the parser detected on the document, falling
+  // back to base currency. The user can still change it.
+  const detectedCurrency = (ocrResult.currency || '').toUpperCase();
+  const [currency, setCurrency] = useState(detectedCurrency || baseCurrency);
+  const [fxRate, setFxRate] = useState('1');
+  const [fxTouched, setFxTouched] = useState(false);
+  const lookupSpot = (ccy: string, d: string): number | null => {
+    if (ccy === baseCurrency) return 1;
+    const m = fxRates
+      .filter((r) => r.from_ccy === ccy && r.to_ccy === baseCurrency && (!d || r.rate_date <= d))
+      .sort((a, b) => (a.rate_date < b.rate_date ? 1 : -1));
+    return m.length ? Number(m[0].rate) : null;
+  };
+  useEffect(() => {
+    if (fxTouched) return;
+    if (currency === baseCurrency) { setFxRate('1'); return; }
+    const s = lookupSpot(currency, date);
+    if (s != null) setFxRate(String(s));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, date, fxRates, baseCurrency]);
 
   const { data: vendors = [] } = useQuery<Vendor[]>({
     queryKey: ['vendors'],
@@ -365,6 +398,8 @@ function ReviewPanel({
     onConfirm({
       capture_id: captureId,
       vendor_id: selectedVendorId,
+      currency,
+      fx_rate: parseFloat(fxRate) || 1,
       adjustments: {
         vendor_name: vendorName,
         date,
@@ -463,6 +498,42 @@ function ReviewPanel({
                 onChange={(e) => setVatAmount(parseFloat(e.target.value) || 0)}
               />
             </FieldWrapper>
+
+            {/* Currency */}
+            <div>
+              <label className="label">Currency</label>
+              <select
+                className="input"
+                value={currency}
+                onChange={(e) => { setCurrency(e.target.value); setFxTouched(false); }}
+              >
+                {[baseCurrency, 'USD', 'EUR', 'GBP', 'KES', detectedCurrency]
+                  .filter((c) => c)
+                  .filter((c, i, a) => a.indexOf(c) === i)
+                  .map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+              </select>
+            </div>
+
+            {/* FX Rate (only when foreign) */}
+            {currency !== baseCurrency && (
+              <div>
+                <label className="label">
+                  FX Rate (1 {currency} = ? {baseCurrency})
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  className="input"
+                  value={fxRate}
+                  onChange={(e) => { setFxRate(e.target.value); setFxTouched(true); }}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Auto-filled from the spot rate on {date || 'the invoice date'}; edit if needed.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -539,17 +610,23 @@ function ReviewPanel({
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-600">Subtotal (excl. VAT)</span>
             <span className="font-medium">
-              {formatCurrency(total - vatAmount)}
+              {formatCurrency(total - vatAmount, currency)}
             </span>
           </div>
           <div className="flex justify-between items-center text-sm mt-1">
             <span className="text-gray-600">VAT</span>
-            <span className="font-medium">{formatCurrency(vatAmount)}</span>
+            <span className="font-medium">{formatCurrency(vatAmount, currency)}</span>
           </div>
           <div className="flex justify-between items-center text-base font-bold mt-2 pt-2 border-t">
-            <span>Total</span>
-            <span>{formatCurrency(total)}</span>
+            <span>Total ({currency})</span>
+            <span>{formatCurrency(total, currency)}</span>
           </div>
+          {currency !== baseCurrency && (
+            <div className="flex justify-between items-center text-sm mt-1 text-gray-500">
+              <span>≈ in {baseCurrency} @ {fxRate}</span>
+              <span>{formatCurrency(total * (parseFloat(fxRate) || 0), baseCurrency)}</span>
+            </div>
+          )}
         </div>
 
         {error && (

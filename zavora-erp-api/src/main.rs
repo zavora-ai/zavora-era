@@ -54,6 +54,13 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("../migrations").run(&pool).await?;
     tracing::info!("Migrations applied");
 
+    // Self-heal the statutory WHT rates if they're missing (migration 021 seeds
+    // them once with ON CONFLICT DO NOTHING, so a wiped/restored volume would
+    // otherwise leave WHT silently resolving to 0).
+    if let Err(e) = zavora_erp_core::services::wht::ensure_seeded(&pool).await {
+        tracing::warn!("Failed to ensure WHT rates are seeded: {e}");
+    }
+
     // Redis connection
     let redis_client = redis::Client::open(redis_url)?;
     let redis_conn = redis_client.get_multiplexed_async_connection().await?;
@@ -173,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/employees/{id}", get(routes::parties::get_employee).put(routes::parties::update_employee))
         // Products
         .route("/api/v1/products", get(routes::catalog::list_products).post(routes::catalog::create_product))
-        .route("/api/v1/products/{id}", get(routes::catalog::get_product).put(routes::catalog::update_product))
+        .route("/api/v1/products/{id}", get(routes::catalog::get_product).put(routes::catalog::update_product).delete(routes::catalog::delete_product))
         // Invoices
         .route("/api/v1/invoices", get(routes::invoices::list).post(routes::invoices::create))
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_one).put(routes::invoices::update).delete(routes::invoices::delete))
@@ -232,6 +239,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank-accounts", get(routes::bank::list_accounts).post(routes::bank::create_account))
         .route("/api/v1/bank-accounts/{id}", delete(routes::bank::delete_account))
         .route("/api/v1/bank/import", post(routes::bank::import_statement))
+        .route("/api/v1/bank/import/extract", post(routes::bank::extract_statement))
         .route("/api/v1/bank/reconcile/{id}", post(routes::bank::reconcile))
         .route("/api/v1/bank/reconciliations", get(routes::reconciliation::list))
         .route("/api/v1/bank/reconciliations/compute", post(routes::reconciliation::compute))
@@ -252,6 +260,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
         // FX Rates
         .route("/api/v1/fx-rates", get(routes::fx::list).post(routes::fx::upsert))
+        .route("/api/v1/fx-rates/{id}", delete(routes::fx::delete))
         .route("/api/v1/fx/revaluation", post(routes::fx::revaluation))
         // Audit
         .route("/api/v1/audit", get(routes::audit::query))
@@ -269,6 +278,9 @@ async fn main() -> anyhow::Result<()> {
         // Receipts (OCR capture and confirm)
         .route("/api/v1/receipts/capture", post(routes::receipts::capture))
         .route("/api/v1/receipts/confirm", post(routes::receipts::confirm))
+        // Document attachments (link source files to bills/invoices/etc.)
+        .route("/api/v1/attachments", post(routes::attachments::upload).get(routes::attachments::list))
+        .route("/api/v1/attachments/{id}", get(routes::attachments::get_one).delete(routes::attachments::delete))
         // Agent API
         .route("/api/v1/agent/post", post(routes::agent::post_from_agent))
         .route("/api/v1/agent/report", post(routes::agent::run_report))

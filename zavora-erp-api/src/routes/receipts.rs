@@ -94,13 +94,25 @@ pub async fn capture(
         .await
         .map_err(er)?;
 
-    // Run OCR synchronously via the configured provider.
-    let ocr_input = OcrInput { bytes, mime_type, filename };
-    let result = state
-        .ocr
-        .extract(&ocr_input)
-        .await
-        .unwrap_or_else(|_| zavora_erp_core::services::ocr_provider::empty_result());
+    // Run OCR synchronously. For digital PDFs (most supplier invoices), pull the
+    // text layer locally with Pdfium and apply the receipt heuristics — no sidecar
+    // needed. Fall back to the configured provider for images and scanned PDFs (an
+    // empty local text layer).
+    let is_pdf = mime_type.contains("pdf") || filename.to_lowercase().ends_with(".pdf");
+    let local_pdf_text = if is_pdf { crate::routes::pdf_text::extract_pdf_text(&bytes) } else { None };
+    let result = match local_pdf_text {
+        Some(text) => zavora_erp_core::services::ocr_provider::ocr_from_xberg_rest(
+            &serde_json::json!({ "content": text, "detected_languages": ["eng"] }),
+        ),
+        None => {
+            let ocr_input = OcrInput { bytes, mime_type, filename };
+            state
+                .ocr
+                .extract(&ocr_input)
+                .await
+                .unwrap_or_else(|_| zavora_erp_core::services::ocr_provider::empty_result())
+        }
+    };
 
     // Persist the result + vendor match + status, and audit it.
     ocr::process_ocr_result(&state.engine, entity_id, capture_id, result.clone())
@@ -159,6 +171,8 @@ fn ocr_result_to_ui(
         "total_confidence": r.total_confidence.unwrap_or(overall),
         "vat_amount": r.vat_amount.unwrap_or(rust_decimal::Decimal::ZERO),
         "vat_amount_confidence": r.vat_amount_confidence.unwrap_or(overall),
+        "currency": r.currency.clone().unwrap_or_default(),
+        "currency_confidence": r.currency_confidence.unwrap_or(overall),
         "line_items": line_items,
         "suggested_vendor_id": suggested_vendor_id,
         "suggested_vendor_name": suggested_vendor_name,
@@ -171,6 +185,10 @@ pub struct ConfirmRequest {
     pub capture_id: Uuid,
     pub vendor_id: Uuid,
     pub account_code: Option<String>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<rust_decimal::Decimal>,
     pub adjustments: Option<ReceiptAdjustments>,
 }
 
@@ -189,6 +207,8 @@ pub async fn confirm(
         capture_id: req.capture_id,
         vendor_id: req.vendor_id,
         account_code: req.account_code,
+        currency: req.currency,
+        fx_rate: req.fx_rate,
         adjustments: req.adjustments,
     };
 

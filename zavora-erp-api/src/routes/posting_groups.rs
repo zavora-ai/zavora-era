@@ -132,6 +132,12 @@ pub async fn upsert_general(
     Json(r): Json<GeneralCellReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
+    // sales_account / purchase_account are NOT NULL in the table; the editor may
+    // send only the field that changed (e.g. just sales for a royalty row), so
+    // coerce any missing account to "" — the resolver treats empty as
+    // "fall through to the product / flat setup", which is the intended meaning.
+    let sales = r.sales_account.clone().unwrap_or_default();
+    let purchase = r.purchase_account.clone().unwrap_or_default();
     sqlx::query(
         "DELETE FROM general_posting_matrix WHERE entity_id=$1 AND gen_biz_group_id=$2 AND gen_prod_group_id=$3",
     ).bind(ctx.entity_id).bind(r.gen_biz_group_id).bind(r.gen_prod_group_id)
@@ -140,7 +146,7 @@ pub async fn upsert_general(
         "INSERT INTO general_posting_matrix (id, entity_id, gen_biz_group_id, gen_prod_group_id, sales_account, purchase_account, cogs_account)
          VALUES ($1,$2,$3,$4,$5,$6,$7)",
     ).bind(Uuid::new_v4()).bind(ctx.entity_id).bind(r.gen_biz_group_id).bind(r.gen_prod_group_id)
-        .bind(&r.sales_account).bind(&r.purchase_account).bind(&r.cogs_account)
+        .bind(&sales).bind(&purchase).bind(&r.cogs_account)
         .execute(state.engine.pool()).await
         .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)).into_response())?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -162,6 +168,10 @@ pub async fn upsert_vat(
     Json(r): Json<VatCellReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
+    // vat_output_account / vat_input_account are NOT NULL; coerce missing to ""
+    // (resolver treats empty as fall-through), so a partial cell edit still saves.
+    let out = r.vat_output_account.clone().unwrap_or_default();
+    let inp = r.vat_input_account.clone().unwrap_or_default();
     sqlx::query(
         "DELETE FROM vat_posting_matrix WHERE entity_id=$1 AND vat_biz_group_id=$2 AND vat_prod_group_id=$3",
     ).bind(ctx.entity_id).bind(r.vat_biz_group_id).bind(r.vat_prod_group_id)
@@ -170,7 +180,7 @@ pub async fn upsert_vat(
         "INSERT INTO vat_posting_matrix (id, entity_id, vat_biz_group_id, vat_prod_group_id, vat_rate, vat_output_account, vat_input_account)
          VALUES ($1,$2,$3,$4,$5,$6,$7)",
     ).bind(Uuid::new_v4()).bind(ctx.entity_id).bind(r.vat_biz_group_id).bind(r.vat_prod_group_id)
-        .bind(r.vat_rate).bind(&r.vat_output_account).bind(&r.vat_input_account)
+        .bind(r.vat_rate).bind(&out).bind(&inp)
         .execute(state.engine.pool()).await
         .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)).into_response())?;
     Ok(Json(serde_json::json!({ "ok": true })))

@@ -113,6 +113,9 @@ export interface Customer {
   reminder_policy: string;
   portal_enabled: boolean;
   is_active: boolean;
+  notes?: string;
+  general_business_group_id?: string;
+  vat_business_group_id?: string;
   created_at: string;
 }
 
@@ -157,6 +160,8 @@ export interface Vendor {
   bank_details?: BankDetails;
   notes?: string;
   is_active: boolean;
+  general_business_group_id?: string;
+  vat_business_group_id?: string;
   created_at: string;
 }
 
@@ -184,6 +189,8 @@ export interface Product {
   track_inventory: boolean;
   inventory_item_id?: string;
   is_active: boolean;
+  general_product_group_id?: string;
+  vat_product_group_id?: string;
   created_at: string;
 }
 
@@ -354,6 +361,9 @@ export interface BrandingConfig {
   primary_color: string;
   kra_pin?: string;
   vat_number?: string;
+  registration_number?: string;
+  address?: string;
+  phone?: string;
 }
 
 export interface DocumentSequences {
@@ -512,7 +522,7 @@ export interface ExchangeRateEntry {
   to_ccy: string;
   rate_date: string;
   rate_type: string;
-  rate: number;
+  rate: string; // serialised Decimal (string); coerce with Number() before maths
   source: string;
 }
 
@@ -521,6 +531,7 @@ export interface CategorisationTransaction {
   id: string;
   entity_id: string;
   bank_account_id: string;
+  currency?: string;
   date: string;
   description: string;
   amount: number;

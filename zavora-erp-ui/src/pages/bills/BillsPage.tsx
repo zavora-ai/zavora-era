@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions, createSupplierCreditNote } from '../../api/client';
+import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions, createSupplierCreditNote, getFxRates, getSettings } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
@@ -10,13 +10,15 @@ import PaginationControls from '../../components/shared/PaginationControls';
 import { usePagination } from '../../hooks/usePagination';
 import Modal from '../../components/shared/Modal';
 import { QuickAddParty, QuickAddProduct, type QuickProduct } from '../../components/shared/QuickAdd';
-import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText } from 'lucide-react';
+import Attachments from '../../components/shared/Attachments';
+import { Plus, CheckCircle, Pencil, Trash2, Eye, ReceiptText, Paperclip } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function BillsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [scnBill, setScnBill] = useState<Bill | null>(null);
+  const [attachBill, setAttachBill] = useState<Bill | null>(null);
   const [filter, setFilter] = useState<string>('all');
   // Deep-link from a vendor's "New Bill": /bills?new=1&vendor=<id> opens the
   // create form pre-filled for that vendor.
@@ -61,8 +63,20 @@ export default function BillsPage() {
     { key: 'vendor_id', header: 'Vendor', render: (r) => <span className="text-gray-900">{vendorName(r.vendor_id)}</span> },
     { key: 'issue_date', header: 'Date', render: (r) => formatDate(r.issue_date) },
     { key: 'due_date', header: 'Due', render: (r) => formatDate(r.due_date) },
-    { key: 'gross_total', header: 'Amount', render: (r) => <span className="font-medium">{formatCurrency(r.gross_total)}</span>, className: 'text-right' },
-    { key: 'wht_amount', header: 'WHT', render: (r) => r.wht_amount > 0 ? formatCurrency(r.wht_amount) : '—', className: 'text-right' },
+    {
+      key: 'gross_total',
+      header: 'Amount',
+      className: 'text-right',
+      render: (r) => (
+        <div>
+          <span className="font-medium">{formatCurrency(r.gross_total, r.currency)}</span>
+          {r.currency !== 'KES' && (
+            <p className="text-xs text-gray-400">≈ {formatCurrency(Number(r.gross_total) * Number(r.fx_rate || 1), 'KES')}</p>
+          )}
+        </div>
+      ),
+    },
+    { key: 'wht_amount', header: 'WHT', render: (r) => r.wht_amount > 0 ? formatCurrency(r.wht_amount, r.currency) : '—', className: 'text-right' },
     {
       key: 'actions', header: '',
       render: (r) => (
@@ -74,6 +88,13 @@ export default function BillsPage() {
           >
             <Eye className="w-3 h-3" />
           </Link>
+          {/* Attachments available at every status — the source document
+              (e.g. an OCR-captured invoice) should be viewable before posting. */}
+          {hasRole(ROLES_CREATE) && (
+            <button onClick={() => setAttachBill(r)} className="btn-secondary text-xs py-1 px-2" title="Attachments">
+              <Paperclip className="w-3 h-3" />
+            </button>
+          )}
           {r.status === 'draft' && (
             <>
               {hasRole(ROLES_APPROVE) && (
@@ -95,9 +116,11 @@ export default function BillsPage() {
             </button>
           )}
           {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (
-            <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
-              <ReceiptText className="w-3 h-3" /> Credit Note
-            </button>
+            <>
+              <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
+                <ReceiptText className="w-3 h-3" /> Credit Note
+              </button>
+            </>
           )}
         </div>
       )
@@ -135,6 +158,14 @@ export default function BillsPage() {
       {showCreate && <CreateBillModal initialVendorId={newVendorId} onClose={() => setShowCreate(false)} />}
       {editId && <CreateBillModal editId={editId} onClose={() => setEditId(null)} />}
       {scnBill && <SupplierCreditNoteModal bill={scnBill} onClose={() => setScnBill(null)} />}
+      {attachBill && (
+        <Modal open={true} onClose={() => setAttachBill(null)} title={`Attachments — ${attachBill.number}`}>
+          <Attachments linkedType="bill" linkedId={attachBill.id} label="Source document (supplier invoice / receipt)" />
+          <div className="flex justify-end pt-4 mt-2 border-t">
+            <button type="button" onClick={() => setAttachBill(null)} className="btn-secondary">Close</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -166,8 +197,31 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
     vendor_invoice_number: '',
     notes: '',
     currency: 'KES',
+    fx_rate: '1',
     lines: [emptyLine()],
   });
+
+  // Stored spot rates for auto-filling the exchange rate on a foreign-currency bill.
+  const { data: fxRates = [] } = useQuery<any[]>({ queryKey: ['fx-rates'], queryFn: () => getFxRates().then(r => Array.isArray(r.data) ? r.data : []) });
+  const { data: settings } = useQuery<any>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
+  const baseCurrency: string = settings?.base_currency ?? 'KES';
+  const lookupSpotRate = (ccy: string, date: string): number | null => {
+    if (ccy === baseCurrency) return 1;
+    const matches = fxRates
+      .filter((r) => r.from_ccy === ccy && r.to_ccy === baseCurrency && r.rate_date <= date)
+      .sort((a, b) => (a.rate_date < b.rate_date ? 1 : -1));
+    return matches.length ? Number(matches[0].rate) : null;
+  };
+  // Auto-fill the rate from stored spot rates on currency/date change (unless the
+  // user overrode it). Base currency is always 1.
+  const fxTouched = useRef(false);
+  useEffect(() => {
+    if (fxTouched.current) return;
+    if (form.currency === baseCurrency) { if (form.fx_rate !== '1') setForm((f) => ({ ...f, fx_rate: '1' })); return; }
+    const spot = lookupSpotRate(form.currency, form.issue_date);
+    if (spot != null) setForm((f) => ({ ...f, fx_rate: String(spot) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.currency, form.issue_date, fxRates, baseCurrency]);
 
   const [addingVendor, setAddingVendor] = useState(false);
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
@@ -198,6 +252,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
         vendor_invoice_number: bill.vendor_invoice_number || '',
         notes: bill.notes || '',
         currency: bill.currency || 'KES',
+        fx_rate: bill.fx_rate != null ? String(bill.fx_rate) : '1',
         lines: lines.length > 0 ? lines : [emptyLine()],
       });
     }
@@ -271,6 +326,8 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
       issue_date: form.issue_date,
       due_date: form.due_date || undefined,
       vendor_invoice_number: form.vendor_invoice_number || undefined,
+      currency: form.currency,
+      fx_rate: Number(form.fx_rate) || 1,
       notes: form.notes || undefined,
       lines: form.lines.map(l => ({
         product_id: l.product_id || undefined,
@@ -346,13 +403,21 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
               </div>
               <div>
                 <label className="label">Currency</label>
-                <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                <select className="input" value={form.currency} onChange={(e) => { fxTouched.current = false; setForm({ ...form, currency: e.target.value, fx_rate: e.target.value === baseCurrency ? '1' : form.fx_rate }); }}>
                   <option value="KES">KES - Kenya Shilling</option>
                   <option value="USD">USD - US Dollar</option>
                   <option value="EUR">EUR - Euro</option>
                   <option value="GBP">GBP - British Pound</option>
                 </select>
               </div>
+              {form.currency !== baseCurrency && (
+                <div>
+                  <label className="label">FX Rate → {baseCurrency}</label>
+                  <input type="number" step="0.0001" className="input" value={form.fx_rate}
+                    onChange={(e) => { fxTouched.current = true; setForm({ ...form, fx_rate: e.target.value }); }} />
+                  <p className="text-xs text-gray-400 mt-1">1 {form.currency} = {form.fx_rate} {baseCurrency} · {form.lines.reduce((s, l) => s + l.quantity * l.unit_price, 0).toFixed(2)} {form.currency} ≈ {(form.lines.reduce((s, l) => s + l.quantity * l.unit_price, 0) * (Number(form.fx_rate) || 1)).toFixed(2)} {baseCurrency}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -413,7 +478,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
                   </select>
                 </div>
                 <div className="col-span-1 text-right text-sm font-medium">
-                  {formatCurrency(line.quantity * line.unit_price)}
+                  {formatCurrency(line.quantity * line.unit_price, form.currency)}
                 </div>
                 <div className="col-span-1 text-center">
                   <button type="button" onClick={() => removeLine(i)} className="text-gray-400 hover:text-red-500 text-lg" disabled={form.lines.length === 1}>×</button>
@@ -434,31 +499,44 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
 
         {/* Notes + Totals row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left — Notes */}
-          <div>
-            <label className="label">Notes <span className="text-gray-400 font-normal">(internal)</span></label>
-            <textarea className="input" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes..." />
+          {/* Left — Notes + source document */}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Notes <span className="text-gray-400 font-normal">(internal)</span></label>
+              <textarea className="input" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes..." />
+            </div>
+            {isEdit && editId ? (
+              <Attachments linkedType="bill" linkedId={editId} label="Source document" />
+            ) : (
+              <p className="text-xs text-gray-400">Save the bill first, then re-open it to attach the source invoice.</p>
+            )}
           </div>
 
           {/* Right — Totals */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">{formatCurrency(subtotal)}</span>
+              <span className="font-medium">{formatCurrency(subtotal, form.currency)}</span>
             </div>
 
             {/* Tax lines */}
             {Object.entries(taxByRate).map(([rate, amount]) => (
               <div key={rate} className="flex justify-between text-sm">
                 <span className="text-gray-600">VAT ({rate}%)</span>
-                <span>{formatCurrency(amount)}</span>
+                <span>{formatCurrency(amount, form.currency)}</span>
               </div>
             ))}
 
             <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold">
               <span>Total ({form.currency})</span>
-              <span>{formatCurrency(grandTotal)}</span>
+              <span>{formatCurrency(grandTotal, form.currency)}</span>
             </div>
+            {form.currency !== 'KES' && (
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Equivalent in KES</span>
+                <span>{formatCurrency(grandTotal * (Number(form.fx_rate) || 0), 'KES')} @ {form.fx_rate || '—'}</span>
+              </div>
+            )}
           </div>
         </div>
 

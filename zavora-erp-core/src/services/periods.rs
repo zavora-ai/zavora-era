@@ -92,15 +92,18 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
 
     // Validate current state allows the requested close type
     match (&period.parsed_status(), &req.close_type) {
-        // Soft close: only from Open
+        // Soft close: from Open or Future. Future periods are postable, so they
+        // must be lockable too (e.g. locking a not-yet-started year while
+        // back-booking a prior one).
         (PeriodStatus::Open, PeriodCloseType::Soft) => {}
+        (PeriodStatus::Future, PeriodCloseType::Soft) => {}
         // Hard close: only from SoftClosed
         (PeriodStatus::SoftClosed, PeriodCloseType::Hard) => {}
-        // Hard close from Open is rejected — must soft-close first
-        (PeriodStatus::Open, PeriodCloseType::Hard) => {
+        // Hard close from Open/Future is rejected — must soft-close first
+        (PeriodStatus::Open, PeriodCloseType::Hard) | (PeriodStatus::Future, PeriodCloseType::Hard) => {
             return Err(ErpError::ValidationFailed {
                 message: format!(
-                    "Period '{}' is still Open; you must soft-close it before hard-closing",
+                    "Period '{}' is not soft-closed; you must soft-close it before hard-closing",
                     period.name
                 ),
             });
@@ -115,12 +118,6 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
         (PeriodStatus::HardClosed, _) => {
             return Err(ErpError::ValidationFailed {
                 message: "Period is already hard-closed and cannot be modified".to_string(),
-            });
-        }
-        // Cannot close a future period
-        (PeriodStatus::Future, _) => {
-            return Err(ErpError::ValidationFailed {
-                message: "Cannot close a future period".to_string(),
             });
         }
     }
@@ -282,6 +279,18 @@ pub async fn period_for_date(engine: &ErpEngine, entity_id: Uuid, date: NaiveDat
     .ok_or_else(|| ErpError::ValidationFailed {
         message: format!("No fiscal period found for date {}", date),
     })
+}
+
+/// The fiscal year a document `date` belongs to — i.e. the fiscal year of the
+/// period it posts into. Document numbers use THIS (not the calendar year the
+/// document is keyed in), so a 2025-dated invoice entered in 2026 is still
+/// numbered for 2025. Falls back to the calendar year when no period exists yet.
+pub async fn fiscal_year_for_date(engine: &ErpEngine, entity_id: Uuid, date: NaiveDate) -> i32 {
+    use chrono::Datelike;
+    period_for_date(engine, entity_id, date)
+        .await
+        .map(|p| p.fiscal_year)
+        .unwrap_or_else(|_| date.year())
 }
 
 /// List all periods for the entity.
