@@ -64,7 +64,7 @@ export default function ReportFilters({
         </>
       )}
       {meta.controls.includes('account') && (
-        <div><label className="label">Account code</label><input className="input w-32" value={params.account} onChange={(e) => setAccount(e.target.value)} placeholder="1200" /></div>
+        <div><label className="label">Account code</label><input className="input w-48" value={params.account} onChange={(e) => setAccount(e.target.value)} placeholder="Blank = all accounts" /></div>
       )}
       {meta.comparable && (
         <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">

@@ -2823,6 +2823,81 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
     let period_to = params.period_to.unwrap_or(today);
 
+    // --- ALL ACCOUNTS mode -------------------------------------------------
+    // A blank account_code means "show every account". We pull all posted lines
+    // in the period (with each line's account + name), compute each account's
+    // opening balance, and emit lines grouped by account_code with a per-account
+    // running balance. The report's opening/closing become the grand totals.
+    if account_code.trim().is_empty() {
+        // Opening balance per account (movement strictly before period start).
+        let openings = sqlx::query_as::<_, (String, Decimal)>(
+            r#"SELECT jl.account_code,
+                      COALESCE(SUM(COALESCE(jl.functional_debit,0) - COALESCE(jl.functional_credit,0)),0)
+               FROM journal_lines jl
+               WHERE jl.entity_id = $1 AND jl.entry_date < $2
+               GROUP BY jl.account_code"#,
+        )
+        .bind(entity_id)
+        .bind(period_from)
+        .fetch_all(engine.pool())
+        .await?;
+        let mut opening_by_acct: std::collections::HashMap<String, Decimal> =
+            openings.into_iter().collect();
+
+        let rows = sqlx::query_as::<_, GlDetailAllRow>(
+            r#"SELECT jl.account_code, a.name as account_name,
+                   je.id as entry_id, je.date, je.number as journal_number,
+                   je.description, je.reference, je.source, je.source_id,
+                   COALESCE(jl.functional_debit, 0) as debit,
+                   COALESCE(jl.functional_credit, 0) as credit
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.entry_id
+               JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+               WHERE je.entity_id = $1 AND je.status = 'posted'
+                 AND je.date >= $2 AND je.date <= $3
+               ORDER BY jl.account_code, je.date, je.number"#,
+        )
+        .bind(entity_id)
+        .bind(period_from)
+        .bind(period_to)
+        .fetch_all(engine.pool())
+        .await?;
+
+        let mut lines: Vec<GlDetailLine> = Vec::with_capacity(rows.len());
+        let mut running: std::collections::HashMap<String, Decimal> = std::collections::HashMap::new();
+        let total_opening: Decimal = opening_by_acct.values().copied().sum();
+        for r in &rows {
+            let bal = running
+                .entry(r.account_code.clone())
+                .or_insert_with(|| opening_by_acct.remove(&r.account_code).unwrap_or(Decimal::ZERO));
+            *bal += r.debit - r.credit;
+            lines.push(GlDetailLine {
+                date: r.date,
+                entry_id: r.entry_id,
+                journal_number: r.journal_number.clone(),
+                description: r.description.clone(),
+                reference: r.reference.clone(),
+                source: r.source.clone(),
+                source_id: r.source_id,
+                debit: r.debit,
+                credit: r.credit,
+                balance: *bal,
+                account_code: r.account_code.clone(),
+                account_name: r.account_name.clone(),
+            });
+        }
+        let total_movement: Decimal = lines.iter().map(|l| l.debit - l.credit).sum();
+        return Ok(GlDetailReport {
+            account_code: "ALL".to_string(),
+            account_name: "All Accounts".to_string(),
+            period_from,
+            period_to,
+            opening_balance: total_opening,
+            lines,
+            closing_balance: total_opening + total_movement,
+        });
+    }
+
     let account_name = sqlx::query_scalar::<_, String>(
         "SELECT name FROM accounts WHERE entity_id = $1 AND code = $2",
     )
@@ -2883,6 +2958,8 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
                 debit: r.debit,
                 credit: r.credit,
                 balance,
+                account_code: account_code.clone(),
+                account_name: account_name.clone(),
             }
         })
         .collect();
@@ -2900,6 +2977,23 @@ async fn gl_detail(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
 
 #[derive(Debug, sqlx::FromRow)]
 struct GlDetailQueryRow {
+    entry_id: Uuid,
+    date: NaiveDate,
+    journal_number: String,
+    description: String,
+    reference: String,
+    source: String,
+    source_id: Option<Uuid>,
+    debit: Decimal,
+    credit: Decimal,
+}
+
+/// Row for the "all accounts" GL detail run — like [`GlDetailQueryRow`] but also
+/// carries the account code/name so lines can be grouped per account.
+#[derive(Debug, sqlx::FromRow)]
+struct GlDetailAllRow {
+    account_code: String,
+    account_name: String,
     entry_id: Uuid,
     date: NaiveDate,
     journal_number: String,

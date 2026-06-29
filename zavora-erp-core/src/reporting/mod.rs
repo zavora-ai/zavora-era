@@ -294,6 +294,13 @@ pub struct GlDetailLine {
     pub debit: Decimal,
     pub credit: Decimal,
     pub balance: Decimal,
+    /// Account this line belongs to. Populated on an "all accounts" run so the
+    /// UI can group/label lines; for a single-account run it echoes the report's
+    /// account. Optional for backward compatibility with older serialized data.
+    #[serde(default)]
+    pub account_code: String,
+    #[serde(default)]
+    pub account_name: String,
 }
 
 /// VAT return (KRA VAT3 essentials) for a period.
