@@ -298,7 +298,14 @@ pub async fn confirm_and_create_bill(
     // recompute the VAT — this reproduces the receipt's gross without
     // double-counting. When VAT is zero we mark the line OutOfScope so no VAT is
     // added at all.
-    let lines = build_bill_lines(adj, total, vat_amount, &description, account_code.as_deref());
+    // Whether the entity reclaims input VAT. A non-registered entity treats any
+    // purchase VAT as part of the cost (no recoverable input-VAT line).
+    let vat_registered = engine
+        .config_for(entity_id)
+        .await
+        .map(|c| c.tax_config.vat_registered)
+        .unwrap_or(false);
+    let lines = build_bill_lines(adj, total, vat_amount, &description, account_code.as_deref(), vat_registered);
 
     // Create bill
     let bill_req = crate::ap::CreateBillRequest {
@@ -397,6 +404,7 @@ fn build_bill_lines(
     vat_amount: rust_decimal::Decimal,
     description: &str,
     account_code: Option<&str>,
+    vat_registered: bool,
 ) -> Vec<crate::invoicing::CreateInvoiceLineRequest> {
     use rust_decimal::Decimal;
 
@@ -436,14 +444,24 @@ fn build_bill_lines(
         }
     }
 
-    // Single line(s) derived from the VAT-inclusive receipt total. The cardinal
-    // rule: the posted bill's gross MUST equal the receipt total exactly,
-    // whatever the tax rate. The bill engine adds VAT *on top* of unit_price for
-    // rated lines, so we only use a rated treatment when the receipt's VAT
-    // actually matches that rate (within rounding) — e.g. Kenyan 16%. For any
-    // other rate (foreign invoices, 8%, etc.) we post the net as an OutOfScope
-    // line plus a separate OutOfScope "VAT/Tax" line, so nothing is re-computed
-    // and the gross reconciles to the cent.
+    // When the entity is NOT VAT-registered, any VAT on a purchase is
+    // irrecoverable and is part of the cost — post the FULL gross to the expense
+    // as a single OutOfScope line (never split VAT to a recoverable input
+    // account). This mirrors how the foreign SaaS bills (Google/GoDaddy) were
+    // booked and keeps a non-registered entity's books free of a phantom
+    // VAT-receivable balance.
+    if !vat_registered {
+        return vec![mk(description.to_string(), total, crate::types::VatTreatment::OutOfScope)];
+    }
+
+    // VAT-registered: single line(s) derived from the VAT-inclusive receipt
+    // total. The cardinal rule: the posted bill's gross MUST equal the receipt
+    // total exactly, whatever the tax rate. The bill engine adds VAT *on top* of
+    // unit_price for rated lines, so we only use a rated treatment when the
+    // receipt's VAT actually matches that rate (within rounding) — e.g. Kenyan
+    // 16%. For any other rate (foreign invoices, 8%, etc.) we post the net as an
+    // OutOfScope line plus a separate OutOfScope "VAT/Tax" line, so nothing is
+    // re-computed and the gross reconciles to the cent.
     if vat_amount > Decimal::ZERO && total > vat_amount {
         let net = total - vat_amount;
         let standard_vat = (net * crate::types::VatTreatment::Standard16.rate())
@@ -510,8 +528,8 @@ mod tests {
 
     #[test]
     fn kenyan_16pct_receipt_uses_single_rated_line() {
-        // 1160 incl. 160 VAT == 16% of 1000 net.
-        let lines = build_bill_lines(None, Decimal::new(1160, 0), Decimal::new(160, 0), "Acme", None);
+        // 1160 incl. 160 VAT == 16% of 1000 net. (VAT-registered entity.)
+        let lines = build_bill_lines(None, Decimal::new(1160, 0), Decimal::new(160, 0), "Acme", None, true);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].vat_treatment, Some(VatTreatment::Standard16));
         assert_eq!(total_gross(&lines), Decimal::new(1160, 0));
@@ -521,18 +539,32 @@ mod tests {
     fn foreign_tax_rate_reconciles_via_out_of_scope_lines() {
         // US invoice: total 162.37, tax 10.47 (~6.9%, NOT 16%). Must still total
         // exactly 162.37 — the regression that posted 176.20 before the fix.
+        // (VAT-registered entity.)
         let total = Decimal::new(162_37, 2);
         let vat = Decimal::new(10_47, 2);
-        let lines = build_bill_lines(None, total, vat, "StripesShop", None);
+        let lines = build_bill_lines(None, total, vat, "StripesShop", None, true);
         assert_eq!(lines.len(), 2, "net + tax as out-of-scope lines");
         assert!(lines.iter().all(|l| l.vat_treatment == Some(VatTreatment::OutOfScope)));
         assert_eq!(total_gross(&lines), total);
     }
 
     #[test]
+    fn non_vat_registered_folds_vat_into_expense() {
+        // A non-VAT-registered entity must NOT split VAT to a recoverable input
+        // account: the full gross posts as one OutOfScope line on the expense.
+        let total = Decimal::new(61_36, 2); // Amazon Ads USD, incl. 8.46 VAT
+        let vat = Decimal::new(8_46, 2);
+        let lines = build_bill_lines(None, total, vat, "Amazon Advertising", None, false);
+        assert_eq!(lines.len(), 1, "single full-gross expense line");
+        assert_eq!(lines[0].vat_treatment, Some(VatTreatment::OutOfScope));
+        assert_eq!(lines[0].unit_price, Some(total));
+        assert_eq!(total_gross(&lines), total);
+    }
+
+    #[test]
     fn no_vat_posts_single_out_of_scope_line() {
         let total = Decimal::new(500, 0);
-        let lines = build_bill_lines(None, total, Decimal::ZERO, "Cash sale", None);
+        let lines = build_bill_lines(None, total, Decimal::ZERO, "Cash sale", None, true);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].vat_treatment, Some(VatTreatment::OutOfScope));
         assert_eq!(total_gross(&lines), total);
