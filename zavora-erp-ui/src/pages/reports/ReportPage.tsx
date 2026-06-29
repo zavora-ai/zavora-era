@@ -39,7 +39,7 @@ function ReportView({ meta }: { meta: ReportMeta }) {
   const [asAt, setAsAt] = useState(today);
   const [from, setFrom] = useState(qFrom ?? yearStart);
   const [to, setTo] = useState(qTo ?? today);
-  const [account, setAccount] = useState(qAccount ?? '1200');
+  const [account, setAccount] = useState(qAccount ?? '');
   const [partyId, setPartyId] = useState('');
   const [compare, setCompare] = useState(false);
   const [dimensionType, setDimensionType] = useState('');

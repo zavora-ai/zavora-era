@@ -1,8 +1,8 @@
 // Controls bar driven by a report's `controls` array, plus the
 // Generate / Print / Excel / CSV actions. Extracted faithfully from the monolith.
-import { FileDown, FileSpreadsheet, Printer } from 'lucide-react';
+import { FileDown, FileSpreadsheet, Printer, FileText } from 'lucide-react';
 import type { ReportMeta, ReportParams } from '../lib/reportTypes';
-import { exportDomAsExcel } from '../lib/exportHelpers';
+import { exportDomAsExcel, exportDomAsPdf } from '../lib/exportHelpers';
 
 interface Props {
   meta: ReportMeta;
@@ -30,6 +30,7 @@ export default function ReportFilters({
   const needsParty = meta.controls.includes('party');
   const needsDimension = meta.controls.includes('dimension');
   const exportExcel = () => exportDomAsExcel(result?.title || meta.name);
+  const exportPdf = () => exportDomAsPdf(result?.title || meta.name);
 
   return (
     <div className="card p-4 mb-5 flex flex-wrap items-end gap-4">
@@ -64,7 +65,7 @@ export default function ReportFilters({
         </>
       )}
       {meta.controls.includes('account') && (
-        <div><label className="label">Account code</label><input className="input w-32" value={params.account} onChange={(e) => setAccount(e.target.value)} placeholder="1200" /></div>
+        <div><label className="label">Account code</label><input className="input w-48" value={params.account} onChange={(e) => setAccount(e.target.value)} placeholder="Blank = all accounts" /></div>
       )}
       {meta.comparable && (
         <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">
@@ -78,6 +79,9 @@ export default function ReportFilters({
       </button>
       <button onClick={() => window.print()} className="btn-secondary" disabled={!result} title="Print / save as PDF">
         <Printer className="w-4 h-4" /> Print
+      </button>
+      <button onClick={exportPdf} className="btn-secondary" disabled={!result} title="Export to PDF">
+        <FileText className="w-4 h-4" /> PDF
       </button>
       <button onClick={exportExcel} className="btn-secondary" disabled={!result} title="Export to Excel">
         <FileSpreadsheet className="w-4 h-4" /> Excel
