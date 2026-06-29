@@ -133,7 +133,7 @@ pub async fn extract_statement(
     // Columns are explicit (Paid in / Withdrawn / Balance), so we map them
     // directly — no OCR and no balance reconciliation needed.
     if is_spreadsheet {
-        let rows = zavora_erp_core::services::statement_xlsx::parse_statement_xlsx(&bytes);
+        let (rows, recon) = zavora_erp_core::services::statement_xlsx::parse_statement_xlsx_checked(&bytes);
         if rows.is_empty() {
             return Err(er(zavora_erp_core::ErpError::ValidationFailed {
                 message: "No transaction rows found in the spreadsheet. Expected columns like Date/Completion Time, Description/Details, and Paid in/Withdrawn (or Debit/Credit) and Balance.".to_string(),
@@ -143,6 +143,7 @@ pub async fn extract_statement(
             "provider": "xlsx",
             "row_count": rows.len(),
             "rows": rows,
+            "reconciliation": recon,
         })));
     }
 

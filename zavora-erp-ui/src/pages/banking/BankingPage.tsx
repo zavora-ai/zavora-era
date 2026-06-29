@@ -421,6 +421,8 @@ function ImportStatementModal({
   const [pdfRows, setPdfRows] = useState<PdfRow[] | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [provider, setProvider] = useState<string | null>(null);
+  type Recon = { summary_paid_in: string; summary_paid_out: string; detail_paid_in: string; detail_paid_out: string; balanced: boolean };
+  const [recon, setRecon] = useState<Recon | null>(null);
 
   const onPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -428,10 +430,12 @@ function ImportStatementModal({
     setError(null);
     setExtracting(true);
     setPdfRows(null);
+    setRecon(null);
     setFilename(file.name);
     try {
       const res = await extractBankStatement(file);
       setProvider(res.data?.provider ?? null);
+      setRecon(res.data?.reconciliation ?? null);
       const rows: PdfRow[] = (res.data?.rows ?? []).map((r: any) => ({
         value_date: r.value_date,
         description: r.description ?? '',
@@ -584,6 +588,13 @@ function ImportStatementModal({
                         </tbody>
                       </table>
                     </div>
+                    {recon && (
+                      <div className={`mb-2 rounded-md px-3 py-2 text-xs ${recon.balanced ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+                        {recon.balanced
+                          ? `✓ Reconciles to the statement Summary — money in ${recon.summary_paid_in}, money out ${recon.summary_paid_out}.`
+                          : `⚠ Does not match the Summary totals. Detail in/out = ${recon.detail_paid_in}/${recon.detail_paid_out} vs Summary ${recon.summary_paid_in}/${recon.summary_paid_out}. Review before importing.`}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-gray-500">{pdfRows.length} rows{provider ? ` · read by ${provider === 'pdfium-local' ? 'local PDF reader' : provider === 'xlsx' ? 'Excel reader' : provider}` : ''} · amber = verify before importing</p>
                       <div className="flex gap-3">

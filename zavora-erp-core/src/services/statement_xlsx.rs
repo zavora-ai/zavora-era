@@ -23,21 +23,132 @@ use super::statement_pdf::ParsedPdfRow;
 /// Parse the first sheet that has a recognisable transaction header into rows.
 /// Returns an empty vec when the workbook can't be read or no statement table is
 /// found (the caller then reports "nothing detected").
+///
+/// M-Pesa (and several bank) workbooks lead with a **Summary** sheet of
+/// aggregates (Pay Bill / Buy Goods / … totals) before the detailed transaction
+/// sheet. That summary must never be mistaken for the statement, so summary-like
+/// sheets are skipped outright and the detailed transaction sheet is preferred.
 pub fn parse_statement_xlsx(bytes: &[u8]) -> Vec<ParsedPdfRow> {
+    parse_statement_xlsx_checked(bytes).0
+}
+
+/// Reconciliation of the detailed rows against the workbook's Summary totals.
+/// `None` when the workbook has no usable Summary sheet to check against.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StatementReconciliation {
+    /// Total credits (money in) from the Summary sheet.
+    pub summary_paid_in: Decimal,
+    /// Total debits (money out) from the Summary sheet.
+    pub summary_paid_out: Decimal,
+    /// Total credits summed from the detailed transaction rows.
+    pub detail_paid_in: Decimal,
+    /// Total debits summed from the detailed transaction rows.
+    pub detail_paid_out: Decimal,
+    /// True when both sides reconcile to the cent.
+    pub balanced: bool,
+}
+
+/// Parse the detailed rows **and** reconcile them against the Summary sheet.
+///
+/// The Summary sheet is never parsed as transactions, but its "Total" Paid In /
+/// Paid Out figures are an authoritative checksum: if the sum of the detailed
+/// rows doesn't match, the extraction is wrong (a missed/duplicated row, a
+/// column mis-map) and the caller should warn before importing.
+pub fn parse_statement_xlsx_checked(
+    bytes: &[u8],
+) -> (Vec<ParsedPdfRow>, Option<StatementReconciliation>) {
     let cursor = Cursor::new(bytes.to_vec());
     let mut wb = match open_workbook_auto_from_rs(cursor) {
         Ok(w) => w,
-        Err(_) => return Vec::new(),
+        Err(_) => return (Vec::new(), None),
     };
+
+    // Read the Summary totals first (if a summary sheet exists).
+    let mut summary: Option<(Decimal, Decimal)> = None;
     for name in wb.sheet_names().to_owned() {
+        if is_summary_sheet(&name) {
+            if let Ok(range) = wb.worksheet_range(&name) {
+                summary = summary_totals(&range);
+            }
+            break;
+        }
+    }
+
+    // Parse the first non-summary sheet that yields transactions.
+    let mut rows = Vec::new();
+    for name in wb.sheet_names().to_owned() {
+        if is_summary_sheet(&name) {
+            continue;
+        }
         if let Ok(range) = wb.worksheet_range(&name) {
-            let rows = parse_range(&range);
-            if !rows.is_empty() {
-                return rows;
+            let parsed = parse_range(&range);
+            if !parsed.is_empty() {
+                rows = parsed;
+                break;
             }
         }
     }
-    Vec::new()
+
+    let recon = summary.map(|(paid_in, paid_out)| {
+        let detail_in: Decimal = rows.iter().filter_map(|r| r.credit).sum();
+        let detail_out: Decimal = rows.iter().filter_map(|r| r.debit).sum();
+        let cent = Decimal::new(1, 2);
+        StatementReconciliation {
+            summary_paid_in: paid_in,
+            summary_paid_out: paid_out,
+            detail_paid_in: detail_in,
+            detail_paid_out: detail_out,
+            balanced: (detail_in - paid_in).abs() <= cent && (detail_out - paid_out).abs() <= cent,
+        }
+    });
+
+    (rows, recon)
+}
+
+/// Extract the "Total" Paid In / Paid Out figures from a Summary sheet. The
+/// M-Pesa summary is `Transaction Type | Paid In | Paid Out` with a final
+/// `Total` row. Returns `(paid_in, paid_out)` from that total row, else `None`.
+fn summary_totals(range: &calamine::Range<Data>) -> Option<(Decimal, Decimal)> {
+    // Locate the Paid In / Paid Out columns from the header.
+    let rows: Vec<&[Data]> = range.rows().collect();
+    let mut paid_in_col = None;
+    let mut paid_out_col = None;
+    for row in rows.iter().take(10) {
+        for (i, cell) in row.iter().enumerate() {
+            let h = cell_string(Some(cell)).to_lowercase();
+            if h.contains("paid in") || h.contains("money in") {
+                paid_in_col = Some(i);
+            } else if h.contains("paid out") || h.contains("money out") {
+                paid_out_col = Some(i);
+            }
+        }
+        if paid_in_col.is_some() && paid_out_col.is_some() {
+            break;
+        }
+    }
+    let (pin, pout) = (paid_in_col?, paid_out_col?);
+    // Prefer an explicit "Total" row; else sum every numeric data row.
+    for row in &rows {
+        let label = row.first().map(|c| cell_string(Some(c)).to_lowercase()).unwrap_or_default();
+        if label == "total" {
+            let i = cell_decimal(row.get(pin)).unwrap_or(Decimal::ZERO);
+            let o = cell_decimal(row.get(pout)).unwrap_or(Decimal::ZERO);
+            return Some((i, o));
+        }
+    }
+    None
+}
+
+/// True for sheets that hold aggregates/metadata rather than the transaction
+/// ledger — these must be skipped. Matches the M-Pesa "Summary" tab and common
+/// bank equivalents ("Totals", "Overview").
+fn is_summary_sheet(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    n == "summary"
+        || n.starts_with("summary")
+        || n.contains("summary")
+        || n == "totals"
+        || n == "overview"
 }
 
 /// Column roles resolved from a header row.
@@ -238,5 +349,33 @@ mod tests {
         assert!(rows[0].description.contains("ZAVORA HQ"), "other party appended");
         assert_eq!(rows[1].debit, Some(dec!(150.00)));
         assert_eq!(rows[1].credit, None);
+    }
+
+    #[test]
+    fn skips_summary_sheet_by_name() {
+        assert!(is_summary_sheet("Summary"));
+        assert!(is_summary_sheet("summary"));
+        assert!(is_summary_sheet("Account Summary"));
+        assert!(is_summary_sheet("Totals"));
+        assert!(!is_summary_sheet("M-PESA FULL STATEMENT - Merchan"));
+        assert!(!is_summary_sheet("Transactions"));
+    }
+
+    #[test]
+    fn summary_totals_reads_mpesa_total_row() {
+        use calamine::{Data, Range};
+        let mut r: Range<Data> = Range::new((0, 0), (9, 2));
+        r.set_value((0, 0), Data::String("Transaction Type".into()));
+        r.set_value((0, 1), Data::String("Paid In".into()));
+        r.set_value((0, 2), Data::String("Paid Out".into()));
+        r.set_value((2, 0), Data::String("Buy Goods".into()));
+        r.set_value((2, 1), Data::Float(55150.0));
+        r.set_value((2, 2), Data::Float(0.0));
+        r.set_value((9, 0), Data::String("Total".into()));
+        r.set_value((9, 1), Data::Float(55150.0));
+        r.set_value((9, 2), Data::Float(55150.0));
+        let (pin, pout) = summary_totals(&r).expect("totals");
+        assert_eq!(pin, dec!(55150));
+        assert_eq!(pout, dec!(55150));
     }
 }
