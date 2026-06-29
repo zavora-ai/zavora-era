@@ -283,6 +283,55 @@ pub(crate) async fn get_rate(
     })
 }
 
+/// Get the **month rate** for a currency pair for the month containing `date`.
+///
+/// Per IAS 21, a periodic (e.g. monthly) rate is permitted when rates don't
+/// fluctuate significantly. We use the rate dated on/closest to the month-end of
+/// `date`'s month: prefer a rate within that month (latest one, i.e. month-end),
+/// else fall back to the most recent rate on/before the month-end. This keeps a
+/// whole month's foreign receipts (e.g. Amazon KDP royalties paid monthly) on a
+/// single consistent rate.
+pub(crate) async fn get_month_rate(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    from_ccy: &str,
+    to_ccy: &str,
+    date: NaiveDate,
+) -> ErpResult<Decimal> {
+    use chrono::Datelike;
+    // Last day of `date`'s month.
+    let (y, m) = (date.year(), date.month());
+    let month_end = if m == 12 {
+        NaiveDate::from_ymd_opt(y + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(y, m + 1, 1)
+    }
+    .and_then(|d| d.pred_opt())
+    .unwrap_or(date);
+    let month_start = NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(date);
+
+    // Prefer the latest rate within the month (the month-end rate).
+    let in_month = sqlx::query_scalar::<_, Decimal>(
+        r#"SELECT rate FROM exchange_rates
+           WHERE entity_id = $1 AND from_ccy = $2 AND to_ccy = $3
+             AND rate_date >= $4 AND rate_date <= $5
+           ORDER BY rate_date DESC
+           LIMIT 1"#,
+    )
+    .bind(entity_id)
+    .bind(from_ccy)
+    .bind(to_ccy)
+    .bind(month_start)
+    .bind(month_end)
+    .fetch_optional(engine.pool())
+    .await?;
+    if let Some(r) = in_month {
+        return Ok(r);
+    }
+    // Else fall back to the most recent rate on/before the month-end.
+    get_rate(engine, entity_id, from_ccy, to_ccy, month_end).await
+}
+
 /// Compute the first day of the next month after a given date.
 fn next_period_start(period_end: NaiveDate) -> NaiveDate {
     period_end + chrono::Duration::days(1)

@@ -75,7 +75,10 @@ pub async fn categorise(engine: &ErpEngine, entity_id: Uuid, req: CategoriseRequ
     let fx_rate = if acct_currency == base_currency {
         Decimal::ONE
     } else {
-        crate::services::fx::get_rate(engine, entity_id, &acct_currency, &base_currency, txn.value_date).await?
+        // Use the month rate (IAS 21 periodic rate) — consistent across a
+        // month's foreign receipts (e.g. monthly KDP royalties) and immaterial
+        // vs daily for a stable currency.
+        crate::services::fx::get_month_rate(engine, entity_id, &acct_currency, &base_currency, txn.value_date).await?
     };
     let line_currency = acct_currency.clone();
     let line_fx = if fx_rate == Decimal::ONE { None } else { Some(fx_rate) };
