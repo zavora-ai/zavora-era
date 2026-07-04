@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "erp": {
+      "command": "${AMOS_MCP_ERP_BIN}",
+      "args": [],
+      "env": {
+        "ZAVORA_API_URL": "${ZAVORA_API_URL}",
+        "ZAVORA_EMAIL": "${ZAVORA_EMAIL}",
+        "ZAVORA_PASSWORD": "${ZAVORA_PASSWORD}"
+      }
+    },
+    "browser": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--viewport-size",
+        "1440,900",
+        "--output-dir",
+        "${AMOS_SHOWCASE_DIR}"
+      ]
+    }
+  }
+}

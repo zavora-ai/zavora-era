@@ -37,3 +37,7 @@ sample_data/
 
 # Local DB backups (contain real tenant data — never commit)
 backups/
+
+# Amos AI (credentials + runtime artifacts)
+amos/.env
+amos/showcase/
