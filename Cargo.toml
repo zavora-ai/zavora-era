@@ -2,8 +2,10 @@
 members = [
     "zavora-erp-core",
     "zavora-erp-api",
-    "amos",
 ]
+# NOTE: `amos` is intentionally NOT a workspace member — it path-depends on
+# ../../adk-rust and is not part of the deployable API image. Build it from
+# its own directory: `cd amos && cargo run`.
 resolver = "2"
 
 [workspace.package]

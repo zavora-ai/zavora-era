@@ -41,3 +41,4 @@ backups/
 # Amos AI (credentials + runtime artifacts)
 amos/.env
 amos/showcase/
+amos/target/
