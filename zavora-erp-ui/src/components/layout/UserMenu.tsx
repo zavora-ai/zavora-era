@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, CalendarClock } from 'lucide-react';
+import { ChevronDown, LogOut, CalendarClock, Globe } from 'lucide-react';
 import { getIdentity, logout, clearSession } from '../../api/client';
-import { getWorkDate, setWorkDate, realToday } from '../../utils/workDate';
+import {
+  getWorkDate, setWorkDate, realToday,
+  getTimezone, setTimezone, timezoneList, DEFAULT_TIMEZONE,
+} from '../../utils/workDate';
 
 export default function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [workDate, setWorkDateState] = useState<string>(getWorkDate() ?? '');
+  const [timezone, setTimezoneState] = useState<string>(getTimezone());
   const ref = useRef<HTMLDivElement>(null);
 
   const identity = getIdentity() as
@@ -54,6 +58,12 @@ export default function UserMenu() {
   };
   const workDateActive = !!workDate && workDate !== realToday();
 
+  const applyTimezone = (v: string) => {
+    setTimezoneState(v);
+    setTimezone(v || null);
+  };
+  const tzList = timezoneList();
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -95,6 +105,27 @@ export default function UserMenu() {
               </p>
               {workDateActive && (
                 <button onClick={() => applyWorkDate('')} className="text-[11px] text-indigo-600 hover:underline">Reset</button>
+              )}
+            </div>
+          </div>
+          {/* Timezone: per-user, so dates/"today" resolve in the user's zone. */}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-1">
+              <Globe className="w-3.5 h-3.5" /> Timezone
+            </label>
+            <select
+              value={timezone}
+              onChange={(e) => applyTimezone(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-md px-2 py-1.5 bg-white focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+            >
+              {tzList.map((tz) => (
+                <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-[11px] text-gray-400">Used to determine today's date.</p>
+              {timezone !== DEFAULT_TIMEZONE && (
+                <button onClick={() => applyTimezone('')} className="text-[11px] text-indigo-600 hover:underline">Reset</button>
               )}
             </div>
           </div>
