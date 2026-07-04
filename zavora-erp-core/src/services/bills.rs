@@ -33,9 +33,7 @@ pub async fn create_bill(
 
     let currency = req.currency.unwrap_or(vendor.currency.clone());
     let issue_date = req.issue_date.unwrap_or(today);
-    let payment_terms: crate::types::PaymentTerms =
-        serde_json::from_str(&format!("\"{}\"", vendor.payment_terms))
-            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let payment_terms = crate::types::PaymentTerms::parse_stored(&vendor.payment_terms);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
     // Ensure default posting groups exist + masters are assigned (idempotent),
@@ -246,9 +244,7 @@ pub async fn update_bill_draft(
 
     let currency = req.currency.clone().unwrap_or_else(|| vendor.currency.clone());
     let issue_date = req.issue_date.unwrap_or(today);
-    let payment_terms: crate::types::PaymentTerms =
-        serde_json::from_str(&format!("\"{}\"", vendor.payment_terms))
-            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let payment_terms = crate::types::PaymentTerms::parse_stored(&vendor.payment_terms);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
     // Ensure default posting groups exist + masters are assigned (idempotent),

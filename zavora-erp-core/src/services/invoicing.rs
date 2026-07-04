@@ -47,9 +47,7 @@ pub async fn create_invoice(
     let issue_date = req.issue_date.unwrap_or(today);
 
     // Determine due date from customer payment terms
-    let payment_terms: crate::types::PaymentTerms =
-        serde_json::from_str(&format!("\"{}\"", customer.payment_terms))
-            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let payment_terms = crate::types::PaymentTerms::parse_stored(&customer.payment_terms);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
     // Ensure this tenant has its default posting groups + matrices (idempotent;
@@ -1053,9 +1051,7 @@ pub async fn update_invoice_draft(
 
     let currency = req.currency.clone().unwrap_or_else(|| customer.currency.clone());
     let issue_date = req.issue_date.unwrap_or(today);
-    let payment_terms: crate::types::PaymentTerms =
-        serde_json::from_str(&format!("\"{}\"", customer.payment_terms))
-            .unwrap_or(crate::types::PaymentTerms::Net30);
+    let payment_terms = crate::types::PaymentTerms::parse_stored(&customer.payment_terms);
     let due_date = req.due_date.unwrap_or_else(|| payment_terms.due_date(issue_date));
 
     let mut lines = Vec::new();

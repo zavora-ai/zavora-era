@@ -90,6 +90,20 @@ impl PaymentTerms {
     pub fn due_date(&self, issue_date: NaiveDate) -> NaiveDate {
         issue_date + chrono::Duration::days(self.days() as i64)
     }
+
+    /// Parse a payment-terms value as stored in the DB.
+    ///
+    /// Vendors/customers persist terms via `serde_json::to_string`, which yields
+    /// a JSON-quoted string like `"Net30"`. Parsing must therefore treat the
+    /// stored value as JSON directly. (The previous call sites wrapped it in an
+    /// extra pair of quotes — `""Net30""` — which never parsed and silently fell
+    /// back to Net30 for every party, so non-Net30 terms were ignored.) Falls
+    /// back to a bare variant name, then to Net30.
+    pub fn parse_stored(s: &str) -> Self {
+        serde_json::from_str::<Self>(s)
+            .or_else(|_| serde_json::from_str::<Self>(&format!("\"{}\"", s)))
+            .unwrap_or(Self::Net30)
+    }
 }
 
 // === Channel ===
@@ -154,6 +168,38 @@ impl VatTreatment {
             Self::Petroleum8 => Decimal::new(8, 2),
             Self::ZeroRated | Self::Exempt | Self::OutOfScope => Decimal::ZERO,
         }
+    }
+}
+
+#[cfg(test)]
+mod payment_terms_tests {
+    use super::PaymentTerms;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn parse_stored_handles_json_quoted_form() {
+        // This is how vendors/customers actually store terms
+        // (serde_json::to_string → `"Net60"`). The old double-quoting bug made
+        // every non-Net30 party fall back to Net30.
+        assert_eq!(PaymentTerms::parse_stored("\"Net60\"").days(), 60);
+        assert_eq!(PaymentTerms::parse_stored("\"Net14\"").days(), 14);
+        assert_eq!(PaymentTerms::parse_stored("\"DueOnReceipt\"").days(), 0);
+    }
+
+    #[test]
+    fn parse_stored_handles_bare_form_and_garbage() {
+        assert_eq!(PaymentTerms::parse_stored("Net45").days(), 45);
+        // Unknown → safe default.
+        assert_eq!(PaymentTerms::parse_stored("garbage").days(), 30);
+    }
+
+    #[test]
+    fn due_date_reflects_terms() {
+        let issue = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        assert_eq!(
+            PaymentTerms::parse_stored("\"Net60\"").due_date(issue),
+            NaiveDate::from_ymd_opt(2025, 3, 2).unwrap()
+        );
     }
 }
 
