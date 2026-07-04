@@ -3,7 +3,8 @@
 A full-featured double-entry accounting engine built in Rust, targeting Kenyan
 SMEs with Wave Apps feature parity plus Kenya-specific compliance (KRA iTax,
 M-Pesa, PAYE/NSSF/SHA/HELB, WHT). Ships an immutable double-entry ledger, a
-multi-tenant REST API, and a React web UI.
+multi-tenant REST API, a React web UI, and **Amos** — a realtime voice + chat
+AI accountant that works the books for you.
 
 > **Project status.** Recent changes are logged in [`CHANGELOG.md`](CHANGELOG.md);
 > outstanding work (procurement, posting-group matrices, CI/containerization,
@@ -15,9 +16,29 @@ multi-tenant REST API, and a React web UI.
 zavora-erp-core/    — Library crate: domain models, business logic, DB operations
 zavora-erp-api/     — Binary crate: Axum REST API server + hourly scheduler
 zavora-erp-ui/      — React + Vite + TypeScript web client
+amos/               — Amos AI accountant (standalone crate; realtime agent, :8090)
 migrations/         — PostgreSQL schema + immutability triggers
 scripts/qbo/        — QuickBooks → Zavora import/replay/compare tooling
 ```
+
+## Amos — Your Personal AI Accountant
+
+Amos is the agentic layer on top of the ERP: a Gemini Live–powered voice + chat
+agent for non-accountant business owners. Ask it anything about the books or
+hand it multi-step work — it loads a matching **skill playbook**, shows a live
+**workplan**, executes through MCP tools against the real ledger, drives a
+headed browser through the ERP to **showcase** results, and files screenshot
+**evidence cards**. Postings always require explicit confirmation.
+
+![Amos embedded in the Zavora ERP shell](docs/assets/amos-embedded.png)
+
+Open it from the **“Amos — AI Accountant”** button in the sidebar (`/amos`), or
+standalone at `http://localhost:8090`. Amos is fully file-configurable —
+system prompt (`amos/system.md`), operating rules (`amos/AGENTS.md`), MCP
+servers (`amos/mcp.json`), and drop-in skills (`amos/skills/`). See
+[`amos/README.md`](amos/README.md) for setup, configuration, and skill
+authoring. Note: `amos` is intentionally **not** a workspace member — build it
+with `cd amos && cargo run`.
 
 ## Prerequisites
 

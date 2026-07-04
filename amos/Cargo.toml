@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 description = "Amos AI — your personal AI accountant for Zavora ERA (realtime voice + chat agent)"
 
+# Standalone workspace: amos path-depends on ../../adk-rust, so it must stay
+# out of the zavora-era workspace (whose Docker build has no adk-rust context).
+[workspace]
+
 [dependencies]
 # ADK (local path references, like the mia example)
 adk-core = { path = "../../adk-rust/adk-core" }
@@ -15,21 +19,21 @@ adk-skill = { path = "../../adk-rust/adk-skill" }
 # TLS crypto provider (required for rustls WebSocket connections)
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 
-tokio = { workspace = true }
+tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 async-trait = "0.1"
 
-axum = { workspace = true, features = ["ws", "macros"] }
-tower-http = { workspace = true, features = ["fs"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower-http = { version = "0.6", features = ["fs"] }
 
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
-uuid = { workspace = true }
-chrono = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-dotenvy = { workspace = true }
-anyhow = { workspace = true }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+anyhow = "1"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }

@@ -34,6 +34,8 @@ sample_data/
 
 # Screenshot artifacts (Playwright captures, ad-hoc PNGs)
 *.png
+# … but documentation images are committed
+!docs/assets/*.png
 
 # Local DB backups (contain real tenant data — never commit)
 backups/
@@ -41,3 +43,4 @@ backups/
 # Amos AI (credentials + runtime artifacts)
 amos/.env
 amos/showcase/
+amos/target/
