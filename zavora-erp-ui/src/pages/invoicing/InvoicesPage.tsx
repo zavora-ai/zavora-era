@@ -5,6 +5,7 @@ import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, p
 import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
+import { dueDateFromTerms, paymentTermsLabel } from '../../utils/paymentTerms';
 import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -401,6 +402,8 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
         discount_value: 0,
         send_on_save: false,
       });
+      // Preserve the saved invoice's due date — don't auto-derive over it.
+      dueDateTouched.current = true;
     }
   }, [existingInvoice, isEdit]);
 
@@ -419,6 +422,19 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
     if (spot != null) setForm((f) => ({ ...f, fx_rate: String(spot) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.currency, form.invoice_date, fxRates, baseCurrency]);
+
+  // Auto-derive the due date from the selected customer's payment terms
+  // (invoice date + N days), so the terms visibly take effect. Stops once the
+  // user edits the due date by hand, and never overrides a saved invoice.
+  const dueDateTouched = useRef(false);
+  useEffect(() => {
+    if (dueDateTouched.current || isEdit) return;
+    const c = customers.find((x) => x.id === form.customer_id);
+    if (!c) return;
+    const derived = dueDateFromTerms(form.invoice_date, c.payment_terms);
+    if (derived && derived !== form.due_date) setForm((f) => ({ ...f, due_date: derived }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.customer_id, form.invoice_date, customers, isEdit]);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
 
@@ -557,6 +573,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
                 <p className="font-medium text-gray-900">{selectedCustomer.name}</p>
                 {selectedCustomer.email?.[0] && <p>{selectedCustomer.email[0].email}</p>}
                 {selectedCustomer.kra_pin && <p>PIN: {selectedCustomer.kra_pin}</p>}
+                <p>Terms: <span className="font-medium text-gray-800">{paymentTermsLabel(selectedCustomer.payment_terms)}</span></p>
               </div>
             )}
           </div>
@@ -570,7 +587,7 @@ function CreateInvoiceModal({ editId, initialCustomerId, onClose }: { editId?: s
               </div>
               <div>
                 <label className="label">Payment Due</label>
-                <input type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+                <input type="date" className="input" value={form.due_date} onChange={(e) => { dueDateTouched.current = true; setForm({ ...form, due_date: e.target.value }); }} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
