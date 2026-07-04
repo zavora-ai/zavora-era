@@ -4,6 +4,7 @@ import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, pos
 import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
+import { dueDateFromTerms, paymentTermsLabel } from '../../utils/paymentTerms';
 import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -224,6 +225,32 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.currency, form.issue_date, fxRates, baseCurrency]);
 
+  // Auto-derive the due date from the selected vendor's payment terms
+  // (issue date + N days), so the terms visibly take effect. Stops once the
+  // user edits the due date by hand, and never overrides a saved bill's date.
+  const dueDateTouched = useRef(false);
+  useEffect(() => {
+    if (dueDateTouched.current || isEdit) return;
+    const v = vendors.find((x) => x.id === form.vendor_id);
+    if (!v) return;
+    const derived = dueDateFromTerms(form.issue_date, v.payment_terms);
+    if (derived && derived !== form.due_date) setForm((f) => ({ ...f, due_date: derived }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.vendor_id, form.issue_date, vendors, isEdit]);
+
+  // Default the bill currency to the vendor's billing currency (a USD vendor's
+  // bill should open in USD), unless the user has chosen one explicitly.
+  const currencyTouched = useRef(false);
+  useEffect(() => {
+    if (currencyTouched.current || isEdit) return;
+    const v = vendors.find((x) => x.id === form.vendor_id);
+    if (v?.currency && v.currency !== form.currency) {
+      fxTouched.current = false;
+      setForm((f) => ({ ...f, currency: v.currency, fx_rate: v.currency === baseCurrency ? '1' : f.fx_rate }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.vendor_id, vendors, isEdit]);
+
   const [addingVendor, setAddingVendor] = useState(false);
   const [addingItemForLine, setAddingItemForLine] = useState<number | null>(null);
 
@@ -256,6 +283,9 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
         fx_rate: bill.fx_rate != null ? String(bill.fx_rate) : '1',
         lines: lines.length > 0 ? lines : [emptyLine()],
       });
+      // Preserve the saved bill's due date / currency — don't auto-derive over them.
+      dueDateTouched.current = true;
+      currencyTouched.current = true;
     }
   }, [existingBill, isEdit]);
 
@@ -381,6 +411,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
               <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
                 <p className="font-medium text-gray-900">{selectedVendor.name}</p>
                 {selectedVendor.kra_pin && <p>PIN: {selectedVendor.kra_pin}</p>}
+                <p>Terms: <span className="font-medium text-gray-800">{paymentTermsLabel(selectedVendor.payment_terms)}</span>{selectedVendor.currency ? <> · Currency: <span className="font-medium text-gray-800">{selectedVendor.currency}</span></> : null}</p>
               </div>
             )}
           </div>
@@ -394,7 +425,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
               </div>
               <div>
                 <label className="label">Due Date</label>
-                <input type="date" className="input" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+                <input type="date" className="input" value={form.due_date} onChange={(e) => { dueDateTouched.current = true; setForm({ ...form, due_date: e.target.value }); }} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -404,7 +435,7 @@ function CreateBillModal({ editId, initialVendorId, onClose }: { editId?: string
               </div>
               <div>
                 <label className="label">Currency</label>
-                <select className="input" value={form.currency} onChange={(e) => { fxTouched.current = false; setForm({ ...form, currency: e.target.value, fx_rate: e.target.value === baseCurrency ? '1' : form.fx_rate }); }}>
+                <select className="input" value={form.currency} onChange={(e) => { fxTouched.current = false; currencyTouched.current = true; setForm({ ...form, currency: e.target.value, fx_rate: e.target.value === baseCurrency ? '1' : form.fx_rate }); }}>
                   <option value="KES">KES - Kenya Shilling</option>
                   <option value="USD">USD - US Dollar</option>
                   <option value="EUR">EUR - Euro</option>
