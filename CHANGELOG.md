@@ -8,6 +8,54 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-04 — Amos: your personal AI accountant
+
+Zavora ERA gains an agentic layer: **Amos**, a realtime voice + chat AI
+accountant (Gemini Live via adk-realtime) built for non-accountant business
+owners. Lives in the new standalone `amos/` crate (`:8090`) and is embedded in
+the web UI at `/amos` behind the "Amos — AI Accountant" sidebar button, so the
+ERP shell (navigation + branding) stays consistent. Documentation:
+[`amos/README.md`](amos/README.md); screenshot in the main README.
+
+#### Added
+- **Realtime voice + chat agent.** Mic audio streams to Gemini Live (16 kHz up
+  / 24 kHz down) with live transcripts both ways; typing works mid-voice
+  session. Session UI shows a live business snapshot (cash, AR/AP, overdue,
+  bank balances straight from the ledger), a **workplan** panel, screenshot
+  **evidence cards**, and a timestamped **activity trail** with "Posting"
+  badges on ledger writes.
+- **MCP toolset.** Tools bridge into the realtime session from two MCP servers
+  (configured in `amos/mcp.json`, Kiro format with `${VAR}` env expansion):
+  `mcp-erp` with a new **zavora backend** (JWT auth with auto re-login; bills,
+  payments incl. KES WHT and non-cash funding, reports, dashboard, journal
+  posting — see the mcp-erp repo), and `@playwright/mcp` driving a headed
+  Chrome through the ERP for showcasing, with **deterministic auto-login**
+  wrapped around `browser_navigate`.
+- **Skills (agentskills.io standard).** Drop-in `SKILL.md` playbooks under
+  `amos/skills/` teach Amos consistent multi-step procedures via progressive
+  disclosure (catalog line in the prompt, full body on demand through a
+  `use_skill` tool). Ships six: record-vendor-bill, record-payment,
+  financial-reporting, manual-journal, erp-showcase, month-end-review. A
+  skill's `allowed-tools` extends the MCP tool allowlist.
+- **File-based agent configuration.** System prompt (`amos/system.md`),
+  operating rules (`amos/AGENTS.md`, incl. confirm-before-post and
+  never-invent-figures guardrails), MCP servers (`amos/mcp.json`) — all
+  editable without recompiling.
+- **Service user.** Amos calls the API as `amos@zavora.ai` (Accountant role);
+  the visible browser signs in as a configurable account (`ERP_LOGIN_*`).
+
+#### Fixed
+- **Production deploy broke after the initial Amos merge** (PR #30 → #31): the
+  API Docker image only copies `zavora-erp-core`/`zavora-erp-api`, so listing
+  `amos` as a workspace member failed the image build — and `amos`
+  path-depends on `../../adk-rust`, which can never exist in that context.
+  `amos` is now its own cargo workspace with a committed lockfile; the root
+  workspace and Docker build are back to their previous shape.
+- **Upstream (adk-rust): batched Gemini tool calls dropped.** The Gemini Live
+  translator emitted only the first function call of a parallel batch, leaving
+  the model waiting forever for the missing responses (sessions stalled, then
+  aborted server-side). Fixed in `adk-realtime` to emit every call.
+
 ### 2026-06-28 — Multi-currency onboarding hardening (real-company validation)
 
 Surfaced while setting up a real Kenyan services company end-to-end through the
