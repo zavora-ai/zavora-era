@@ -2,6 +2,7 @@
 members = [
     "zavora-erp-core",
     "zavora-erp-api",
+    "amos",
 ]
 resolver = "2"
 

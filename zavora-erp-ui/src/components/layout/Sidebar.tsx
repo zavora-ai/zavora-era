@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
-  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing
+  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -63,6 +63,24 @@ export default function Sidebar() {
             <span className="text-[15px] font-bold text-white tracking-tight">Zavora ERP</span>
           </div>
         </div>
+      </div>
+
+      {/* Amos — AI Accountant */}
+      <div className="px-3 pt-3">
+        <NavLink
+          to="/amos"
+          className={({ isActive }) =>
+            clsx(
+              'flex items-center gap-2.5 px-3 py-[9px] rounded-lg text-[13px] font-semibold text-white bg-gradient-to-r shadow-lg shadow-indigo-900/30 transition-all duration-150',
+              isActive
+                ? 'from-indigo-500 to-purple-500'
+                : 'from-indigo-600/80 to-purple-600/70 hover:from-indigo-500/90 hover:to-purple-500/80'
+            )
+          }
+        >
+          <Sparkles className="w-[18px] h-[18px] shrink-0" />
+          <span className="flex-1">Amos — AI Accountant</span>
+        </NavLink>
       </div>
 
       {/* Navigation */}

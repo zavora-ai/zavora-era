@@ -1,0 +1,35 @@
+[package]
+name = "amos"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Amos AI — your personal AI accountant for Zavora ERA (realtime voice + chat agent)"
+
+[dependencies]
+# ADK (local path references, like the mia example)
+adk-core = { path = "../../adk-rust/adk-core" }
+adk-realtime = { path = "../../adk-rust/adk-realtime", features = ["gemini", "integration"] }
+adk-tool = { path = "../../adk-rust/adk-tool", features = ["mcp"] }
+adk-skill = { path = "../../adk-rust/adk-skill" }
+
+# TLS crypto provider (required for rustls WebSocket connections)
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
+
+tokio = { workspace = true }
+futures = "0.3"
+async-trait = "0.1"
+
+axum = { workspace = true, features = ["ws", "macros"] }
+tower-http = { workspace = true, features = ["fs"] }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }

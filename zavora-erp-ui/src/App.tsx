@@ -5,6 +5,7 @@ import { bootstrapAuth, getAccessToken } from './api/client';
 import AppShell from './components/layout/AppShell';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
+import AmosPage from './pages/amos/AmosPage';
 import InvoicesPage from './pages/invoicing/InvoicesPage';
 import InvoiceDetailPage from './pages/invoicing/InvoiceDetailPage';
 import EstimatesPage from './pages/invoicing/EstimatesPage';
@@ -98,6 +99,7 @@ export default function App() {
             }
           >
             <Route index element={<DashboardPage />} />
+            <Route path="amos" element={<AmosPage />} />
             <Route path="invoices" element={<InvoicesPage />} />
             <Route path="invoices/:id" element={<InvoiceDetailPage />} />
             <Route path="estimates" element={<EstimatesPage />} />
