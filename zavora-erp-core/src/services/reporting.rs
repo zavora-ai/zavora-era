@@ -182,8 +182,22 @@ fn title_for(report_type: &ReportType) -> String {
 
 /// Generate dashboard summary.
 pub async fn dashboard_summary(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<DashboardSummary> {
-    let now = Utc::now();
-    let today = now.date_naive();
+    dashboard_summary_as_at(engine, entity_id, None).await
+}
+
+/// Dashboard overview as at a given date (defaults to today). The optional
+/// `as_at` lets the UI align the dashboard to the user's "work-as-of" date so
+/// figures reflect the period being worked in (e.g. finalising a prior year)
+/// rather than the wall-clock date.
+pub async fn dashboard_summary_as_at(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    as_at: Option<NaiveDate>,
+) -> ErpResult<DashboardSummary> {
+    let today = as_at.unwrap_or_else(|| Utc::now().date_naive());
+    // Time-of-day only matters for the returned `as_at` timestamp; anchor it to
+    // the chosen date at midnight UTC so the dashboard reports "as at" that date.
+    let now = today.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc()).unwrap_or_else(Utc::now);
 
     // Total receivable
     let total_receivable = sqlx::query_scalar::<_, Decimal>(

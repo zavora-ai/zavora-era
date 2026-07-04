@@ -196,6 +196,15 @@ impl ErpEngine {
         crate::services::reporting::dashboard_summary(self, entity_id).await
     }
 
+    /// Dashboard overview as at a specific date (for the "work-as-of" view).
+    pub async fn dashboard_summary_as_at(
+        &self,
+        entity_id: Uuid,
+        as_at: Option<chrono::NaiveDate>,
+    ) -> ErpResult<DashboardSummary> {
+        crate::services::reporting::dashboard_summary_as_at(self, entity_id, as_at).await
+    }
+
     /// Validate a journal entry without posting.
     pub async fn validate_entry(
         &self,
