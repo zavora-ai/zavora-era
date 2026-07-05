@@ -1,4 +1,7 @@
-const AMOS_URL = import.meta.env.VITE_AMOS_URL || 'http://localhost:8090';
+// Dev: the standalone Amos service. Prod: same-origin path proxied by Caddy
+// (keeps the CDN/TLS story simple and lets the iframe inherit mic permission).
+const AMOS_URL =
+  import.meta.env.VITE_AMOS_URL || (import.meta.env.PROD ? '/amos-app' : 'http://localhost:8090');
 
 /**
  * Amos lives in its own service (:8090); embedding it keeps the ERP shell

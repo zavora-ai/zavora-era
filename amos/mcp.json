@@ -13,7 +13,9 @@
       "command": "npx",
       "args": [
         "--yes",
-        "@playwright/mcp@latest",
+        "@playwright/mcp@${AMOS_PLAYWRIGHT_MCP_VERSION}",
+        "--browser",
+        "${AMOS_BROWSER_CHANNEL}",
         "--isolated",
         "--viewport-size",
         "1440,900",

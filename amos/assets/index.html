@@ -372,6 +372,10 @@
 
 <script>
 'use strict';
+// Base path: '' when served at the root (:8090), '/amos-app' when reverse-
+// proxied behind the ERP's Caddy under a path prefix.
+const BASE = location.pathname.replace(/\/(index\.html)?$/, '');
+
 // ─── State ───────────────────────────────────────────────
 let ws = null, sessionActive = false, micOn = false;
 let mediaStream = null, captureCtx = null, playbackCtx = null;
@@ -508,7 +512,7 @@ function connect() {
   return new Promise((resolve, reject) => {
     if (ws && ws.readyState === WebSocket.OPEN) return resolve();
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+    ws = new WebSocket(`${protocol}//${location.host}${BASE}/ws`);
     ws.binaryType = 'arraybuffer';
     let settled = false;
     ws.onopen = () => setConn(true, 'Connecting…');
@@ -628,7 +632,7 @@ $('interruptLink').onclick = () => {
 // ─── Snapshot panel ──────────────────────────────────────
 async function loadSnapshot() {
   try {
-    const res = await fetch('/api/snapshot');
+    const res = await fetch(`${BASE}/api/snapshot`);
     if (!res.ok) throw new Error(await res.text());
     const d = await res.json();
     const asAt = d.as_at ? new Date(d.as_at) : new Date();
@@ -693,10 +697,10 @@ function addEvidence(step) {
   const time = new Date(step.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const card = document.createElement('div');
   card.className = 'evidence-card';
-  card.innerHTML = (step.image_url ? `<img src="${step.image_url}" alt="" loading="lazy">` : '') +
+  card.innerHTML = (step.image_url ? `<img src="${BASE}${step.image_url}" alt="" loading="lazy">` : '') +
     `<div class="evidence-meta"><span class="evidence-cap">${esc(step.caption)}</span><time>${time}</time></div>`;
   if (step.image_url) card.onclick = () => {
-    $('lightboxImg').src = step.image_url;
+    $('lightboxImg').src = BASE + step.image_url;
     $('lightboxCap').textContent = step.caption;
     $('lightbox').classList.add('open');
   };
@@ -763,8 +767,8 @@ async function boot() {
   loadSnapshot();
   try {
     const [tasks, shots] = await Promise.all([
-      fetch('/api/tasks').then(r => r.json()),
-      fetch('/api/showcase').then(r => r.json()),
+      fetch(`${BASE}/api/tasks`).then(r => r.json()),
+      fetch(`${BASE}/api/showcase`).then(r => r.json()),
     ]);
     renderTasks(tasks);
     for (const s of shots) addEvidence(s);

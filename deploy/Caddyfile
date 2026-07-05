@@ -21,6 +21,14 @@
 		reverse_proxy api:8080
 	}
 
+	# Amos AI accountant — served same-origin under a path prefix so the ERP's
+	# iframe inherits mic permission and the CDN needs no extra config.
+	# handle_path strips /amos-app; the Amos frontend detects the prefix and
+	# prefixes its own requests. WebSocket upgrade is proxied automatically.
+	handle_path /amos-app/* {
+		reverse_proxy amos:8090
+	}
+
 	handle /health {
 		reverse_proxy api:8080
 	}
