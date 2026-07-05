@@ -10,6 +10,7 @@ pub mod payments;
 pub mod transactions;
 pub mod bank;
 pub mod payroll;
+pub mod leave;
 pub mod reporting;
 pub mod settings;
 pub mod audit;

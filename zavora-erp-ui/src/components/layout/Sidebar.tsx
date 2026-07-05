@@ -40,6 +40,7 @@ const navigation = [
 
   { divider: true, label: 'PAYROLL & HR' },
   { name: 'Employees', href: '/employees', icon: UserCheck },
+  { name: 'Leave', href: '/leave', icon: CalendarClock },
   { name: 'Payroll', href: '/payroll', icon: Wallet },
 
   { divider: true, label: 'ACCOUNTING' },

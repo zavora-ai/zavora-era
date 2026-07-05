@@ -47,6 +47,7 @@ pub mod payments;
 pub mod transactions;
 pub mod bank;
 pub mod payroll;
+pub mod hr;
 pub mod period;
 pub mod tax;
 pub mod fx;

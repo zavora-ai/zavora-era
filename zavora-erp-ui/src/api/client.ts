@@ -431,6 +431,22 @@ export const testNotificationProvider = (channel: string, recipient: string) =>
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });
 
+// === HR — Leave & ESS ===
+export const getLeaveTypes = () => api.get('/leave-types');
+export const createLeaveType = (data: any) => api.post('/leave-types', data);
+export const setLeaveTypeActive = (id: string, active: boolean) => api.put(`/leave-types/${id}/active`, { active });
+export const getHolidays = () => api.get('/holidays');
+export const createHoliday = (data: { date: string; name: string; recurring?: boolean }) => api.post('/holidays', data);
+export const deleteHoliday = (id: string) => api.delete(`/holidays/${id}`);
+export const getLeaveBalances = (employeeId: string, year?: number) =>
+  api.get('/leave-balances', { params: { employee_id: employeeId, ...(year ? { year } : {}) } });
+export const getLeaveRequests = (params?: { employee_id?: string; status?: string }) =>
+  api.get('/leave-requests', { params: params || {} });
+export const createLeaveRequest = (data: any) => api.post('/leave-requests', data);
+export const approveLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/approve`, { note });
+export const declineLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/decline`, { note });
+export const inviteEss = (employeeId: string, email: string) => api.post(`/employees/${employeeId}/invite-ess`, { email });
+
 // === Procurement (P2P) — staff/buyer side ===
 export const getVendorApplications = () => api.get('/vendor-applications');
 export const approveVendorApplication = (id: string, data?: { vendor_id?: string }) =>

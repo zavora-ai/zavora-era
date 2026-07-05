@@ -66,6 +66,17 @@ pub struct EmployeeRow {
     pub end_date: Option<NaiveDate>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    // HR Phase 1 additions (nullable; default None for legacy rows).
+    #[serde(default)]
+    pub manager_id: Option<Uuid>,
+    #[serde(default)]
+    pub department: Option<String>,
+    #[serde(default)]
+    pub job_title: Option<String>,
+    #[serde(default)]
+    pub personal_email: Option<String>,
+    #[serde(default)]
+    pub phone: Option<String>,
 }
 
 /// Request to create an employee.
@@ -84,6 +95,16 @@ pub struct CreateEmployeeRequest {
     pub tax_relief: Option<Decimal>,
     pub disability_exemption: Option<bool>,
     pub start_date: NaiveDate,
+    #[serde(default)]
+    pub department: Option<String>,
+    #[serde(default)]
+    pub job_title: Option<String>,
+    #[serde(default)]
+    pub manager_id: Option<Uuid>,
+    #[serde(default)]
+    pub personal_email: Option<String>,
+    #[serde(default)]
+    pub phone: Option<String>,
 }
 
 /// Request to update an employee.

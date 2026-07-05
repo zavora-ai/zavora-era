@@ -24,6 +24,9 @@ import ProductsPage from './pages/products/ProductsPage';
 import BankingPage from './pages/banking/BankingPage';
 import TransactionsPage from './pages/banking/TransactionsPage';
 import PayrollPage from './pages/payroll/PayrollPage';
+import LeavePage from './pages/leave/LeavePage';
+import StaffLoginPage from './pages/staff/StaffLoginPage';
+import StaffPortal from './pages/staff/StaffPortal';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
@@ -94,6 +97,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/staff/login" element={<StaffLoginPage />} />
+          <Route path="/staff" element={<StaffPortal />} />
           <Route
             element={
               <RequireAuth>
@@ -123,6 +128,7 @@ export default function App() {
             <Route path="reconciliation" element={<ReconciliationPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
+            <Route path="leave" element={<LeavePage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="journal-entries" element={<JournalEntriesPage />} />

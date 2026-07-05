@@ -9,6 +9,8 @@ pub enum UserRole {
     Viewer,
     Editor,
     Approver,
+    /// HR Manager — full HR (people, leave) without finance/GL access.
+    HrManager,
     Accountant,
     Admin,
     Owner,
