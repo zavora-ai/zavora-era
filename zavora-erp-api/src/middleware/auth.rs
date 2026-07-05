@@ -162,6 +162,7 @@ fn parse_role(s: &str) -> Option<UserRole> {
         "owner" => Some(UserRole::Owner),
         "admin" => Some(UserRole::Admin),
         "accountant" => Some(UserRole::Accountant),
+        "hrmanager" => Some(UserRole::HrManager),
         "editor" => Some(UserRole::Editor),
         "approver" => Some(UserRole::Approver),
         "viewer" => Some(UserRole::Viewer),
@@ -175,6 +176,7 @@ fn role_name(role: &UserRole) -> &'static str {
         UserRole::Owner => "Owner",
         UserRole::Admin => "Admin",
         UserRole::Accountant => "Accountant",
+        UserRole::HrManager => "HrManager",
         UserRole::Editor => "Editor",
         UserRole::Approver => "Approver",
         UserRole::Viewer => "Viewer",
@@ -223,6 +225,22 @@ pub const ROLES_CLOSE_PERIOD: &[UserRole] = &[
 pub const ROLES_MANAGE: &[UserRole] = &[
     UserRole::Owner,
     UserRole::Admin,
+];
+
+/// Roles allowed to administer HR: manage employees, configure leave types and
+/// holidays, and approve leave. HR Manager has these without finance access.
+pub const ROLES_HR_MANAGE: &[UserRole] = &[
+    UserRole::Owner,
+    UserRole::Admin,
+    UserRole::HrManager,
+];
+
+/// Roles allowed to approve/decline leave (HR admins plus line-manager approvers).
+pub const ROLES_LEAVE_APPROVE: &[UserRole] = &[
+    UserRole::Owner,
+    UserRole::Admin,
+    UserRole::HrManager,
+    UserRole::Approver,
 ];
 
 /// All roles — used for read-only access.

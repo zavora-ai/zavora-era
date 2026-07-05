@@ -93,6 +93,13 @@ impl TokenVerifier {
                 "this Amos serves a different organisation — access denied"
             ));
         }
+        // Defence in depth: Amos is a back-office-staff-only assistant. External
+        // principals — the vendor portal issues `role = "Vendor"` and employee
+        // self-service issues `role = "Employee"`, both signed with the same
+        // secret for the served entity — must never open a session.
+        if c.role.eq_ignore_ascii_case("Vendor") || c.role.eq_ignore_ascii_case("Employee") {
+            return Err(anyhow!("external portal accounts cannot use Amos"));
+        }
         Ok(Principal { user_id: c.sub, entity_id: c.entity_id, role: c.role })
     }
 }

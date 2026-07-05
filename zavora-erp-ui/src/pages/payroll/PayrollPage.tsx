@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { runPayroll, approvePayRun, postPayRun } from '../../api/client';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { runPayroll, approvePayRun, postPayRun, getPeriods } from '../../api/client';
 import { formatCurrency } from '../../utils/format';
 import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
@@ -9,6 +9,15 @@ import { Play, CheckCircle, BookOpen, Users } from 'lucide-react';
 
 export default function PayrollPage() {
   const [payRun, setPayRun] = useState<any>(null);
+  const [periodId, setPeriodId] = useState('');
+  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Open periods to run payroll against (can't post into a closed period).
+  const { data: periods = [] } = useQuery<any[]>({
+    queryKey: ['periods'],
+    queryFn: () => getPeriods().then(r => (Array.isArray(r.data) ? r.data : r.data?.data ?? [])),
+  });
+  const openPeriods = periods.filter(p => p.status !== 'hard_closed');
 
   const runMut = useMutation({
     mutationFn: (data: any) => runPayroll(data),
@@ -26,12 +35,19 @@ export default function PayrollPage() {
   });
 
   const handleRun = () => {
-    const today = new Date().toISOString().split('T')[0];
+    if (!periodId) return;
     runMut.mutate({
-      period_id: '00000000-0000-0000-0000-000000000001', // would come from period selector
-      pay_date: today,
+      period_id: periodId,
+      pay_date: payDate,
       run_by: { type: 'Agent', id: 'ui' },
     });
+  };
+
+  // When a period is picked, default the pay date to its month-end-ish (last day).
+  const onPeriodChange = (id: string) => {
+    setPeriodId(id);
+    const p = periods.find(x => x.id === id);
+    if (p?.end_date) setPayDate(p.end_date);
   };
 
   return (
@@ -40,11 +56,30 @@ export default function PayrollPage() {
         title="Payroll"
         subtitle="Kenya statutory payroll — PAYE, NSSF, SHA, Housing Levy, HELB"
         actions={
-          <button onClick={handleRun} className="btn-primary" disabled={runMut.isPending}>
-            <Play className="w-4 h-4" /> {runMut.isPending ? 'Running...' : 'Run Payroll'}
-          </button>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-0.5">Period</label>
+              <select className="input py-1.5 text-sm" value={periodId} onChange={e => onPeriodChange(e.target.value)}>
+                <option value="">Select period…</option>
+                {openPeriods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-0.5">Pay date</label>
+              <input type="date" className="input py-1.5 text-sm" value={payDate} onChange={e => setPayDate(e.target.value)} />
+            </div>
+            <button onClick={handleRun} className="btn-primary" disabled={runMut.isPending || !periodId}>
+              <Play className="w-4 h-4" /> {runMut.isPending ? 'Running...' : 'Run Payroll'}
+            </button>
+          </div>
         }
       />
+
+      {runMut.isError && (
+        <div className="bg-red-50 text-red-700 text-sm px-3 py-2 rounded mb-4">
+          {(runMut.error as any)?.response?.data?.error ?? 'Payroll run failed'}
+        </div>
+      )}
 
       {/* Statutory deductions summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">

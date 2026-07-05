@@ -12,6 +12,9 @@ import EstimatesPage from './pages/invoicing/EstimatesPage';
 import RecurringInvoicesPage from './pages/invoicing/RecurringInvoicesPage';
 import BillsPage from './pages/bills/BillsPage';
 import SupplierCreditNotesPage from './pages/bills/SupplierCreditNotesPage';
+import TendersPage from './pages/procurement/TendersPage';
+import PurchaseOrdersPage from './pages/procurement/PurchaseOrdersPage';
+import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
@@ -21,6 +24,9 @@ import ProductsPage from './pages/products/ProductsPage';
 import BankingPage from './pages/banking/BankingPage';
 import TransactionsPage from './pages/banking/TransactionsPage';
 import PayrollPage from './pages/payroll/PayrollPage';
+import LeavePage from './pages/leave/LeavePage';
+import StaffLoginPage from './pages/staff/StaffLoginPage';
+import StaffPortal from './pages/staff/StaffPortal';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
 import JournalEntriesPage from './pages/accounts/JournalEntriesPage';
@@ -91,6 +97,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/staff/login" element={<StaffLoginPage />} />
+          <Route path="/staff" element={<StaffPortal />} />
           <Route
             element={
               <RequireAuth>
@@ -106,6 +114,9 @@ export default function App() {
             <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
             <Route path="supplier-credit-notes" element={<SupplierCreditNotesPage />} />
+            <Route path="tenders" element={<TendersPage />} />
+            <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
+            <Route path="vendor-applications" element={<VendorApplicationsPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
@@ -117,6 +128,7 @@ export default function App() {
             <Route path="reconciliation" element={<ReconciliationPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
+            <Route path="leave" element={<LeavePage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="journal-entries" element={<JournalEntriesPage />} />

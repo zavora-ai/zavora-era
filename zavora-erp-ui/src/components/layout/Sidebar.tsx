@@ -3,7 +3,8 @@ import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
-  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles
+  RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles,
+  Gavel, ShoppingCart, UserPlus
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,6 +23,11 @@ const navigation = [
   { name: 'Capture Receipt', href: '/receipts/capture', icon: Camera },
   { name: 'Vendors', href: '/vendors', icon: Building2 },
 
+  { divider: true, label: 'PROCUREMENT' },
+  { name: 'Tenders', href: '/tenders', icon: Gavel },
+  { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
+  { name: 'Vendor Applications', href: '/vendor-applications', icon: UserPlus },
+
   { divider: true, label: 'BANKING' },
   { name: 'Payments', href: '/payments', icon: CreditCard },
   { name: 'Banking', href: '/banking', icon: Landmark },
@@ -34,6 +40,7 @@ const navigation = [
 
   { divider: true, label: 'PAYROLL & HR' },
   { name: 'Employees', href: '/employees', icon: UserCheck },
+  { name: 'Leave', href: '/leave', icon: CalendarClock },
   { name: 'Payroll', href: '/payroll', icon: Wallet },
 
   { divider: true, label: 'ACCOUNTING' },

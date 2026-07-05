@@ -41,6 +41,15 @@ pub async fn run_payroll(engine: &ErpEngine, entity_id: Uuid, req: RunPayrollReq
         });
     }
 
+    // Period date range (for unpaid-leave proration).
+    let period_dates: Option<(chrono::NaiveDate, chrono::NaiveDate)> = sqlx::query_as(
+        "SELECT start_date, end_date FROM fiscal_periods WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.period_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?;
+
     // Compute payslips (R12.1 — computes gross, PAYE, NSSF, SHA, Housing Levy, HELB, net)
     let mut payslips = Vec::new();
     for emp in &employees {
@@ -50,8 +59,29 @@ pub async fn run_payroll(engine: &ErpEngine, entity_id: Uuid, req: RunPayrollReq
         let helb = emp.helb_deduction.unwrap_or(Decimal::ZERO);
         let relief = emp.tax_relief;
 
+        // Unpaid-leave proration: reduce basic pay by the fraction of the period's
+        // working days spent on approved unpaid leave. (Configurable policy later;
+        // default prorates on the period's actual working days.)
+        let mut basic = emp.basic_salary;
+        if let Some((from, to)) = period_dates {
+            let unpaid = crate::services::leave::unpaid_leave_days(engine, entity_id, emp.id, from, to)
+                .await
+                .unwrap_or(Decimal::ZERO);
+            if unpaid > Decimal::ZERO {
+                let holidays = crate::services::leave::holiday_dates_pub(engine, entity_id, from, to)
+                    .await
+                    .unwrap_or_default();
+                let period_working =
+                    crate::hr::working_days(from, to, false, false, &holidays);
+                if period_working > Decimal::ZERO {
+                    let worked = (period_working - unpaid).max(Decimal::ZERO);
+                    basic = (emp.basic_salary * worked / period_working).round_dp(2);
+                }
+            }
+        }
+
         let deductions = compute_payslip_deductions(
-            emp.basic_salary,
+            basic,
             allowances_total,
             helb,
             relief,

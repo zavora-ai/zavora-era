@@ -113,8 +113,9 @@ pub async fn create_employee(
     sqlx::query(
         r#"INSERT INTO employees 
            (id, entity_id, staff_number, full_name, kra_pin, nssf_number, nhif_number, helb_deduction,
-            employment_type, basic_salary, allowances, bank_account, tax_relief, disability_exemption, start_date, is_active, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16)"#,
+            employment_type, basic_salary, allowances, bank_account, tax_relief, disability_exemption, start_date, is_active, created_at,
+            department, job_title, manager_id, personal_email, phone)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16, $17, $18, $19, $20, $21)"#,
     )
     .bind(id)
     .bind(entity_id)
@@ -132,6 +133,11 @@ pub async fn create_employee(
     .bind(req.disability_exemption.unwrap_or(false))
     .bind(req.start_date)
     .bind(Utc::now())
+    .bind(&req.department)
+    .bind(&req.job_title)
+    .bind(req.manager_id)
+    .bind(&req.personal_email)
+    .bind(&req.phone)
     .execute(engine.pool())
     .await?;
 
