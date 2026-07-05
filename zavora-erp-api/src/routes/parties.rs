@@ -574,8 +574,8 @@ pub async fn update_employee(
                 .bind(v).bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await.ok();
         }
     }
-    // Manager and leave approver (UUID refs; null clears)
-    for (key, col) in [("manager_id","manager_id"),("approver_user_id","approver_user_id")] {
+    // Manager, leave approver, department (UUID refs; null clears)
+    for (key, col) in [("manager_id","manager_id"),("approver_user_id","approver_user_id"),("department_id","department_id")] {
         if let Some(field) = patch.get(key) {
             let val = field.as_str().and_then(|s| Uuid::parse_str(s).ok());
             sqlx::query(&format!("UPDATE employees SET {col} = $1 WHERE id = $2 AND entity_id = $3"))

@@ -3,7 +3,7 @@
 //! account is active on each request. All queries are scoped to the vendor's own
 //! `entity_id` + `vendor_id`, so a vendor sees only their own tenders/bids/POs.
 
-use axum::extract::{Path, State};
+use axum::extract::{Multipart, Path, State};
 use axum::Json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -13,7 +13,12 @@ use crate::middleware::vendor_auth::VendorContext;
 use crate::AppState;
 use zavora_erp_core::procurement::*;
 use zavora_erp_core::services::procurement as svc;
-use zavora_erp_core::ErpError;
+use zavora_erp_core::{AgentOrUserId, ErpError};
+
+/// Max eTIMS attachment size (12 MiB) — matches the staff attachments cap.
+const MAX_ETIMS_BYTES: usize = 12 * 1024 * 1024;
+/// Accepted eTIMS invoice file types (PDF export or a photo/scan of the receipt).
+const ETIMS_MIME_ALLOW: &[&str] = &["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 type ApiResult = Result<Json<serde_json::Value>, axum::response::Response>;
 
@@ -94,15 +99,118 @@ pub async fn get_purchase_order(ctx: VendorContext, State(state): State<Arc<AppS
     ok(serde_json::json!({ "purchase_order": po, "lines": lines }))
 }
 
-/// POST /api/v1/portal/purchase-orders/{id}/invoice — lodge an invoice against
-/// an LPO. Raises a `pending_approval` AP bill in the buyer's books.
+/// GET /api/v1/portal/purchase-orders/{id}/document?format=html|pdf — the vendor's
+/// copy of the legal LPO. Same renderer as the buyer's, scoped to this vendor's
+/// own POs so a supplier can only fetch their own orders.
+pub async fn purchase_order_document(
+    ctx: VendorContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    axum::extract::Query(q): axum::extract::Query<crate::routes::procurement::DocumentQuery>,
+) -> axum::response::Response {
+    // Ownership gate: 404 unless this LPO belongs to the calling vendor.
+    let owns = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM purchase_orders WHERE id=$1 AND entity_id=$2 AND vendor_id=$3",
+    )
+    .bind(id).bind(ctx.entity_id).bind(ctx.vendor_id)
+    .fetch_one(state.engine.pool()).await.unwrap_or(0);
+    if owns == 0 {
+        return boxed(ErpError::NotFound { entity_type: "purchase order".into(), id });
+    }
+    crate::routes::procurement::render_po_document(&state, ctx.entity_id, id, q.format.as_deref() == Some("pdf")).await
+}
+
+/// POST /api/v1/portal/purchase-orders/{id}/invoice — lodge an invoice against an
+/// LPO. **Multipart** because a valid Kenyan supplier invoice is an eTIMS
+/// (electronic Tax Invoice) document: both the eTIMS invoice number and the
+/// eTIMS invoice file are mandatory. Raises a `pending_approval` AP bill and
+/// attaches the eTIMS file to it, so the buyer sees the source document.
+///
+/// Parts: `vendor_invoice_number` (required, the eTIMS number), `etims_file`
+/// (required), `issue_date` (optional), `notes` (optional).
 pub async fn lodge_invoice(
     ctx: VendorContext,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(req): Json<LodgeInvoiceRequest>,
+    mut multipart: Multipart,
 ) -> ApiResult {
-    let bill = svc::lodge_invoice(&state.engine, ctx.entity_id, ctx.vendor_id, id, req).await.map_err(boxed)?;
+    let mut vendor_invoice_number: Option<String> = None;
+    let mut issue_date: Option<chrono::NaiveDate> = None;
+    let mut notes: Option<String> = None;
+    let mut file_bytes: Vec<u8> = Vec::new();
+    let mut file_name = "etims-invoice".to_string();
+    let mut file_mime = "application/octet-stream".to_string();
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| boxed(ErpError::ValidationFailed { message: format!("invalid upload: {e}") }))?
+    {
+        match field.name().unwrap_or("") {
+            "etims_file" => {
+                if let Some(fname) = field.file_name() {
+                    if !fname.is_empty() { file_name = fname.to_string(); }
+                }
+                if let Some(ct) = field.content_type() {
+                    file_mime = ct.to_string();
+                }
+                let data = field.bytes().await.map_err(|e| boxed(ErpError::ValidationFailed { message: format!("could not read file: {e}") }))?;
+                if data.len() > MAX_ETIMS_BYTES {
+                    return Err(boxed(ErpError::ValidationFailed { message: "eTIMS file exceeds 12 MB".into() }));
+                }
+                file_bytes = data.to_vec();
+            }
+            "vendor_invoice_number" => {
+                let v = field.text().await.unwrap_or_default();
+                let v = v.trim().to_string();
+                if !v.is_empty() { vendor_invoice_number = Some(v); }
+            }
+            "issue_date" => {
+                let v = field.text().await.unwrap_or_default();
+                if !v.trim().is_empty() {
+                    issue_date = chrono::NaiveDate::parse_from_str(v.trim(), "%Y-%m-%d").ok();
+                }
+            }
+            "notes" => {
+                let v = field.text().await.unwrap_or_default();
+                if !v.trim().is_empty() { notes = Some(v.trim().to_string()); }
+            }
+            _ => { let _ = field.bytes().await; }
+        }
+    }
+
+    // Mandatory-eTIMS gate — enforced server-side so no client can bypass it.
+    if vendor_invoice_number.is_none() {
+        return Err(boxed(ErpError::ValidationFailed { message: "eTIMS invoice number is required".into() }));
+    }
+    if file_bytes.is_empty() {
+        return Err(boxed(ErpError::ValidationFailed { message: "an eTIMS invoice file (PDF or image) must be attached".into() }));
+    }
+    if !ETIMS_MIME_ALLOW.contains(&file_mime.as_str()) {
+        return Err(boxed(ErpError::ValidationFailed {
+            message: format!("unsupported eTIMS file type '{file_mime}' — attach a PDF, JPG or PNG"),
+        }));
+    }
+
+    let bill = svc::lodge_invoice(
+        &state.engine,
+        ctx.entity_id,
+        ctx.vendor_id,
+        id,
+        LodgeInvoiceRequest { vendor_invoice_number, issue_date, notes, lines: Vec::new() },
+    )
+    .await
+    .map_err(boxed)?;
+
+    // Attach the eTIMS file to the bill so the buyer sees the source document on
+    // the staff Bills page (which lists attachments of linked_type "bill").
+    let uploader = AgentOrUserId::Agent(format!("vendor:{}", ctx.vendor_id));
+    zavora_erp_core::services::attachments::upload(
+        &state.engine, ctx.entity_id, "bill", bill.id, &file_name, &file_mime, &file_bytes, &uploader,
+    )
+    .await
+    .map_err(boxed)?;
+
     ok(bill)
 }
 

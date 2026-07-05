@@ -11,17 +11,26 @@ pub struct PayslipPdfData {
     pub kra_pin: String,
     pub pay_date: String,
     pub period_label: String,
+    /// Itemized earning lines (name, amount). Empty falls back to "Basic pay".
+    pub earnings: Vec<(String, Decimal)>,
     pub gross_salary: Decimal,
     pub taxable_income: Decimal,
     pub paye: Decimal,
     pub personal_relief: Decimal,
     pub net_paye: Decimal,
     pub nssf_employee: Decimal,
+    pub nssf_employer: Decimal,
     pub sha: Decimal,
     pub housing_levy_employee: Decimal,
+    pub housing_levy_employer: Decimal,
     pub helb: Decimal,
+    /// Voluntary/loan deduction lines (name, amount).
+    pub other_deductions: Vec<(String, Decimal)>,
     pub total_deductions: Decimal,
     pub net_salary: Decimal,
+    pub ytd_gross: Decimal,
+    pub ytd_paye: Decimal,
+    pub ytd_net: Decimal,
 }
 
 struct Canvas {
@@ -89,8 +98,15 @@ pub fn render_payslip_pdf(d: &PayslipPdfData) -> Vec<u8> {
 
     c.bold(50.0, 11.0, "Earnings");
     c.down(18.0);
-    c.row("Gross salary", d.gross_salary, false);
-    c.down(4.0);
+    if d.earnings.is_empty() {
+        c.row("Basic pay", d.gross_salary, false);
+    } else {
+        for (name, amt) in &d.earnings { c.row(name, *amt, false); }
+    }
+    c.rule();
+    c.down(16.0);
+    c.row("Gross pay", d.gross_salary, true);
+    c.down(6.0);
 
     c.bold(50.0, 11.0, "Statutory deductions");
     c.down(18.0);
@@ -99,9 +115,17 @@ pub fn render_payslip_pdf(d: &PayslipPdfData) -> Vec<u8> {
     c.row("SHA", d.sha, false);
     c.row("Housing Levy", d.housing_levy_employee, false);
     if d.helb > Decimal::ZERO { c.row("HELB", d.helb, false); }
+
+    if !d.other_deductions.is_empty() {
+        c.down(4.0);
+        c.bold(50.0, 11.0, "Other deductions");
+        c.down(18.0);
+        for (name, amt) in &d.other_deductions { c.row(name, *amt, false); }
+    }
+
     c.down(4.0);
     c.rule();
-    c.down(18.0);
+    c.down(16.0);
     c.row("Total deductions", d.total_deductions, true);
     c.down(4.0);
     c.rule();
@@ -109,8 +133,21 @@ pub fn render_payslip_pdf(d: &PayslipPdfData) -> Vec<u8> {
     c.bold(50.0, 12.0, "NET PAY");
     let v = fmt_money(d.net_salary);
     c.bold(545.0 - (v.len() as f32) * 6.6, 12.0, &v);
-    c.down(40.0);
-    c.text(50.0, 8.0, "PAYE is shown after personal relief. Figures in KES. This payslip is system-generated.");
+    c.down(28.0);
+
+    c.bold(50.0, 11.0, "Employer contributions");
+    c.down(18.0);
+    c.row("NSSF (employer)", d.nssf_employer, false);
+    c.row("Housing Levy (employer)", d.housing_levy_employer, false);
+    c.down(6.0);
+
+    c.bold(50.0, 11.0, "Year to date");
+    c.down(18.0);
+    c.row("Gross", d.ytd_gross, false);
+    c.row("PAYE", d.ytd_paye, false);
+    c.row("Net pay", d.ytd_net, false);
+    c.down(12.0);
+    c.text(50.0, 8.0, "PAYE shown after personal relief. Figures in KES. System-generated payslip.");
 
     assemble(&c.ops)
 }
@@ -147,10 +184,13 @@ mod tests {
         let d = PayslipPdfData {
             company_name: "Zavora Technologies Ltd".into(), employee_name: "Grace W".into(),
             staff_number: "E-01".into(), kra_pin: "A00X".into(), pay_date: "2025-12-31".into(),
-            period_label: "December 2025".into(), gross_salary: dec!(100000), taxable_income: dec!(100000),
+            period_label: "December 2025".into(),
+            earnings: vec![("Basic Pay".into(), dec!(80000)), ("Housing".into(), dec!(20000))],
+            gross_salary: dec!(100000), taxable_income: dec!(100000),
             paye: dec!(23685), personal_relief: dec!(2400), net_paye: dec!(21285), nssf_employee: dec!(2160),
-            sha: dec!(2750), housing_levy_employee: dec!(1500), helb: dec!(0), total_deductions: dec!(27695),
-            net_salary: dec!(72305),
+            nssf_employer: dec!(2160), sha: dec!(2750), housing_levy_employee: dec!(1500), housing_levy_employer: dec!(1500),
+            helb: dec!(0), other_deductions: vec![("SACCO".into(), dec!(3000))], total_deductions: dec!(27695),
+            net_salary: dec!(72305), ytd_gross: dec!(100000), ytd_paye: dec!(21285), ytd_net: dec!(72305),
         };
         let bytes = render_payslip_pdf(&d);
         assert!(bytes.starts_with(b"%PDF-1.4"));

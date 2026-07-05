@@ -275,6 +275,30 @@ export const applyPayment = (data: { payment_id: string; document_id: string; am
 export const runPayroll = (data: any) => api.post('/payroll/run', data);
 export const approvePayRun = (id: string) => api.post(`/payroll/${id}/approve`);
 export const postPayRun = (id: string) => api.post(`/payroll/${id}/post`);
+export const markPayRunPaid = (id: string) => api.post(`/payroll/${id}/paid`);
+export const listPayRuns = () => api.get('/payroll');
+export const getPayRun = (id: string) => api.get(`/payroll/${id}`);
+export const recomputePayRun = (id: string) => api.post(`/payroll/${id}/recompute`);
+export const deletePayRun = (id: string) => api.delete(`/payroll/${id}`);
+export const listRunInputs = (id: string) => api.get(`/payroll/${id}/inputs`);
+export const addRunInput = (id: string, data: any) => api.post(`/payroll/${id}/inputs`, data);
+export const deleteRunInput = (id: string, inputId: string) => api.delete(`/payroll/${id}/inputs/${inputId}`);
+// Payroll masters & config
+export const listEarningTypes = () => api.get('/payroll/earning-types');
+export const createEarningType = (data: any) => api.post('/payroll/earning-types', data);
+export const setEarningTypeActive = (id: string, active: boolean) => api.put(`/payroll/earning-types/${id}/active`, { active });
+export const listDeductionTypes = () => api.get('/payroll/deduction-types');
+export const createDeductionType = (data: any) => api.post('/payroll/deduction-types', data);
+export const setDeductionTypeActive = (id: string, active: boolean) => api.put(`/payroll/deduction-types/${id}/active`, { active });
+export const listDepartments = () => api.get('/payroll/departments');
+export const createDepartment = (data: any) => api.post('/payroll/departments', data);
+export const listStatutoryConfig = () => api.get('/payroll/statutory-config');
+export const upsertStatutoryConfig = (data: any) => api.post('/payroll/statutory-config', data);
+export const listRecurringItems = (employeeId: string) => api.get('/payroll/recurring-items', { params: { employee_id: employeeId } });
+export const createRecurringItem = (data: any) => api.post('/payroll/recurring-items', data);
+export const deleteRecurringItem = (id: string) => api.delete(`/payroll/recurring-items/${id}`);
+export const listLoans = (employeeId: string) => api.get('/payroll/loans', { params: { employee_id: employeeId } });
+export const createLoan = (data: any) => api.post('/payroll/loans', data);
 
 // === Reports ===
 export const generateReport = (data: any) => api.post('/reports', data);
@@ -453,6 +477,13 @@ export const declineLeave = (id: string, note?: string) => api.post(`/leave-requ
 export const inviteEss = (employeeId: string, email: string, password?: string) =>
   api.post(`/employees/${employeeId}/invite-ess`, { email, ...(password ? { password } : {}) });
 
+// === HR — Onboarding ===
+export const getOnboardingCases = () => api.get('/onboarding');
+export const createOnboarding = (data: any) => api.post('/onboarding', data);
+export const getOnboardingCase = (id: string) => api.get(`/onboarding/${id}`);
+export const setOnboardingTask = (caseId: string, taskId: string, done: boolean) => api.put(`/onboarding/${caseId}/tasks/${taskId}`, { done });
+export const completeOnboarding = (id: string) => api.post(`/onboarding/${id}/complete`, {});
+
 // === Procurement (P2P) — staff/buyer side ===
 export const getVendorApplications = () => api.get('/vendor-applications');
 export const approveVendorApplication = (id: string, data?: { vendor_id?: string }) =>
@@ -470,4 +501,63 @@ export const awardTender = (id: string, data: { bid_id: string; delivery_date?: 
   api.post(`/tenders/${id}/award`, data);
 export const getPurchaseOrders = () => api.get('/purchase-orders');
 export const getPurchaseOrder = (id: string) => api.get(`/purchase-orders/${id}`);
+/** Direct procurement — raise an LPO straight against a vendor master. */
+export const createPurchaseOrder = (data: {
+  vendor_id: string; currency?: string; delivery_date?: string; notes?: string;
+  lines: { description: string; quantity: number; uom: string; unit_price: number; account_code?: string }[];
+}) => api.post('/purchase-orders', data);
+
+// ── Purchase requisitions ────────────────────────────────────────────────────
+export const getRequisitions = () => api.get('/requisitions');
+export const getRequisition = (id: string) => api.get(`/requisitions/${id}`);
+export const createRequisition = (data: {
+  title: string; justification?: string; department?: string; cost_center?: string;
+  currency?: string; needed_by?: string; notes?: string;
+  lines: { description: string; quantity: number; uom: string; estimated_unit_price: number; account_code?: string }[];
+}) => api.post('/requisitions', data);
+export const submitRequisition = (id: string) => api.post(`/requisitions/${id}/submit`, {});
+export const approveRequisition = (id: string) => api.post(`/requisitions/${id}/approve`, {});
+export const rejectRequisition = (id: string, reason?: string) => api.post(`/requisitions/${id}/reject`, { reason });
+export const convertRequisition = (id: string, data: {
+  target: 'tender' | 'purchase_order'; vendor_id?: string; delivery_date?: string; closing_date?: string;
+}) => api.post(`/requisitions/${id}/convert`, data);
+/** The legal LPO document as a PDF blob (bank-ready). */
+export const getPurchaseOrderPdf = (id: string) =>
+  api.get(`/purchase-orders/${id}/document`, { params: { format: 'pdf' }, responseType: 'blob' });
+/** Goods receipts + 3-way match for a PO. */
+export const getGoodsReceipts = (poId: string) => api.get(`/purchase-orders/${poId}/receipts`);
+export const createGoodsReceipt = (poId: string, data: {
+  receipt_date?: string; notes?: string;
+  lines: { po_line_id?: string; description: string; quantity_received: number }[];
+}) => api.post(`/purchase-orders/${poId}/receipts`, data);
+export const getPoMatch = (poId: string) => api.get(`/purchase-orders/${poId}/match`);
+export const getProcurementAnalytics = () => api.get('/procurement/analytics');
+export const getBudgetControl = () => api.get('/procurement/budget-control');
+/** Email the LPO PDF to the vendor. */
+export const sendPurchaseOrder = (id: string, data: { recipient_email?: string; message?: string }) =>
+  api.post(`/purchase-orders/${id}/send`, data);
+
+// ── Approval spend-limits (DoA) ──────────────────────────────────────────────
+export const getApprovalLimits = () => api.get('/approval-limits');
+export const setApprovalLimit = (role: string, max_amount: number | null) =>
+  api.put('/approval-limits', { role, max_amount });
+
+// ── Purchase debit notes ─────────────────────────────────────────────────────
+export const getDebitNotes = () => api.get('/debit-notes');
+export const getDebitNote = (id: string) => api.get(`/debit-notes/${id}`);
+export const createDebitNote = (data: {
+  vendor_id: string; applies_to_bill?: string; po_id?: string; reason?: string; currency?: string;
+  lines: { description: string; quantity: number; unit_price: number; account_code?: string }[];
+}) => api.post('/debit-notes', data);
+
+// ── Expense claims ───────────────────────────────────────────────────────────
+export const getExpenseClaims = () => api.get('/expense-claims');
+export const getExpenseClaim = (id: string) => api.get(`/expense-claims/${id}`);
+export const createExpenseClaim = (data: {
+  title: string; currency?: string; notes?: string;
+  lines: { expense_date?: string; description: string; account_code?: string; amount: number }[];
+}) => api.post('/expense-claims', data);
+export const submitExpenseClaim = (id: string) => api.post(`/expense-claims/${id}/submit`, {});
+export const approveExpenseClaim = (id: string) => api.post(`/expense-claims/${id}/approve`, {});
+export const rejectExpenseClaim = (id: string, reason?: string) => api.post(`/expense-claims/${id}/reject`, { reason });
 

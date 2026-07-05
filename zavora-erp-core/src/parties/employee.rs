@@ -77,6 +77,11 @@ pub struct EmployeeRow {
     pub personal_email: Option<String>,
     #[serde(default)]
     pub phone: Option<String>,
+    // Enterprise payroll additions.
+    #[serde(default)]
+    pub department_id: Option<Uuid>,
+    #[serde(default)]
+    pub pay_frequency: Option<String>,
 }
 
 /// Request to create an employee.
@@ -97,6 +102,8 @@ pub struct CreateEmployeeRequest {
     pub start_date: NaiveDate,
     #[serde(default)]
     pub department: Option<String>,
+    #[serde(default)]
+    pub department_id: Option<Uuid>,
     #[serde(default)]
     pub job_title: Option<String>,
     #[serde(default)]

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEmployees, createEmployeeApi, updateEmployee, getUsers, inviteEss } from '../../api/client';
+import { getEmployees, createEmployeeApi, updateEmployee, getUsers, inviteEss, listEarningTypes } from '../../api/client';
 import type { Employee } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
 import Attachments from '../../components/shared/Attachments';
+import DepartmentSelect from '../../components/shared/DepartmentSelect';
 import { Plus, Shield, Network, Users as UsersIcon } from 'lucide-react';
 
 export default function EmployeesPage() {
@@ -90,9 +91,10 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
   const [tab, setTab] = useState<TabKey>('personal');
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ['employees'], queryFn: () => getEmployees().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: users = [] } = useQuery<any[]>({ queryKey: ['users'], queryFn: () => getUsers().then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])) });
+  const { data: earningTypes = [] } = useQuery<any[]>({ queryKey: ['earning-types'], queryFn: () => listEarningTypes().then(r => r.data) });
 
   const e = employee as any;
-  const allowanceAmt = (name: string) => (e?.allowances || []).find((a: any) => a.name === name)?.amount ?? '';
+  const [allowances, setAllowances] = useState<any[]>((e?.allowances ?? []).map((a: any) => ({ name: a.name, amount: String(a.amount), taxable: a.taxable })));
   const [form, setForm] = useState({
     staff_number: e?.staff_number ?? '',
     full_name: e?.full_name ?? '',
@@ -102,9 +104,6 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
     helb_deduction: e?.helb_deduction?.toString() ?? '',
     employment_type: e?.employment_type ?? 'Permanent',
     basic_salary: e?.basic_salary?.toString() ?? '',
-    housing_allowance: String(allowanceAmt('Housing') || ''),
-    transport_allowance: String(allowanceAmt('Transport') || ''),
-    other_allowance: String(allowanceAmt('Other') || ''),
     bank_name: e?.bank_account?.bank_name ?? '',
     account_name: e?.bank_account?.account_name ?? '',
     bank_branch: e?.bank_account?.branch ?? '',
@@ -113,6 +112,7 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
     disability_exemption: e?.disability_exemption ?? false,
     start_date: e?.start_date ?? new Date().toISOString().split('T')[0],
     department: e?.department ?? '',
+    department_id: e?.department_id ?? '',
     job_title: e?.job_title ?? '',
     manager_id: e?.manager_id ?? '',
     approver_user_id: e?.approver_user_id ?? '',
@@ -131,16 +131,15 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
     helb_deduction: form.helb_deduction ? parseFloat(form.helb_deduction) : undefined,
     employment_type: form.employment_type,
     basic_salary: parseFloat(form.basic_salary) || 0,
-    allowances: [
-      { name: 'Housing', amount: parseFloat(form.housing_allowance) || 0, taxable: true },
-      { name: 'Transport', amount: parseFloat(form.transport_allowance) || 0, taxable: false },
-      { name: 'Other', amount: parseFloat(form.other_allowance) || 0, taxable: true },
-    ].filter(a => a.amount > 0),
+    allowances: allowances
+      .filter(a => a.name && parseFloat(a.amount) > 0)
+      .map(a => ({ name: a.name, amount: parseFloat(a.amount) || 0, taxable: !!a.taxable })),
     bank_account: form.account_number ? { bank_name: form.bank_name, account_name: form.account_name || form.full_name, branch: form.bank_branch, account_number: form.account_number } : undefined,
     tax_relief: parseFloat(form.tax_relief) || 2400,
     disability_exemption: form.disability_exemption,
     start_date: form.start_date,
     department: form.department || undefined,
+    department_id: form.department_id || undefined,
     job_title: form.job_title || undefined,
     manager_id: form.manager_id || undefined,
     approver_user_id: form.approver_user_id || undefined,
@@ -189,12 +188,24 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
       {tab === 'salary' && (
         <div className="space-y-4">
           <div><label className="label">Basic Salary (KES/month) *</label><input type="number" className="input" value={form.basic_salary} onChange={e => setForm({ ...form, basic_salary: e.target.value })} /></div>
-          <h4 className="text-sm font-medium text-gray-700">Allowances</h4>
-          <div className="grid grid-cols-3 gap-4">
-            <div><label className="label">Housing</label><input type="number" className="input" value={form.housing_allowance} onChange={e => setForm({ ...form, housing_allowance: e.target.value })} /></div>
-            <div><label className="label">Transport</label><input type="number" className="input" value={form.transport_allowance} onChange={e => setForm({ ...form, transport_allowance: e.target.value })} /></div>
-            <div><label className="label">Other</label><input type="number" className="input" value={form.other_allowance} onChange={e => setForm({ ...form, other_allowance: e.target.value })} /></div>
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-gray-700">Allowances & Earnings</h4>
+            <button type="button" className="text-indigo-600 text-xs hover:underline" onClick={() => setAllowances([...allowances, { name: '', amount: '', taxable: true }])}>+ Add allowance</button>
           </div>
+          {allowances.length === 0 && <p className="text-xs text-gray-400">No allowances. Add from your earning types (defined in Payroll Settings).</p>}
+          {allowances.map((a, i) => (
+            <div key={i} className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="label">Type / name</label>
+                <input list="ee-earning-types" className="input" value={a.name} placeholder="e.g. Housing Allowance"
+                  onChange={ev => { const t = (earningTypes as any[]).find(x => x.name === ev.target.value); setAllowances(allowances.map((x, j) => j === i ? { ...x, name: ev.target.value, taxable: t ? t.taxable : x.taxable } : x)); }} />
+              </div>
+              <div className="w-32"><label className="label">Amount</label><input type="number" className="input" value={a.amount} onChange={ev => setAllowances(allowances.map((x, j) => j === i ? { ...x, amount: ev.target.value } : x))} /></div>
+              <label className="flex items-center gap-1 text-xs pb-2.5 whitespace-nowrap"><input type="checkbox" checked={a.taxable} onChange={ev => setAllowances(allowances.map((x, j) => j === i ? { ...x, taxable: ev.target.checked } : x))} /> Taxable</label>
+              <button type="button" className="text-gray-400 hover:text-red-600 pb-2.5" onClick={() => setAllowances(allowances.filter((_, j) => j !== i))}>✕</button>
+            </div>
+          ))}
+          <datalist id="ee-earning-types">{(earningTypes as any[]).map(t => <option key={t.id} value={t.name} />)}</datalist>
           <hr />
           <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2"><Shield className="w-4 h-4" /> Tax & Deductions</h4>
           <div className="grid grid-cols-2 gap-4">
@@ -220,7 +231,9 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Job Title</label><input className="input" value={form.job_title} onChange={e => setForm({ ...form, job_title: e.target.value })} /></div>
-            <div><label className="label">Department</label><input className="input" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} /></div>
+            <div><label className="label">Department</label>
+              <DepartmentSelect value={form.department_id} onChange={(id, name) => setForm({ ...form, department_id: id, department: name })} />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Manager</label>

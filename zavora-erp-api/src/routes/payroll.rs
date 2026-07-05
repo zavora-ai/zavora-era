@@ -7,6 +7,7 @@ use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_APP
 use super::err_response;
 use zavora_erp_core::payroll::*;
 use zavora_erp_core::services::payroll as svc;
+use zavora_erp_core::services::payroll_masters as masters;
 use zavora_erp_core::AgentOrUserId;
 
 pub async fn run(
@@ -86,4 +87,92 @@ fn pdf_response(bytes: Vec<u8>, filename: &str) -> axum::response::Response {
         ],
         bytes,
     ).into_response()
+}
+
+/// GET /payroll — pay run history.
+pub async fn list(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match svc::list_pay_runs(&state.engine, ctx.entity_id).await {
+        Ok(rows) => Ok(Json(serde_json::to_value(rows).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// GET /payroll/{id} — run detail (header + payslips).
+pub async fn detail(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match svc::load_pay_run(&state.engine, ctx.entity_id, id).await {
+        Ok(run) => Ok(Json(serde_json::to_value(run).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /payroll/{id}/recompute — recompute a draft (picks up inputs).
+pub async fn recompute(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "recompute pay run").map_err(err_response)?;
+    match svc::recompute_pay_run(&state.engine, ctx.entity_id, id).await {
+        Ok(run) => Ok(Json(serde_json::to_value(run).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// DELETE /payroll/{id} — delete a draft run.
+pub async fn delete_draft(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "delete pay run").map_err(err_response)?;
+    match svc::delete_draft_pay_run(&state.engine, ctx.entity_id, id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// GET /payroll/{id}/inputs — per-run variable inputs.
+pub async fn list_inputs(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match masters::list_run_inputs(&state.engine, ctx.entity_id, id).await {
+        Ok(rows) => Ok(Json(serde_json::to_value(rows).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /payroll/{id}/inputs — add a per-run earning/deduction input.
+pub async fn add_input(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreatePayRunInputRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "add pay run input").map_err(err_response)?;
+    match masters::add_run_input(&state.engine, ctx.entity_id, id, req).await {
+        Ok(input_id) => Ok(Json(serde_json::json!({ "id": input_id }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// DELETE /payroll/{id}/inputs/{input_id} — remove a per-run input.
+pub async fn delete_input(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path((_id, input_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_role(ROLES_CREATE, &ctx, "delete pay run input").map_err(err_response)?;
+    match masters::delete_run_input(&state.engine, ctx.entity_id, input_id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted" }))),
+        Err(e) => Err(err_response(e)),
+    }
 }

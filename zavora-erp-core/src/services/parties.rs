@@ -114,8 +114,8 @@ pub async fn create_employee(
         r#"INSERT INTO employees 
            (id, entity_id, staff_number, full_name, kra_pin, nssf_number, nhif_number, helb_deduction,
             employment_type, basic_salary, allowances, bank_account, tax_relief, disability_exemption, start_date, is_active, created_at,
-            department, job_title, manager_id, personal_email, phone)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16, $17, $18, $19, $20, $21)"#,
+            department, department_id, job_title, manager_id, personal_email, phone)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, $16, $17, $18, $19, $20, $21, $22)"#,
     )
     .bind(id)
     .bind(entity_id)
@@ -125,7 +125,7 @@ pub async fn create_employee(
     .bind(&req.nssf_number)
     .bind(&req.nhif_number)
     .bind(req.helb_deduction)
-    .bind(serde_json::to_string(&req.employment_type).unwrap_or_default())
+    .bind(format!("{:?}", req.employment_type))
     .bind(req.basic_salary)
     .bind(serde_json::to_value(&req.allowances).unwrap_or_default())
     .bind(serde_json::to_value(&req.bank_account).unwrap_or_default())
@@ -134,6 +134,7 @@ pub async fn create_employee(
     .bind(req.start_date)
     .bind(Utc::now())
     .bind(&req.department)
+    .bind(req.department_id)
     .bind(&req.job_title)
     .bind(req.manager_id)
     .bind(&req.personal_email)

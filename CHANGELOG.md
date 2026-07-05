@@ -8,6 +8,39 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-05 — Enterprise HR & Payroll + Amos payroll skill
+
+Rebuilt payroll from a single-shot calculator into an enterprise module (see
+[`docs/PAYROLL_HR_ENTERPRISE.md`](docs/PAYROLL_HR_ENTERPRISE.md)) and taught Amos
+to run and analyse it.
+
+#### Added
+- **Effective-dated, editable statutory config** (`payroll_statutory_config`):
+  PAYE bands, NSSF, SHA, Housing Levy, reliefs, NITA — versioned by effective
+  date so historical runs stay reproducible; edited from a Payroll Settings UI.
+- **Masters:** earning types, deduction types, departments (with a reusable
+  `DepartmentSelect` lookup + inline "add new" used by the employee card and
+  procurement requisitions). Employee card now uses dynamic allowances (honouring
+  the `taxable` flag) and a department dropdown (`department_id`).
+- **Config-driven batch engine:** variable per-run inputs (bonuses/overtime/
+  voluntary & loan deductions), recurring items, loan amortization, joiner/leaver
+  proration, and YTD accumulators; set-based loads for scale. Balanced GL posting
+  with the salary expense **split by department (dimension-tagged)**, deductions
+  credited to liability accounts, and loan repayments recorded.
+- **Pay-run lifecycle:** draft → approve → post → paid, with list/detail/recompute/
+  delete endpoints and a **prepare→review→commit UI** (history, per-run adjustments
+  that auto-recompute, pre-run validation, richer payslip PDF).
+- **Reports:** payroll register, statutory remittance schedule, P9, and net-pay
+  bank/EFT file — tie-out verified against a balanced posted journal.
+- **Amos `hr-payroll` skill** + prompt update, and **mcp-erp** HR/payroll tools
+  (`list_employees`, `list_fiscal_periods`, `list_departments`, `list_pay_runs`,
+  `get_pay_run`, `run_payroll`, `add_pay_run_input`, `recompute_pay_run`,
+  `approve_pay_run`, `post_pay_run`, `mark_pay_run_paid`; `run_report` extended
+  with the payroll report types) so Amos can run, adjust, commit and analyse
+  payroll and explain PAYE/NSSF/SHA/Housing/HELB in plain language.
+- Migrations `041` (payroll schema) and `044` (unquote `employment_type`).
+
+
 ### 2026-07-05 — Amos: complete tenant isolation & agent guardrails
 
 Amos is now a scoped, auditable agent. Each deployment serves exactly one

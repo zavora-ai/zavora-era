@@ -26,8 +26,10 @@ pub mod posting_groups;
 pub mod transactions;
 pub mod bank;
 pub mod payroll;
+pub mod payroll_masters;
 pub mod leave;
 pub mod staff_auth;
+pub mod hr_onboarding;
 pub mod inventory;
 pub mod assets;
 pub mod fx;
@@ -43,6 +45,7 @@ pub mod users;
 pub mod auth_signup;
 pub mod auth_tenants;
 pub mod procurement;
+pub mod approval;
 pub mod portal;
 pub mod portal_auth;
 

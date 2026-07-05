@@ -30,6 +30,17 @@ const ERP_TOOLS: &[&str] = &[
     "record_payment",
     "post_journal_entry",
     "get_journal_entries",
+    "list_employees",
+    "list_fiscal_periods",
+    "list_departments",
+    "list_pay_runs",
+    "get_pay_run",
+    "run_payroll",
+    "add_pay_run_input",
+    "recompute_pay_run",
+    "approve_pay_run",
+    "post_pay_run",
+    "mark_pay_run_paid",
 ];
 
 /// Browser tools for the showcase. Everything needed to log in, navigate and

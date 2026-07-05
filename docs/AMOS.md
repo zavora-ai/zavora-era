@@ -61,7 +61,7 @@ own docs: the mcp-erp repo (`feat/zavora-backend`).
 Drop-in `SKILL.md` files under `amos/skills/` teach Amos consistent multi-step
 procedures. **Progressive disclosure**: the system prompt carries a one-line
 catalog per skill; the `use_skill` tool pulls a playbook's full body on demand.
-A skill's `allowed-tools` also extends the MCP tool allowlist. Ships six:
+A skill's `allowed-tools` also extends the MCP tool allowlist. Ships seven:
 
 | Skill | Teaches |
 |---|---|
@@ -71,6 +71,7 @@ A skill's `allowed-tools` also extends the MCP tool allowlist. Ships six:
 | `manual-journal` | Balanced entries, account verification, reversal-based corrections |
 | `erp-showcase` | Browser evidence: snapshot-before-acting, the ERP route map, retry ladder |
 | `month-end-review` | Read-only five-check close ritual with a structured verdict |
+| `hr-payroll` | HR & payroll: analyse via payroll reports; run/review/commit a pay run in the UI; adjustments; effective-dated statutory rates; plain-language PAYE/NSSF/SHA/Housing/HELB |
 
 ### 2.3 Showcase — browser evidence
 `browser_navigate` to the ERP signs Amos in automatically (deterministic login

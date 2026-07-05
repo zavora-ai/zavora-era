@@ -40,6 +40,10 @@ pub enum ReportType {
     PayeP10,
     WhtCertificate,
     SalesTaxSummary,
+    PayrollRegister,
+    StatutorySchedule,
+    PayeP9,
+    PayrollBankFile,
 }
 
 /// Parameters for report generation.

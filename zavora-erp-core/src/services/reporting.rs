@@ -129,6 +129,18 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
             let report = customer_payment_history(engine, entity_id, req.parameters).await?;
             ReportContent::CustomerPaymentHistory(report)
         }
+        ReportType::PayrollRegister => {
+            ReportContent::Generic(payroll_register(engine, entity_id, req.parameters).await?)
+        }
+        ReportType::StatutorySchedule => {
+            ReportContent::Generic(statutory_schedule(engine, entity_id, req.parameters).await?)
+        }
+        ReportType::PayeP9 => {
+            ReportContent::Generic(paye_p9(engine, entity_id, req.parameters).await?)
+        }
+        ReportType::PayrollBankFile => {
+            ReportContent::Generic(payroll_bank_file(engine, entity_id, req.parameters).await?)
+        }
         // Any future report type without a generator fails loudly rather than
         // returning a fake-success body.
         #[allow(unreachable_patterns)]
@@ -176,6 +188,10 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::PayeP10 => "PAYE Return (P10)",
         ReportType::WhtCertificate => "Withholding Tax (WHT) Schedule",
         ReportType::SalesTaxSummary => "VAT Summary by Rate",
+        ReportType::PayrollRegister => "Payroll Register",
+        ReportType::StatutorySchedule => "Statutory Deductions Schedule",
+        ReportType::PayeP9 => "PAYE Deduction Card (P9)",
+        ReportType::PayrollBankFile => "Net Pay Bank File (EFT)",
     }
     .to_string()
 }
@@ -2105,6 +2121,192 @@ async fn paye_p10(
         total_payable: lines.iter().map(|l| l.paye_payable).sum(),
         lines,
     })
+}
+
+// ── Enterprise payroll reports (Generic JSON) — all read the denormalized
+//    payslip columns for scale and tie out to the pay-run totals. ────────────
+
+/// Payroll register: one row per employee with statutory + net, plus totals.
+async fn payroll_register(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<serde_json::Value> {
+    use sqlx::Row;
+    let (from, to) = resolve_period(&params);
+    let rows = sqlx::query(
+        r#"SELECT ps.staff_number, ps.employee_name, COALESCE(dep.name,'') AS dept,
+                  SUM(ps.gross) g, SUM(ps.paye) paye, SUM(ps.nssf_employee) nssf,
+                  SUM(ps.sha) sha, SUM(ps.housing_employee) hou, SUM(ps.helb) helb,
+                  SUM(ps.total_deductions) td, SUM(ps.net) net
+           FROM payslips ps JOIN pay_runs pr ON pr.id = ps.pay_run_id
+           LEFT JOIN departments dep ON dep.id = ps.department_id
+           WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+           GROUP BY ps.staff_number, ps.employee_name, dep.name
+           ORDER BY ps.employee_name"#,
+    )
+    .bind(entity_id).bind(from).bind(to).fetch_all(engine.pool()).await?;
+
+    let (mut tg, mut tp, mut tn, mut ts, mut th, mut thelb, mut ttd, mut tnet) =
+        (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let mut lines = Vec::new();
+    for r in &rows {
+        let g: Decimal = r.get("g"); let paye: Decimal = r.get("paye"); let nssf: Decimal = r.get("nssf");
+        let sha: Decimal = r.get("sha"); let hou: Decimal = r.get("hou"); let helb: Decimal = r.get("helb");
+        let td: Decimal = r.get("td"); let net: Decimal = r.get("net");
+        tg += g; tp += paye; tn += nssf; ts += sha; th += hou; thelb += helb; ttd += td; tnet += net;
+        lines.push(serde_json::json!({
+            "staff_number": r.get::<Option<String>,_>("staff_number"),
+            "employee_name": r.get::<Option<String>,_>("employee_name"),
+            "department": r.get::<String,_>("dept"),
+            "gross": g, "paye": paye, "nssf": nssf, "sha": sha, "housing": hou,
+            "helb": helb, "total_deductions": td, "net": net,
+        }));
+    }
+    Ok(serde_json::json!({
+        "period_from": from, "period_to": to, "employee_count": lines.len(), "lines": lines,
+        "totals": { "gross": tg, "paye": tp, "nssf": tn, "sha": ts, "housing": th, "helb": thelb, "total_deductions": ttd, "net": tnet }
+    }))
+}
+
+/// Statutory remittance schedule: per employee, the amounts due to each body
+/// (PAYE, NSSF ee+er, SHA, Housing ee+er, HELB) with member numbers.
+async fn statutory_schedule(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<serde_json::Value> {
+    use sqlx::Row;
+    let (from, to) = resolve_period(&params);
+    let rows = sqlx::query(
+        r#"SELECT ps.staff_number, ps.employee_name, ps.kra_pin,
+                  e.nssf_number, e.nhif_number,
+                  SUM(ps.paye) paye,
+                  SUM(ps.nssf_employee) nssf_ee, SUM(ps.nssf_employer) nssf_er,
+                  SUM(ps.sha) sha,
+                  SUM(ps.housing_employee) hou_ee, SUM(ps.housing_employer) hou_er,
+                  SUM(ps.helb) helb
+           FROM payslips ps JOIN pay_runs pr ON pr.id = ps.pay_run_id
+           JOIN employees e ON e.id = ps.employee_id
+           WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+           GROUP BY ps.staff_number, ps.employee_name, ps.kra_pin, e.nssf_number, e.nhif_number
+           ORDER BY ps.employee_name"#,
+    )
+    .bind(entity_id).bind(from).bind(to).fetch_all(engine.pool()).await?;
+
+    let (mut tp, mut tne, mut tnr, mut ts, mut the, mut thr, mut thelb) =
+        (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let mut lines = Vec::new();
+    for r in &rows {
+        let paye: Decimal = r.get("paye"); let nee: Decimal = r.get("nssf_ee"); let ner: Decimal = r.get("nssf_er");
+        let sha: Decimal = r.get("sha"); let hee: Decimal = r.get("hou_ee"); let her: Decimal = r.get("hou_er");
+        let helb: Decimal = r.get("helb");
+        tp += paye; tne += nee; tnr += ner; ts += sha; the += hee; thr += her; thelb += helb;
+        lines.push(serde_json::json!({
+            "staff_number": r.get::<Option<String>,_>("staff_number"),
+            "employee_name": r.get::<Option<String>,_>("employee_name"),
+            "kra_pin": r.get::<Option<String>,_>("kra_pin"),
+            "nssf_number": r.get::<Option<String>,_>("nssf_number"),
+            "sha_number": r.get::<Option<String>,_>("nhif_number"),
+            "paye": paye, "nssf_employee": nee, "nssf_employer": ner, "nssf_total": nee + ner,
+            "sha": sha, "housing_employee": hee, "housing_employer": her, "housing_total": hee + her,
+            "helb": helb,
+        }));
+    }
+    Ok(serde_json::json!({
+        "period_from": from, "period_to": to, "lines": lines,
+        "totals": {
+            "paye": tp, "nssf_employee": tne, "nssf_employer": tnr, "nssf_total": tne + tnr,
+            "sha": ts, "housing_employee": the, "housing_employer": thr, "housing_total": the + thr, "helb": thelb
+        }
+    }))
+}
+
+/// P9 deduction card: per employee, month-by-month gross/taxable/tax/relief.
+async fn paye_p9(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<serde_json::Value> {
+    use sqlx::Row;
+    let (from, to) = resolve_period(&params);
+    let rows = sqlx::query(
+        r#"SELECT ps.staff_number, ps.employee_name, ps.kra_pin,
+                  EXTRACT(MONTH FROM pr.pay_date)::int AS m,
+                  SUM(ps.gross) g, SUM(ps.taxable) t,
+                  SUM((ps.deductions->>'paye')::numeric)            AS tax_charged,
+                  SUM((ps.deductions->>'personal_relief')::numeric) AS relief,
+                  SUM(ps.paye) net_paye
+           FROM payslips ps JOIN pay_runs pr ON pr.id = ps.pay_run_id
+           WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+           GROUP BY ps.staff_number, ps.employee_name, ps.kra_pin, m
+           ORDER BY ps.employee_name, m"#,
+    )
+    .bind(entity_id).bind(from).bind(to).fetch_all(engine.pool()).await?;
+
+    use std::collections::BTreeMap;
+    let mut emps: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    for r in &rows {
+        let name: Option<String> = r.get("employee_name");
+        let staff: Option<String> = r.get("staff_number");
+        let key = staff.clone().unwrap_or_else(|| name.clone().unwrap_or_default());
+        let entry = emps.entry(key).or_insert_with(|| serde_json::json!({
+            "staff_number": staff, "employee_name": name, "kra_pin": r.get::<Option<String>,_>("kra_pin"), "months": []
+        }));
+        let month = serde_json::json!({
+            "month": r.get::<i32,_>("m"),
+            "gross": r.get::<Decimal,_>("g"),
+            "taxable": r.get::<Decimal,_>("t"),
+            "tax_charged": r.get::<Decimal,_>("tax_charged"),
+            "personal_relief": r.get::<Decimal,_>("relief"),
+            "paye": r.get::<Decimal,_>("net_paye"),
+        });
+        entry["months"].as_array_mut().unwrap().push(month);
+    }
+    Ok(serde_json::json!({
+        "period_from": from, "period_to": to,
+        "employees": emps.into_values().collect::<Vec<_>>()
+    }))
+}
+
+/// Net-pay bank file (EFT): per employee net with bank details, for upload.
+async fn payroll_bank_file(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    params: ReportParameters,
+) -> ErpResult<serde_json::Value> {
+    use sqlx::Row;
+    let (from, to) = resolve_period(&params);
+    let rows = sqlx::query(
+        r#"SELECT ps.employee_name,
+                  e.bank_account->>'bank_name'      AS bank,
+                  e.bank_account->>'branch'         AS branch,
+                  e.bank_account->>'account_number' AS acct,
+                  SUM(ps.net) net
+           FROM payslips ps JOIN pay_runs pr ON pr.id = ps.pay_run_id
+           JOIN employees e ON e.id = ps.employee_id
+           WHERE pr.entity_id = $1 AND pr.status <> 'draft' AND pr.pay_date BETWEEN $2 AND $3
+           GROUP BY ps.employee_name, bank, branch, acct
+           ORDER BY ps.employee_name"#,
+    )
+    .bind(entity_id).bind(from).bind(to).fetch_all(engine.pool()).await?;
+
+    let mut total = Decimal::ZERO;
+    let mut lines = Vec::new();
+    for r in &rows {
+        let net: Decimal = r.get("net");
+        total += net;
+        lines.push(serde_json::json!({
+            "employee_name": r.get::<Option<String>,_>("employee_name"),
+            "bank_name": r.get::<Option<String>,_>("bank"),
+            "branch": r.get::<Option<String>,_>("branch"),
+            "account_number": r.get::<Option<String>,_>("acct"),
+            "amount": net,
+        }));
+    }
+    Ok(serde_json::json!({
+        "period_from": from, "period_to": to, "count": lines.len(), "total_net": total, "lines": lines
+    }))
 }
 
 #[derive(Debug, sqlx::FromRow)]
