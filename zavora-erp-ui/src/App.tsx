@@ -15,6 +15,13 @@ import SupplierCreditNotesPage from './pages/bills/SupplierCreditNotesPage';
 import TendersPage from './pages/procurement/TendersPage';
 import PurchaseOrdersPage from './pages/procurement/PurchaseOrdersPage';
 import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
+import PortalShell from './pages/portal/PortalShell';
+import VendorLoginPage from './pages/portal/VendorLoginPage';
+import VendorRegisterPage from './pages/portal/VendorRegisterPage';
+import PortalTendersPage from './pages/portal/PortalTendersPage';
+import PortalBidsPage from './pages/portal/PortalBidsPage';
+import PortalPurchaseOrdersPage from './pages/portal/PortalPurchaseOrdersPage';
+import PortalStatementPage from './pages/portal/PortalStatementPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
@@ -26,6 +33,7 @@ import TransactionsPage from './pages/banking/TransactionsPage';
 import PayrollPage from './pages/payroll/PayrollPage';
 import LeavePage from './pages/leave/LeavePage';
 import StaffLoginPage from './pages/staff/StaffLoginPage';
+import StaffSetPasswordPage from './pages/staff/StaffSetPasswordPage';
 import StaffPortal from './pages/staff/StaffPortal';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
@@ -97,7 +105,18 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Vendor portal — a fully separate surface with its own auth (see
+              portalClient.ts + PortalShell). Public auth pages, then the gated shell. */}
+          <Route path="/portal/login" element={<VendorLoginPage />} />
+          <Route path="/portal/register" element={<VendorRegisterPage />} />
+          <Route path="/portal" element={<PortalShell />}>
+            <Route index element={<PortalTendersPage />} />
+            <Route path="bids" element={<PortalBidsPage />} />
+            <Route path="purchase-orders" element={<PortalPurchaseOrdersPage />} />
+            <Route path="statement" element={<PortalStatementPage />} />
+          </Route>
           <Route path="/staff/login" element={<StaffLoginPage />} />
+          <Route path="/staff/set-password" element={<StaffSetPasswordPage />} />
           <Route path="/staff" element={<StaffPortal />} />
           <Route
             element={

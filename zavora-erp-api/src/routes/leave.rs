@@ -269,6 +269,24 @@ pub async fn invite_ess(ctx: AuthContext, State(state): State<Arc<AppState>>, Pa
         }
     };
 
+    // When invited without a password, issue a single-use token (7 days) and
+    // email an "accept invite / set password" link.
+    if password_hash.is_none() {
+        let token = Uuid::new_v4().to_string();
+        sqlx::query("UPDATE employee_users SET set_token = $1, set_token_expires = NOW() + INTERVAL '7 days' WHERE id = $2")
+            .bind(&token).bind(staff_id).execute(state.engine.pool()).await.map_err(|e| er(ErpError::Database(e)))?;
+        let link = format!("{}/staff/set-password?token={}", crate::routes::staff_auth::portal_base_url(), token);
+        let email_req = zavora_erp_core::notifications::SendNotificationRequest {
+            event_type: zavora_erp_core::notifications::NotificationEventType::LeaveRequestDecided,
+            channels: vec![zavora_erp_core::types::Channel::Email],
+            recipients: vec![req.email.trim().to_lowercase()],
+            subject: Some(format!("Set up your {} self-service account", emp.full_name.split(' ').next().unwrap_or("staff"))),
+            body: format!("You've been invited to Employee Self-Service. Set your password here: {link}\n\nThis link expires in 7 days."),
+            related_type: Some("employee_user".into()), related_id: Some(staff_id), schedule_at: None, attachments: Vec::new(),
+        };
+        let _ = zavora_erp_core::services::notifications::send_notification(&state.engine, ctx.entity_id, email_req).await;
+    }
+
     Ok(Json(serde_json::json!({"employee_user_id": staff_id, "email": req.email, "status": status})))
 }
 

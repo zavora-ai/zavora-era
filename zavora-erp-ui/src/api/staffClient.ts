@@ -71,6 +71,8 @@ staffApi.interceptors.response.use(
 // ── Staff auth ──
 export const staffLogin = (email: string, password: string) => staffApi.post('/staff/login', { email, password });
 export const staffLogout = () => staffApi.post('/staff/logout', {});
+export const staffForgotPassword = (email: string) => staffApi.post('/staff/forgot-password', { email });
+export const staffSetPassword = (token: string, password: string) => staffApi.post('/staff/set-password', { token, password });
 
 // ── Staff self-service (own records only) ──
 export const staffGetProfile = () => staffApi.get('/staff/profile');

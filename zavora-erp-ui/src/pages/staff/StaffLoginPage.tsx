@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { staffLogin, storeStaffSession } from '../../api/staffClient';
+import { staffLogin, storeStaffSession, staffForgotPassword } from '../../api/staffClient';
 import { UserCircle } from 'lucide-react';
 
 /** Employee self-service login — a separate principal from the back-office ERP. */
@@ -10,6 +10,8 @@ export default function StaffLoginPage() {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [msg, setMsg] = useState('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +27,16 @@ export default function StaffLoginPage() {
     }
   };
 
+  const sendReset = async () => {
+    setBusy(true); setErr(''); setMsg('');
+    try {
+      const r = await staffForgotPassword(email);
+      setMsg(r.data?.message ?? 'If that account exists, a reset link has been sent.');
+    } catch {
+      setMsg('If that account exists, a reset link has been sent.');
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50 px-4">
       <div className="w-full max-w-sm">
@@ -37,18 +49,31 @@ export default function StaffLoginPage() {
         </div>
         <form onSubmit={submit} className="card p-6 space-y-4">
           {err && <div className="bg-red-50 text-red-700 text-sm px-3 py-2 rounded">{err}</div>}
+          {msg && <div className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded">{msg}</div>}
           <div>
             <label className="label">Work Email</label>
             <input type="email" className="input" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
           </div>
-          <div>
-            <label className="label">Password</label>
-            <input type="password" className="input" value={password} onChange={e => setPassword(e.target.value)} required />
+          {!forgot && (
+            <div>
+              <label className="label">Password</label>
+              <input type="password" className="input" value={password} onChange={e => setPassword(e.target.value)} required />
+            </div>
+          )}
+          {!forgot ? (
+            <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+          ) : (
+            <button type="button" onClick={sendReset} className="btn-primary w-full justify-center" disabled={busy || !email}>
+              {busy ? 'Sending…' : 'Send reset link'}
+            </button>
+          )}
+          <div className="text-center">
+            <button type="button" onClick={() => { setForgot(f => !f); setErr(''); setMsg(''); }} className="text-xs text-indigo-600 hover:underline">
+              {forgot ? '← Back to sign in' : 'Forgot password?'}
+            </button>
           </div>
-          <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-          <p className="text-xs text-gray-400 text-center">Are you back-office staff? <a href="/login" className="text-indigo-600 hover:underline">Staff login</a></p>
         </form>
       </div>
     </div>

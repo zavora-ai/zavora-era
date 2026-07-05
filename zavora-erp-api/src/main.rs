@@ -177,6 +177,8 @@ async fn main() -> anyhow::Result<()> {
         // `StaffContext`, so they live on the public router (like the vendor
         // portal) and are unreachable with a back-office token. ──
         .route("/api/v1/staff/login", post(routes::staff_auth::login))
+        .route("/api/v1/staff/forgot-password", post(routes::staff_auth::forgot_password))
+        .route("/api/v1/staff/set-password", post(routes::staff_auth::set_password))
         .route("/api/v1/staff/refresh", post(routes::staff_auth::refresh))
         .route("/api/v1/staff/logout", post(routes::staff_auth::logout))
         .route("/api/v1/staff/me", get(routes::staff_auth::me))
