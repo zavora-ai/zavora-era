@@ -369,6 +369,7 @@ export const transmitInvoiceEtims = (id: string, data: { etims_invoice_number?: 
 export const getEmployees = () => api.get('/employees');
 export const getEmployee = (id: string) => api.get(`/employees/${id}`);
 export const createEmployeeApi = (data: any) => api.post('/employees', data);
+export const updateEmployee = (id: string, data: any) => api.put(`/employees/${id}`, data);
 
 // === Customers (additional) ===
 export const getCustomer = (id: string) => api.get(`/customers/${id}`);
@@ -449,7 +450,8 @@ export const getLeaveRequests = (params?: { employee_id?: string; status?: strin
 export const createLeaveRequest = (data: any) => api.post('/leave-requests', data);
 export const approveLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/approve`, { note });
 export const declineLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/decline`, { note });
-export const inviteEss = (employeeId: string, email: string) => api.post(`/employees/${employeeId}/invite-ess`, { email });
+export const inviteEss = (employeeId: string, email: string, password?: string) =>
+  api.post(`/employees/${employeeId}/invite-ess`, { email, ...(password ? { password } : {}) });
 
 // === Procurement (P2P) — staff/buyer side ===
 export const getVendorApplications = () => api.get('/vendor-applications');
