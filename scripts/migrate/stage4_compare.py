@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Stage 4: run Zavora's Trial Balance / P&L / Balance Sheet and compare to QBO."""
+"""Stage 4: run Zavora's Trial Balance / P&L / Balance Sheet and compare to source."""
 import json, sys, urllib.request, urllib.error
-QB = "sample_data/quickbooks"
+QB = "sample_data/migration"
 BASE = "http://localhost:8080/api/v1"
 maps = json.load(open(f"{QB}/zavora_maps.json"))
 targets = json.load(open(f"{QB}/comparison_targets.json"))
@@ -27,12 +27,12 @@ def report(rtype, params):
     st, d = call("POST", "/reports", {"entity_id": "00000000-0000-0000-0000-000000000000", "report_type": rtype, "parameters": params})
     return unwrap(d, rtype)
 
-def row(label, qbo, zav):
-    q = float(qbo) if qbo is not None else 0.0
+def row(label, src, zav):
+    q = float(src) if src is not None else 0.0
     z = float(zav) if zav is not None else 0.0
     delta = z - q
     flag = "OK " if abs(delta) < 0.01 else "!! "
-    print(f"  {flag}{label:28} QBO {q:>13,.2f}   Zavora {z:>13,.2f}   Δ {delta:>12,.2f}")
+    print(f"  {flag}{label:28} source {q:>13,.2f}   Zavora {z:>13,.2f}   Δ {delta:>12,.2f}")
 
 ASAT = "2026-12-31"
 tb = report("TrialBalance", {"as_at": ASAT})
@@ -43,17 +43,17 @@ print("=== TRIAL BALANCE ===")
 print(f"  debits {float(tb['total_debits']):,.2f}  credits {float(tb['total_credits']):,.2f}  "
       f"balanced={tb['is_balanced']}  diff {float(tb['difference']):,.2f}")
 
-print("\n=== PROFIT & LOSS  (Zavora vs QuickBooks) ===")
+print("\n=== PROFIT & LOSS  (Zavora vs the source accounting system) ===")
 t = targets["pnl"]
 row("Total Income", t["total_income"], pl["total_revenue"])
 row("Cost of Goods Sold", t["total_cogs"], pl["total_cost_of_sales"])
 row("Gross Profit", t["gross_profit"], pl["gross_profit"])
 row("Operating Expenses", t["total_expenses"], pl["total_operating_expenses"])
-# QBO "Other Expenses" vs Zavora "other" section
+# source "Other Expenses" vs Zavora "other" section
 zav_other = -float(pl.get("net_profit", 0)) + (float(pl["gross_profit"]) - float(pl["total_operating_expenses"]))
 row("Net Income", t["net_income"], pl["net_profit"])
 
-print("\n=== BALANCE SHEET  (Zavora vs QuickBooks) ===")
+print("\n=== BALANCE SHEET  (Zavora vs the source accounting system) ===")
 b = targets["balance_sheet"]
 row("Total Assets", b["total_assets"], bs["total_assets"])
 row("Total Liabilities", b["total_liabilities"], bs["total_liabilities"])

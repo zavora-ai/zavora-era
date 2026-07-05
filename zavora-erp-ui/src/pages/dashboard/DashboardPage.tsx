@@ -132,7 +132,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Invoices money-bar — QBO signature widget */}
+      {/* Invoices money-bar widget */}
       <WidgetErrorBoundary label="Invoices">
         <InvoicesBarCard summary={s} onOpen={() => navigate('/invoices')} />
       </WidgetErrorBoundary>

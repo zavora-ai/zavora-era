@@ -1,8 +1,8 @@
 # Zavora ERP — Core ERP Engine
 
 A full-featured double-entry accounting engine built in Rust, targeting Kenyan
-SMEs with Wave Apps feature parity plus Kenya-specific compliance (KRA iTax,
-M-Pesa, PAYE/NSSF/SHA/HELB, WHT). Ships an immutable double-entry ledger, a
+SMEs with modern cloud-accounting feature parity plus Kenya-specific compliance
+(KRA iTax, M-Pesa, PAYE/NSSF/SHA/HELB, WHT). Ships an immutable double-entry ledger, a
 multi-tenant REST API, a React web UI, and **Amos** — a realtime voice + chat
 AI accountant that works the books for you.
 
@@ -18,7 +18,7 @@ zavora-erp-api/     — Binary crate: Axum REST API server + hourly scheduler
 zavora-erp-ui/      — React + Vite + TypeScript web client
 amos/               — Amos AI accountant (standalone crate; realtime agent, :8090)
 migrations/         — PostgreSQL schema + immutability triggers
-scripts/qbo/        — QuickBooks → Zavora import/replay/compare tooling
+scripts/migrate/    — external-ledger import/replay/compare tooling
 ```
 
 ## Amos — Your Personal AI Accountant
@@ -113,8 +113,8 @@ POST /api/v1/auth/register  — (deprecated) legacy user creation
 
 The engine ships a **Kenya Standard** COA template (`ledger::coa_template`) seeded
 on tenant signup. It also supports importing an external chart — the
-`scripts/qbo/` tooling replays a QuickBooks export (e.g. the "Craig's Design and
-Landscaping" sample) into a tenant, mapping QuickBooks account types onto Zavora
+`scripts/migrate/` tooling replays an external accounting export (a sample company)
+into a tenant, mapping the source account types onto Zavora
 account types and **repointing the posting setup** (AR/AP, default bank, default
 sales/purchase, rounding) at the imported accounts. Because both sets can
 coexist, a tenant's live chart may contain more accounts than the bare Kenya

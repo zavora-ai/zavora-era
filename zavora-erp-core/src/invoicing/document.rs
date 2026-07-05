@@ -341,11 +341,11 @@ mod tests {
 
     fn sample() -> InvoiceDocument {
         InvoiceDocument {
-            org_name: "Craig's Design".into(),
+            org_name: "Sample Co".into(),
             org_kra_pin: Some("P051234567X".into()),
             org_vat_number: None,
             org_address: Some("Nairobi".into()),
-            org_email: Some("hi@craig.co".into()),
+            org_email: Some("hi@sample.co".into()),
             org_phone: None,
             logo_url: None,
             primary_color: "#1a56db".into(),

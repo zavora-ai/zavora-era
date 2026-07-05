@@ -744,7 +744,7 @@ pub struct DashboardSummary {
     pub outstanding_invoices: Vec<InvoiceSummary>,
     pub pending_approvals: u32,
     pub uncategorised_txns: u32,
-    // QuickBooks-style widgets.
+    // Dashboard money-bar widgets.
     pub invoices_bar: InvoicesBar,
     pub expense_breakdown: Vec<CategoryAmount>,
     pub bank_accounts: Vec<BankAccountBalance>,
@@ -771,7 +771,7 @@ pub struct InvoiceSummary {
     pub is_overdue: bool,
 }
 
-/// QuickBooks-style invoice money-bar: open receivables split by ageing bucket,
+/// Invoice money-bar: open receivables split by ageing bucket,
 /// plus cash collected recently.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InvoicesBar {
