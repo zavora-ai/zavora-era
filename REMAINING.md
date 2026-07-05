@@ -8,7 +8,12 @@ than leaving stale ticks behind.
 Legend: ⬜ not started · 🟡 partial · ✅ done (kept briefly for context, then moved to CHANGELOG)
 Priority: **P0** blocker · **P1** before go-live · **P2** fast-follow · **P3** polish
 
-_Last reconciled against the codebase: 2026-06-28._
+_Last reconciled against the codebase: 2026-07-05._
+
+> **Amos** (the AI accountant) has its own program reference —
+> [`docs/AMOS.md`](docs/AMOS.md) — covering architecture, what's built, and its
+> roadmap. Its pending items (tenant isolation, guardrails) are folded into the
+> security section below.
 
 ---
 
@@ -49,6 +54,19 @@ _Last reconciled against the codebase: 2026-06-28._
 
 ## 3. Security hardening
 
+- ⬜ **P0 — Amos tenant isolation.** Amos is single-tenant by construction:
+  it authenticates as one fixed service user (`amos@zavora.ai`) and hard-codes
+  `user_id = "zavora"` in memory. The logged-in human's tenant is never
+  propagated, so a user in another tenant would reach Zavora's books and
+  memories. Needs: pass the ERP JWT / `entity_id` from the embedding page
+  through the Amos WebSocket; scope tool calls and memory (`user_id`/
+  `project_id`) by `entity_id`; review new-tenant onboarding for Amos.
+  See [`docs/AMOS.md`](docs/AMOS.md) §8.1.
+- ⬜ **P1 — Amos prompt-injection guardrails.** Evaluate `adk-guardrail`
+  callbacks/plugins; screen user turns and tool arguments for injection /
+  out-of-scope requests; enforce the confirm-before-write contract and
+  no-secrets memory rule at the tool layer (defense in depth beyond the
+  persona). See [`docs/AMOS.md`](docs/AMOS.md) §8.2.
 - ⬜ **P1 — CORS lockdown.** Still `CorsLayer::permissive()`; must restrict to
   `CORS_ALLOWED_ORIGINS` in production.
 - ⬜ **P1 — TLS termination** + secrets in a managed store (startup secret

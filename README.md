@@ -35,10 +35,15 @@ headed browser through the ERP to **showcase** results, and files screenshot
 Open it from the **“Amos — AI Accountant”** button in the sidebar (`/amos`), or
 standalone at `http://localhost:8090`. Amos is fully file-configurable —
 system prompt (`amos/system.md`), operating rules (`amos/AGENTS.md`), MCP
-servers (`amos/mcp.json`), and drop-in skills (`amos/skills/`). See
-[`amos/README.md`](amos/README.md) for setup, configuration, and skill
-authoring. Note: `amos` is intentionally **not** a workspace member — build it
-with `cd amos && cargo run`.
+servers (`amos/mcp.json`), and drop-in skills (`amos/skills/`) — has semantic
+long-term **memory** so it learns as it works, and is embedded in the ERP shell
+in production at `https://erp.zavora.ai/amos-app/`.
+
+- **Program reference** (architecture, capabilities, roadmap): [`docs/AMOS.md`](docs/AMOS.md)
+- **Setup, config & skill authoring**: [`amos/README.md`](amos/README.md)
+
+Note: `amos` is intentionally **not** a workspace member (it path-depends on
+`../../adk-rust`) — build it with `cd amos && cargo run`.
 
 ## Prerequisites
 
