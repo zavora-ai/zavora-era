@@ -430,3 +430,22 @@ export const testNotificationProvider = (channel: string, recipient: string) =>
 
 // === Reports (additional) ===
 export const exportReport = (data: any) => api.post('/reports/export', data, { responseType: 'blob' });
+
+// === Procurement (P2P) — staff/buyer side ===
+export const getVendorApplications = () => api.get('/vendor-applications');
+export const approveVendorApplication = (id: string, data?: { vendor_id?: string }) =>
+  api.post(`/vendor-applications/${id}/approve`, data || {});
+export const rejectVendorApplication = (id: string) => api.post(`/vendor-applications/${id}/reject`, {});
+export const getTenders = () => api.get('/tenders');
+export const getTender = (id: string) => api.get(`/tenders/${id}`);
+export const createTender = (data: {
+  title: string; description?: string; category?: string; closing_date?: string;
+  lines: { description: string; quantity?: number; uom?: string }[];
+}) => api.post('/tenders', data);
+export const publishTender = (id: string) => api.post(`/tenders/${id}/publish`, {});
+export const getTenderBids = (id: string) => api.get(`/tenders/${id}/bids`);
+export const awardTender = (id: string, data: { bid_id: string; delivery_date?: string; notes?: string }) =>
+  api.post(`/tenders/${id}/award`, data);
+export const getPurchaseOrders = () => api.get('/purchase-orders');
+export const getPurchaseOrder = (id: string) => api.get(`/purchase-orders/${id}`);
+

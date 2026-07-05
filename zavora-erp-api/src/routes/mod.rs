@@ -40,6 +40,9 @@ pub mod settings;
 pub mod users;
 pub mod auth_signup;
 pub mod auth_tenants;
+pub mod procurement;
+pub mod portal;
+pub mod portal_auth;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use zavora_erp_core::ErpError;

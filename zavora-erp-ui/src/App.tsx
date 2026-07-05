@@ -12,6 +12,9 @@ import EstimatesPage from './pages/invoicing/EstimatesPage';
 import RecurringInvoicesPage from './pages/invoicing/RecurringInvoicesPage';
 import BillsPage from './pages/bills/BillsPage';
 import SupplierCreditNotesPage from './pages/bills/SupplierCreditNotesPage';
+import TendersPage from './pages/procurement/TendersPage';
+import PurchaseOrdersPage from './pages/procurement/PurchaseOrdersPage';
+import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
@@ -106,6 +109,9 @@ export default function App() {
             <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
             <Route path="supplier-credit-notes" element={<SupplierCreditNotesPage />} />
+            <Route path="tenders" element={<TendersPage />} />
+            <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
+            <Route path="vendor-applications" element={<VendorApplicationsPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />

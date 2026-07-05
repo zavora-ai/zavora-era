@@ -147,7 +147,25 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/signup", post(routes::auth_signup::signup))
         .route("/api/v1/auth/logout", post(routes::users::logout))
         // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
-        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback));
+        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
+        // ── Vendor portal — public auth (external `vendor_users` principal) ──
+        .route("/api/v1/portal/register", post(routes::portal_auth::register))
+        .route("/api/v1/portal/login", post(routes::portal_auth::login))
+        .route("/api/v1/portal/refresh", post(routes::portal_auth::refresh))
+        .route("/api/v1/portal/logout", post(routes::portal_auth::logout))
+        // ── Vendor portal — gated by `VendorContext` (each handler verifies a
+        // `role="Vendor"` token itself, so these live on the public router; a
+        // staff token is rejected, and a Vendor token never reaches ERP routes) ──
+        .route("/api/v1/portal/me", get(routes::portal_auth::me))
+        .route("/api/v1/portal/tenders", get(routes::portal::open_tenders))
+        .route("/api/v1/portal/tenders/{id}", get(routes::portal::get_tender))
+        .route("/api/v1/portal/tenders/{id}/bid", post(routes::portal::submit_bid))
+        .route("/api/v1/portal/bids", get(routes::portal::my_bids))
+        .route("/api/v1/portal/purchase-orders", get(routes::portal::my_purchase_orders))
+        .route("/api/v1/portal/purchase-orders/{id}", get(routes::portal::get_purchase_order))
+        .route("/api/v1/portal/purchase-orders/{id}/invoice", post(routes::portal::lodge_invoice))
+        .route("/api/v1/portal/invoices", get(routes::portal::my_invoices))
+        .route("/api/v1/portal/statement", get(routes::portal::statement));
 
     // Protected routes — gated by the auth middleware applied below.
     let protected = Router::new()
@@ -221,6 +239,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bills/{id}/approve", post(routes::bills::approve))
         .route("/api/v1/bills/{id}/post", post(routes::bills::post_bill))
 
+        // ── Procurement (P2P) — staff/buyer side ──
+        .route("/api/v1/vendor-applications", get(routes::procurement::list_applications))
+        .route("/api/v1/vendor-applications/{id}/approve", post(routes::procurement::approve_application))
+        .route("/api/v1/vendor-applications/{id}/reject", post(routes::procurement::reject_application))
+        .route("/api/v1/tenders", get(routes::procurement::list_tenders).post(routes::procurement::create_tender))
+        .route("/api/v1/tenders/{id}", get(routes::procurement::get_tender))
+        .route("/api/v1/tenders/{id}/publish", post(routes::procurement::publish_tender))
+        .route("/api/v1/tenders/{id}/bids", get(routes::procurement::list_bids))
+        .route("/api/v1/tenders/{id}/award", post(routes::procurement::award_tender))
+        .route("/api/v1/purchase-orders", get(routes::procurement::list_purchase_orders))
+        .route("/api/v1/purchase-orders/{id}", get(routes::procurement::get_purchase_order))
         // Supplier credit notes (AP)
         .route("/api/v1/supplier-credit-notes", get(routes::supplier_credit_notes::list).post(routes::supplier_credit_notes::create))
         .route("/api/v1/supplier-credit-notes/{id}", get(routes::supplier_credit_notes::get_one))

@@ -42,6 +42,7 @@ pub mod parties;
 pub mod catalog;
 pub mod invoicing;
 pub mod ap;
+pub mod procurement;
 pub mod payments;
 pub mod transactions;
 pub mod bank;
