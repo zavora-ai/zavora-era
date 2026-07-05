@@ -63,4 +63,26 @@ impl ErpClient {
             .json()
             .await?)
     }
+
+    /// The entity this Amos serves — the service account's own tenant. Logs in
+    /// and reads `user.entity_id` from the response.
+    pub async fn resolve_entity(&self) -> Result<uuid::Uuid> {
+        let body: Value = self
+            .http
+            .post(format!("{}/auth/login", self.base))
+            .json(&json!({"email": self.email, "password": self.password}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        // Cache the token issued here for reuse.
+        if let Some(t) = body["access_token"].as_str() {
+            *self.token.write().await = Some((t.to_string(), Instant::now()));
+        }
+        body["user"]["entity_id"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow!("login response missing user.entity_id"))
+    }
 }

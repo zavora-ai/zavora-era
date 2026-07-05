@@ -54,19 +54,11 @@ _Last reconciled against the codebase: 2026-07-05._
 
 ## 3. Security hardening
 
-- ⬜ **P0 — Amos tenant isolation.** Amos is single-tenant by construction:
-  it authenticates as one fixed service user (`amos@zavora.ai`) and hard-codes
-  `user_id = "zavora"` in memory. The logged-in human's tenant is never
-  propagated, so a user in another tenant would reach Zavora's books and
-  memories. Needs: pass the ERP JWT / `entity_id` from the embedding page
-  through the Amos WebSocket; scope tool calls and memory (`user_id`/
-  `project_id`) by `entity_id`; review new-tenant onboarding for Amos.
-  See [`docs/AMOS.md`](docs/AMOS.md) §8.1.
-- ⬜ **P1 — Amos prompt-injection guardrails.** Evaluate `adk-guardrail`
-  callbacks/plugins; screen user turns and tool arguments for injection /
-  out-of-scope requests; enforce the confirm-before-write contract and
-  no-secrets memory rule at the tool layer (defense in depth beyond the
-  persona). See [`docs/AMOS.md`](docs/AMOS.md) §8.2.
+- ✅ **P0 — Amos tenant isolation.** _(done 2026-07-05 — moved to CHANGELOG.)_
+  Per-session identity gate: each Amos serves one entity and refuses any session
+  whose verified JWT is for a different entity; role-scoped tools; entity-keyed
+  memory; prompt-injection guardrails; audit trail. See
+  [`docs/AMOS.md`](docs/AMOS.md) §5b.
 - ⬜ **P1 — CORS lockdown.** Still `CorsLayer::permissive()`; must restrict to
   `CORS_ALLOWED_ORIGINS` in production.
 - ⬜ **P1 — TLS termination** + secrets in a managed store (startup secret

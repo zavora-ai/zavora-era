@@ -72,6 +72,46 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
+/// Await the client's first `{type:"auth", token}` frame and verify it against
+/// the served entity. Returns the verified principal, or a refusal reason.
+///
+/// Dev escape hatch: with `AMOS_DEV_ALLOW_UNAUTH=1` (never set in prod) an
+/// absent/blank token yields a synthetic owner principal for the served entity,
+/// so standalone `:8090` testing works without the parent ERP page.
+async fn authenticate<S>(ws_receiver: &mut S, state: &Arc<AppState>) -> Result<crate::auth::Principal, String>
+where
+    S: futures::Stream<Item = Result<ws::Message, axum::Error>> + Unpin,
+{
+    use futures::StreamExt;
+    let dev_allow = std::env::var("AMOS_DEV_ALLOW_UNAUTH").is_ok_and(|v| v == "1" || v == "true");
+
+    let token = match tokio::time::timeout(std::time::Duration::from_secs(10), ws_receiver.next()).await {
+        Ok(Some(Ok(ws::Message::Text(text)))) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("auth"))
+            .and_then(|m| m.get("token").and_then(|t| t.as_str()).map(String::from)),
+        Ok(Some(Ok(ws::Message::Close(_)))) | Ok(None) => return Err("connection closed before authenticating".into()),
+        Ok(Some(Ok(_))) => None,             // first frame wasn't auth
+        Ok(Some(Err(e))) => return Err(format!("websocket error: {e}")),
+        Err(_) => None,                      // timeout
+    };
+
+    match token {
+        Some(t) if !t.trim().is_empty() => {
+            state.verifier.verify(&t).map_err(|e| e.to_string())
+        }
+        _ if dev_allow => {
+            warn!("AMOS_DEV_ALLOW_UNAUTH set — accepting an unauthenticated dev session");
+            Ok(crate::auth::Principal {
+                user_id: uuid::Uuid::nil(),
+                entity_id: state.served_entity,
+                role: "Owner".into(),
+            })
+        }
+        _ => Err("Sign in to the ERP to use Amos.".into()),
+    }
+}
+
 async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     use adk_realtime::events::ServerEvent;
     use base64::Engine as _;
@@ -81,9 +121,39 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     let send_error = |msg: String| serde_json::json!({"type": "error", "message": msg}).to_string();
+    let send_fatal =
+        |msg: String| serde_json::json!({"type": "error", "fatal": true, "message": msg}).to_string();
 
-    // Fresh runner per browser session.
-    let runner = match agent::build_runner(&state).await {
+    // ── Identity gate ────────────────────────────────────────────────────────
+    // Before ANY tool or model turn, the connection must prove it belongs to a
+    // user of the served entity. The client sends {type:"auth", token:<JWT>} as
+    // its first frame; we verify the signature and that the token's entity ==
+    // the entity this Amos serves. A mismatch, a bad/expired token, or no auth
+    // frame ⇒ the session is refused. No runner, no tools, no data, no memory.
+    let principal = match authenticate(&mut ws_receiver, &state).await {
+        Ok(p) => p,
+        Err(reason) => {
+            warn!("session refused: {reason}");
+            if let Some(sink) = &state.audit {
+                let _ = sink
+                    .log(adk_auth::AuditEvent::authentication("unknown", adk_auth::AuditOutcome::Denied))
+                    .await;
+            }
+            let _ = ws_sender.send(ws::Message::Text(send_fatal(reason).into())).await;
+            let _ = ws_sender.send(ws::Message::Close(None)).await;
+            return;
+        }
+    };
+    info!("🔓 session authenticated: user {} · role {} · entity {}", principal.user_id, principal.role, principal.entity_id);
+    if let Some(sink) = &state.audit {
+        let _ = sink
+            .log(adk_auth::AuditEvent::authentication(&principal.user_id.to_string(), adk_auth::AuditOutcome::Allowed))
+            .await;
+    }
+    let principal = Arc::new(principal);
+
+    // Fresh runner per browser session, scoped to this principal.
+    let runner = match agent::build_runner(&state, principal.clone()).await {
         Ok(r) => Arc::new(r),
         Err(e) => {
             error!("Failed to build runner: {e}");
@@ -128,6 +198,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // Task: browser → Gemini (audio + control/chat messages).
     let runner_send = runner.clone();
     let transcript_send = transcript.clone();
+    let tx_guard = tx.clone();
     let send_handle = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_receiver.next().await {
             match msg {
@@ -143,6 +214,19 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                         match msg.get("type").and_then(|t| t.as_str()) {
                             Some("text") => {
                                 if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+                                    // Prompt-injection / exfil screen: refuse
+                                    // before the turn ever reaches the model.
+                                    let screen = crate::guard::screen_user_input(content);
+                                    if let Some(reason) = crate::guard::fail_reason(&screen) {
+                                        warn!("guardrail blocked user input");
+                                        let _ = tx_guard.send(ws::Message::Text(
+                                            serde_json::json!({"type": "text_delta", "content": reason}).to_string().into(),
+                                        )).await;
+                                        let _ = tx_guard.send(ws::Message::Text(
+                                            serde_json::json!({"type": "response_done"}).to_string().into(),
+                                        )).await;
+                                        continue;
+                                    }
                                     scribe(&transcript_send, 'u', content).await;
                                     let _ = runner_send.send_text(content).await;
                                     let _ = runner_send.create_response().await;
