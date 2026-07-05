@@ -71,7 +71,9 @@ services:
         condition: service_started
     environment:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:?set in .env.prod}
-      GEMINI_LIVE_MODEL: ${GEMINI_LIVE_MODEL:-models/gemini-live-2.5-flash-native-audio}
+      # Default to the model the current API key is entitled to (the 2.5
+      # native-audio model is rejected for this key). Override in .env.prod.
+      GEMINI_LIVE_MODEL: ${GEMINI_LIVE_MODEL:-models/gemini-3.1-flash-live-preview}
       ZAVORA_API_URL: http://api:8080
       ZAVORA_EMAIL: ${AMOS_ERP_EMAIL:?set in .env.prod}
       ZAVORA_PASSWORD: ${AMOS_ERP_PASSWORD:?set in .env.prod}
