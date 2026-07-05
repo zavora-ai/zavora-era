@@ -318,25 +318,83 @@ async fn holiday_dates(
 
 /// Entitlement for a leave type in a given year, honouring the accrual method.
 /// MonthlyAccrual grants pro-rata by elapsed months of the current year.
-fn entitlement_for(days_per_year: Decimal, method: AccrualMethod, year: i32) -> Decimal {
+/// Entitlement for a leave type in a given year, honouring the accrual method
+/// and the employee's start date (a mid-year joiner accrues only from their
+/// start month; nothing accrues for a year before they joined).
+fn entitlement_for(
+    days_per_year: Decimal,
+    method: AccrualMethod,
+    year: i32,
+    emp_start: Option<NaiveDate>,
+) -> Decimal {
+    entitlement_at(days_per_year, method, year, emp_start, Utc::now().date_naive())
+}
+
+/// Testable core of the accrual calculation (see `entitlement_for`).
+fn entitlement_at(
+    days_per_year: Decimal,
+    method: AccrualMethod,
+    year: i32,
+    emp_start: Option<NaiveDate>,
+    as_of: NaiveDate,
+) -> Decimal {
+    let start_month = match emp_start {
+        Some(d) if d.year() > year => return Decimal::ZERO, // not yet employed this year
+        Some(d) if d.year() == year => d.month() as i64,
+        _ => 1,
+    };
     match method {
         AccrualMethod::FixedAnnual | AccrualMethod::Unlimited => days_per_year,
         AccrualMethod::MonthlyAccrual => {
-            let now = Utc::now().date_naive();
-            let months = if now.year() > year {
-                12
-            } else if now.year() < year {
-                0
-            } else {
-                now.month() as i64 // Jan..current month elapsed
-            };
+            let elapsed_to = if as_of.year() > year { 12 } else if as_of.year() < year { 0 } else { as_of.month() as i64 };
+            let months = (elapsed_to - start_month + 1).max(0).min(12);
             (days_per_year * Decimal::from(months) / dec!(12)).round_dp(2)
         }
     }
 }
 
+#[cfg(test)]
+mod accrual_tests {
+    use super::*;
+    fn d(y: i32, m: u32, day: u32) -> NaiveDate { NaiveDate::from_ymd_opt(y, m, day).unwrap() }
+
+    #[test]
+    fn full_year_employee_accrues_pro_rata_to_date() {
+        // 21 days/yr, employed before this year, as of end of June → 6/12 * 21 = 10.5
+        let v = entitlement_at(dec!(21), AccrualMethod::MonthlyAccrual, 2026, Some(d(2020,1,1)), d(2026,6,30));
+        assert_eq!(v, dec!(10.50));
+    }
+
+    #[test]
+    fn mid_year_joiner_accrues_only_from_start_month() {
+        // Joined April 2026; as of end June → months Apr,May,Jun = 3 → 3/12 * 21 = 5.25
+        let v = entitlement_at(dec!(21), AccrualMethod::MonthlyAccrual, 2026, Some(d(2026,4,10)), d(2026,6,30));
+        assert_eq!(v, dec!(5.25));
+    }
+
+    #[test]
+    fn not_employed_in_year_is_zero() {
+        let v = entitlement_at(dec!(21), AccrualMethod::MonthlyAccrual, 2025, Some(d(2026,1,1)), d(2026,6,30));
+        assert_eq!(v, dec!(0));
+    }
+
+    #[test]
+    fn fixed_annual_grants_full_regardless_of_month() {
+        let v = entitlement_at(dec!(14), AccrualMethod::FixedAnnual, 2026, Some(d(2020,1,1)), d(2026,2,1));
+        assert_eq!(v, dec!(14));
+    }
+
+    #[test]
+    fn past_year_accrues_full_twelve_months() {
+        let v = entitlement_at(dec!(21), AccrualMethod::MonthlyAccrual, 2025, Some(d(2020,1,1)), d(2026,6,30));
+        assert_eq!(v, dec!(21));
+    }
+}
+
 /// Ensure a balance row exists for (employee, type, year) and return it, with
-/// `entitled`/`accrued` refreshed from the type's current accrual.
+/// `entitled`/`accrued` refreshed from the type's accrual and the employee's
+/// tenure, and `carried_over` computed from the prior year (capped at the
+/// type's carryover_max).
 pub async fn ensure_balance(
     engine: &ErpEngine,
     entity_id: Uuid,
@@ -353,15 +411,37 @@ pub async fn ensure_balance(
     .await?
     .ok_or_else(|| ErpError::NotFound { entity_type: "LeaveType".into(), id: leave_type_id })?;
 
-    let accrued = entitlement_for(lt.days_per_year, AccrualMethod::parse(&lt.accrual_method), year);
+    let emp_start: Option<NaiveDate> = sqlx::query_scalar::<_, NaiveDate>(
+        "SELECT start_date FROM employees WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(employee_id).bind(entity_id).fetch_optional(engine.pool()).await?;
+
+    let accrued = entitlement_for(lt.days_per_year, AccrualMethod::parse(&lt.accrual_method), year, emp_start);
+
+    // Carryover from the prior year: unused (accrued + carried − taken), capped.
+    let carried_over = if lt.carryover_max > Decimal::ZERO {
+        let prior: Option<(Decimal, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT accrued_days, carried_over, taken_days FROM leave_balances \
+             WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3",
+        )
+        .bind(employee_id).bind(leave_type_id).bind(year - 1)
+        .fetch_optional(engine.pool()).await?;
+        match prior {
+            Some((acc, carried, taken)) => (acc + carried - taken).max(Decimal::ZERO).min(lt.carryover_max),
+            None => Decimal::ZERO,
+        }
+    } else {
+        Decimal::ZERO
+    };
 
     sqlx::query(
         r#"INSERT INTO leave_balances
-             (id, entity_id, employee_id, leave_type_id, year, entitled_days, accrued_days, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+             (id, entity_id, employee_id, leave_type_id, year, entitled_days, accrued_days, carried_over, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
            ON CONFLICT (employee_id, leave_type_id, year)
            DO UPDATE SET entitled_days = EXCLUDED.entitled_days,
                          accrued_days  = EXCLUDED.accrued_days,
+                         carried_over  = EXCLUDED.carried_over,
                          updated_at    = NOW()"#,
     )
     .bind(Uuid::new_v4())
@@ -371,6 +451,7 @@ pub async fn ensure_balance(
     .bind(year)
     .bind(lt.days_per_year)
     .bind(accrued)
+    .bind(carried_over)
     .execute(engine.pool())
     .await?;
 

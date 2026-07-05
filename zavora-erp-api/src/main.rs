@@ -117,6 +117,12 @@ async fn main() -> anyhow::Result<()> {
                 Ok(_) => {}
                 Err(e) => tracing::error!("Depreciation scheduler error: {}", e),
             }
+            // Advance leave balances for all tenants (accrual by tenure + carryover; idempotent).
+            match zavora_erp_core::services::scheduler::advance_leave_balances_all(&scheduler_engine).await {
+                Ok(n) if n > 0 => tracing::info!("Leave balances advanced for {} employee(s)", n),
+                Ok(_) => {}
+                Err(e) => tracing::error!("Leave accrual scheduler error: {}", e),
+            }
         }
     });
 

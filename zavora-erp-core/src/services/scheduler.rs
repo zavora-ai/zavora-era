@@ -135,6 +135,39 @@ struct RecurringJournalLine {
     description: Option<String>,
 }
 
+/// Advance leave balances for ALL tenants: materialize current-year balance
+/// rows for every active employee (which recomputes accrual by tenure and
+/// applies prior-year carryover). Idempotent — safe to run every tick.
+pub async fn advance_leave_balances_all(engine: &ErpEngine) -> ErpResult<u32> {
+    let mut total = 0u32;
+    for entity_id in all_entity_ids(engine).await? {
+        match advance_leave_balances(engine, entity_id).await {
+            Ok(n) => total += n,
+            Err(e) => tracing::error!("Leave accrual failed for entity {}: {}", entity_id, e),
+        }
+    }
+    Ok(total)
+}
+
+/// Materialize current-year leave balances for one tenant's active employees.
+pub async fn advance_leave_balances(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<u32> {
+    let year = chrono::Utc::now().year();
+    let employees: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM employees WHERE entity_id = $1 AND is_active = true",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+    let mut n = 0u32;
+    for emp in employees {
+        // list_balances ensures a row per active type (accrual + carryover).
+        if crate::services::leave::list_balances(engine, entity_id, emp, year).await.is_ok() {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
 /// Post due recurring journals for ALL tenants.
 pub async fn process_recurring_journals_all(engine: &ErpEngine) -> ErpResult<u32> {
     let mut total = 0u32;
