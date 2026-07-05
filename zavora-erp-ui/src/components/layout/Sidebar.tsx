@@ -9,43 +9,56 @@ import clsx from 'clsx';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+
   { divider: true, label: 'SALES' },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Estimates', href: '/estimates', icon: ClipboardList },
-  { name: 'Recurring', href: '/recurring-invoices', icon: RefreshCw },
+  { name: 'Recurring Invoices', href: '/recurring-invoices', icon: RefreshCw },
   { name: 'Customers', href: '/customers', icon: Users },
+
   { divider: true, label: 'PURCHASES' },
   { name: 'Bills', href: '/bills', icon: Receipt },
   { name: 'Supplier Credits', href: '/supplier-credit-notes', icon: FileMinus },
   { name: 'Capture Receipt', href: '/receipts/capture', icon: Camera },
   { name: 'Vendors', href: '/vendors', icon: Building2 },
-  { divider: true, label: 'MONEY' },
+
+  { divider: true, label: 'BANKING' },
   { name: 'Payments', href: '/payments', icon: CreditCard },
   { name: 'Banking', href: '/banking', icon: Landmark },
   { name: 'Reconciliation', href: '/reconciliation', icon: CheckCircle },
   { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
-  { divider: true, label: 'ACCOUNTING' },
+
+  { divider: true, label: 'PRODUCTS & INVENTORY' },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Boxes },
-  { name: 'Assets', href: '/assets', icon: Building },
+
+  { divider: true, label: 'PAYROLL & HR' },
   { name: 'Employees', href: '/employees', icon: UserCheck },
   { name: 'Payroll', href: '/payroll', icon: Wallet },
-  { name: 'Accounts', href: '/accounts', icon: BookOpen },
+
+  { divider: true, label: 'ACCOUNTING' },
+  { name: 'Chart of Accounts', href: '/accounts', icon: BookOpen },
   { name: 'Journal Entries', href: '/journal-entries', icon: BookMarked },
   { name: 'Recurring Journals', href: '/recurring-journals', icon: RefreshCw },
-  { name: 'Periods', href: '/periods', icon: CalendarClock },
+  { name: 'Fixed Assets', href: '/assets', icon: Building },
   { name: 'Opening Balances', href: '/opening-balances', icon: Scale },
-  { name: 'Import Data', href: '/import', icon: Upload },
+  { name: 'Periods', href: '/periods', icon: CalendarClock },
+
+  { divider: true, label: 'REPORTS & ANALYSIS' },
+  { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'Budgets', href: '/budgets', icon: Target },
   { name: 'Dimensions', href: '/dimensions', icon: Layers },
   { name: 'Consolidation', href: '/consolidation', icon: Network },
-  { name: 'Reports', href: '/reports', icon: BarChart3 },
-  { divider: true, label: '' },
+
+  { divider: true, label: 'TAX & COMPLIANCE' },
+  { name: 'Tax Filing', href: '/tax-filings', icon: FileCheck },
+  { name: 'WHT Rates', href: '/wht-rates', icon: Percent },
+
+  { divider: true, label: 'ADMIN' },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Users & Roles', href: '/users', icon: UserCog },
   { name: 'FX Rates', href: '/fx-rates', icon: RefreshCw },
-  { name: 'WHT Rates', href: '/wht-rates', icon: Percent },
-  { name: 'Tax Filing', href: '/tax-filings', icon: FileCheck },
+  { name: 'Import Data', href: '/import', icon: Upload },
   { name: 'Audit Trail', href: '/audit', icon: History },
   { name: 'Notifications', href: '/notifications', icon: BellRing },
 ];
