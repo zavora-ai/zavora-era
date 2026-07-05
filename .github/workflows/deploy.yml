@@ -5,15 +5,26 @@ name: Deploy to production
 # `main-pr` ruleset, so deploys always follow a reviewed/merged PR.
 #
 # It builds on the server (same `docker compose … up -d --build` we run by
-# hand): pulls the latest main, rebuilds the api + caddy images (Docker layer
-# cache keeps unchanged ones fast), recreates the containers, then health-checks.
-# The postgres data volume is untouched, so data persists; DB migrations
-# auto-apply on API startup.
+# hand): pulls the latest main, rebuilds the api + amos + caddy images (Docker
+# layer cache keeps unchanged ones fast), recreates the containers, then
+# health-checks. The postgres data volume is untouched, so data persists; DB
+# migrations auto-apply on API startup.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   SSH_HOST  – production host/IP (e.g. 32.197.69.210)
 #   SSH_USER  – ssh user (e.g. ubuntu)
 #   SSH_KEY   – contents of the SSH private key with access to the host
+#
+# Amos secrets (synced into deploy/.env.prod on the host when set; leave a
+# secret empty to manage that value on the server by hand instead):
+#   GOOGLE_API_KEY         – Gemini API key for Amos's realtime sessions
+#   AMOS_ERP_EMAIL         – Amos's ERP service user (e.g. amos@zavora.ai;
+#                            create it once in prod under Users & Roles with
+#                            the Accountant role)
+#   AMOS_ERP_PASSWORD      – that user's password
+#   AMOS_ERP_LOGIN_EMAIL / AMOS_ERP_LOGIN_PASSWORD
+#                          – optional: the account the visible showcase
+#                            browser signs in as (defaults to the service user)
 
 on:
   push:
@@ -27,7 +38,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Set up SSH
         run: |
@@ -35,6 +46,43 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync Amos secrets into deploy/.env.prod
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          AMOS_ERP_EMAIL: ${{ secrets.AMOS_ERP_EMAIL }}
+          AMOS_ERP_PASSWORD: ${{ secrets.AMOS_ERP_PASSWORD }}
+          AMOS_ERP_LOGIN_EMAIL: ${{ secrets.AMOS_ERP_LOGIN_EMAIL }}
+          AMOS_ERP_LOGIN_PASSWORD: ${{ secrets.AMOS_ERP_LOGIN_PASSWORD }}
+        run: |
+          # Upsert KEY=VALUE into the host's env file for every non-empty
+          # secret. Values already present on the host are only overwritten
+          # when the corresponding GitHub secret is set.
+          upserts=""
+          for key in GOOGLE_API_KEY AMOS_ERP_EMAIL AMOS_ERP_PASSWORD AMOS_ERP_LOGIN_EMAIL AMOS_ERP_LOGIN_PASSWORD; do
+            val="${!key}"
+            if [ -n "$val" ]; then
+              upserts+="$key=$val"$'\n'
+            fi
+          done
+          if [ -z "$upserts" ]; then
+            echo "No Amos secrets configured in GitHub — using the host's existing deploy/.env.prod"
+            exit 0
+          fi
+          printf '%s' "$upserts" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" '
+            set -euo pipefail
+            touch ~/zavora-era/deploy/.env.prod
+            while IFS= read -r line; do
+              key="${line%%=*}"
+              grep -v "^${key}=" ~/zavora-era/deploy/.env.prod > ~/zavora-era/deploy/.env.prod.tmp || true
+              printf "%s\n" "$line" >> ~/zavora-era/deploy/.env.prod.tmp
+              mv ~/zavora-era/deploy/.env.prod.tmp ~/zavora-era/deploy/.env.prod
+            done
+            chmod 600 ~/zavora-era/deploy/.env.prod
+            echo "Synced Amos secrets into deploy/.env.prod"
+          '
 
       - name: Deploy
         env:
@@ -52,7 +100,7 @@ jobs:
             echo "Now at: $(git log --oneline -1)"
 
             echo "==> Building & recreating containers"
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.prod up -d --build api caddy
+            docker compose -f docker-compose.prod.yml --env-file deploy/.env.prod up -d --build api amos caddy
 
             echo "==> Pruning old images"
             docker image prune -f >/dev/null 2>&1 || true
@@ -69,8 +117,21 @@ jobs:
             for i in $(seq 1 30); do
               code=$(docker run --rm --network zavora-era_default curlimages/curl:latest \
                        -s -o /dev/null -w '%{http_code}' --max-time 5 http://api:8080/health || echo 000)
-              if [ "$code" = "200" ]; then echo "Healthy (200) after ${i} tries"; exit 0; fi
+              if [ "$code" = "200" ]; then echo "API healthy (200) after ${i} tries"; break; fi
+              if [ "$i" = "30" ]; then
+                echo "API health check failed"
+                docker compose -f docker-compose.prod.yml logs --tail 40 api; exit 1
+              fi
               echo "  attempt $i: $code — retrying"; sleep 4
             done
-            echo "Health check failed"; docker compose -f docker-compose.prod.yml logs --tail 40 api; exit 1
+
+            echo "==> Waiting for Amos health"
+            for i in $(seq 1 30); do
+              code=$(docker run --rm --network zavora-era_default curlimages/curl:latest \
+                       -s -o /dev/null -w '%{http_code}' --max-time 5 http://amos:8090/api/skills || echo 000)
+              if [ "$code" = "200" ]; then echo "Amos healthy (200) after ${i} tries"; exit 0; fi
+              echo "  attempt $i: $code — retrying"; sleep 4
+            done
+            echo "Amos health check failed"
+            docker compose -f docker-compose.prod.yml logs --tail 60 amos; exit 1
           REMOTE

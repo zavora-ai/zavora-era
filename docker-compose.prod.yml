@@ -1,6 +1,7 @@
 # Production stack for erp.zavora.ai
 #   caddy   — HTTPS reverse proxy + static UI (ports 80/443)
 #   api     — Rust API (internal :8080)
+#   amos    — Amos AI accountant (internal :8090, proxied at /amos-app)
 #   postgres— database (internal, volume-backed)
 #   redis   — sessions/cache (internal)
 #   xberg   — OCR sidecar (internal :8000), image loaded from a tar on the host
@@ -58,6 +59,30 @@ services:
       OCR_PROVIDER: xberg
       XBERG_URL: http://xberg:8000
       RUST_LOG: ${RUST_LOG:-info,zavora_erp_api=info}
+
+  amos:
+    build:
+      context: .
+      dockerfile: amos/Dockerfile
+    container_name: zavora-amos
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:?set in .env.prod}
+      # Default to the model the current API key is entitled to (the 2.5
+      # native-audio model is rejected for this key). Override in .env.prod.
+      GEMINI_LIVE_MODEL: ${GEMINI_LIVE_MODEL:-models/gemini-3.1-flash-live-preview}
+      ZAVORA_API_URL: http://api:8080
+      ZAVORA_EMAIL: ${AMOS_ERP_EMAIL:?set in .env.prod}
+      ZAVORA_PASSWORD: ${AMOS_ERP_PASSWORD:?set in .env.prod}
+      ERP_LOGIN_EMAIL: ${AMOS_ERP_LOGIN_EMAIL:-${AMOS_ERP_EMAIL}}
+      ERP_LOGIN_PASSWORD: ${AMOS_ERP_LOGIN_PASSWORD:-${AMOS_ERP_PASSWORD}}
+      # The showcase browser browses the internal Caddy origin (the same SPA
+      # users see) instead of looping out through the public CDN.
+      ERP_UI_URL: http://caddy
+      RUST_LOG: ${AMOS_RUST_LOG:-info,amos=info}
 
   caddy:
     build:

@@ -149,6 +149,11 @@ pub async fn start_manager(showcase_dir: &std::path::Path) -> Result<Arc<McpServ
         ),
         ("AMOS_SHOWCASE_DIR", showcase_dir.to_string_lossy().into_owned()),
         ("ZAVORA_API_URL", "http://localhost:8080".to_string()),
+        // Pin in production images so npx never re-resolves at boot.
+        ("AMOS_PLAYWRIGHT_MCP_VERSION", "latest".to_string()),
+        // Dev machines have Google Chrome; the container ships playwright's
+        // chromium (the image sets AMOS_BROWSER_CHANNEL=chromium).
+        ("AMOS_BROWSER_CHANNEL", "chrome".to_string()),
     ]);
     let manager = match crate::config::mcp_config(&defaults) {
         Some(json) => McpServerManager::from_json(&json)

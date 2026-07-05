@@ -114,6 +114,31 @@ From the server: `connected`, `text_delta`, `transcript`, `input_transcript`,
 `speech_started/stopped`, `response_done`, `tool_call`, `tasks`, `showcase`,
 `skill`, `error`. Binary frames are PCM audio in both directions.
 
+## Production deployment
+
+Amos ships as its own container in `docker-compose.prod.yml` and deploys with
+the rest of the stack on every merge to `main` (`.github/workflows/deploy.yml`).
+
+- **Image** (`amos/Dockerfile`): clones `zavora-ai/adk-rust` and
+  `zavora-ai/mcp-erp` at pinned refs (build args `ADK_RUST_REF`,
+  `MCP_ERP_REF`), builds both binaries, and bakes Node + a pinned
+  `@playwright/mcp` + headless Chromium. All file-based config
+  (`system.md`, `AGENTS.md`, `mcp.json`, `skills/`) is copied to `/app` and
+  wired via the `AMOS_*` env overrides.
+- **Routing**: Caddy proxies `/amos-app/*` → `amos:8090` (prefix stripped;
+  the frontend auto-detects it), so Amos is same-origin with the ERP — the
+  embedded iframe inherits the mic permission and the CDN needs no changes.
+  The showcase browser runs **headless** and browses the internal Caddy
+  origin (`ERP_UI_URL=http://caddy`).
+- **Secrets** live in `deploy/.env.prod` on the host. The deploy workflow
+  upserts them from GitHub Actions secrets when set: `GOOGLE_API_KEY`,
+  `AMOS_ERP_EMAIL`, `AMOS_ERP_PASSWORD`, and optionally
+  `AMOS_ERP_LOGIN_EMAIL`/`AMOS_ERP_LOGIN_PASSWORD` for the visible browser
+  account.
+- **One-time setup**: create Amos's service user in production (Users &
+  Roles → e.g. `amos@zavora.ai`, **Accountant** role) with the same
+  credentials as the `AMOS_ERP_*` secrets.
+
 ## Troubleshooting
 
 - **"browser is already busy"** — another process holds the Playwright profile;
