@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17  # postgres 17 + pgvector (Amos semantic memory)
     container_name: zavora-postgres
     environment:
       POSTGRES_USER: zavora

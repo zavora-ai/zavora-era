@@ -21,6 +21,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/showcase", get(get_showcase))
         .route("/api/snapshot", get(get_snapshot))
         .route("/api/skills", get(get_skills))
+        .route("/api/memories", get(get_memories))
         .route("/ws", get(ws_handler))
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
         .with_state(state)
@@ -40,6 +41,10 @@ async fn get_showcase(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 
 async fn get_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(state.skills.summaries())
+}
+
+async fn get_memories(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(state.memory.recent(20).await)
 }
 
 /// Live business snapshot for the right-hand panel, straight from the ledger.
@@ -102,8 +107,27 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
 
     let (tx, mut rx) = mpsc::channel::<ws::Message>(64);
 
+    // Session transcript for the end-of-session memory distillation:
+    // (buffer, last_speaker) — a speaker tag is inserted when the voice
+    // changes so the summarizer can follow the dialogue. Capped so a long
+    // session can't grow unbounded.
+    let transcript = Arc::new(tokio::sync::Mutex::new((String::new(), ' ')));
+    const TRANSCRIPT_CAP: usize = 30_000;
+    async fn scribe(t: &tokio::sync::Mutex<(String, char)>, speaker: char, text: &str) {
+        let mut guard = t.lock().await;
+        if guard.0.len() >= TRANSCRIPT_CAP {
+            return;
+        }
+        if guard.1 != speaker {
+            guard.0.push_str(if speaker == 'u' { "\n[owner]: " } else { "\n[amos]: " });
+            guard.1 = speaker;
+        }
+        guard.0.push_str(text);
+    }
+
     // Task: browser → Gemini (audio + control/chat messages).
     let runner_send = runner.clone();
+    let transcript_send = transcript.clone();
     let send_handle = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_receiver.next().await {
             match msg {
@@ -119,6 +143,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                         match msg.get("type").and_then(|t| t.as_str()) {
                             Some("text") => {
                                 if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+                                    scribe(&transcript_send, 'u', content).await;
                                     let _ = runner_send.send_text(content).await;
                                     let _ = runner_send.create_response().await;
                                 }
@@ -146,6 +171,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let runner_recv = runner.clone();
     let tx_events = tx.clone();
     let state_recv = state.clone();
+    let transcript_recv = transcript.clone();
     // Gemini Live tends to end its turn mid-workplan, narrating the next step
     // instead of calling its tool. When a turn completes with unfinished tasks,
     // nudge the model to keep executing (capped so a confused session can't loop).
@@ -159,12 +185,18 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                         ServerEvent::TextDelta { delta, .. } => Some(ws::Message::Text(
                             serde_json::json!({"type": "text_delta", "content": delta}).to_string().into(),
                         )),
-                        ServerEvent::TranscriptDelta { delta, .. } => Some(ws::Message::Text(
-                            serde_json::json!({"type": "transcript", "content": delta}).to_string().into(),
-                        )),
-                        ServerEvent::InputTranscriptDelta { delta, .. } => Some(ws::Message::Text(
-                            serde_json::json!({"type": "input_transcript", "content": delta}).to_string().into(),
-                        )),
+                        ServerEvent::TranscriptDelta { delta, .. } => {
+                            scribe(&transcript_recv, 'a', delta).await;
+                            Some(ws::Message::Text(
+                                serde_json::json!({"type": "transcript", "content": delta}).to_string().into(),
+                            ))
+                        }
+                        ServerEvent::InputTranscriptDelta { delta, .. } => {
+                            scribe(&transcript_recv, 'u', delta).await;
+                            Some(ws::Message::Text(
+                                serde_json::json!({"type": "input_transcript", "content": delta}).to_string().into(),
+                            ))
+                        }
                         ServerEvent::SpeechStarted { .. } => Some(ws::Message::Text(
                             serde_json::json!({"type": "speech_started"}).to_string().into(),
                         )),
@@ -290,4 +322,8 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
 
     let _ = runner.close().await;
     info!("🔇 Amos session closed");
+
+    // Distill the session into long-term memory (best-effort, off-thread).
+    let session_transcript = transcript.lock().await.0.clone();
+    crate::summarizer::spawn(state.clone(), session_transcript);
 }

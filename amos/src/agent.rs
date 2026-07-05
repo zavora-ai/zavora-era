@@ -16,7 +16,8 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 pub async fn build_runner(state: &Arc<AppState>) -> Result<RealtimeRunner> {
-    let instruction = persona::system_instruction(state);
+    let instruction = persona::system_instruction(state)
+        .replace("{memories}", &state.memory.profile_block(6).await);
     let voice = std::env::var("AMOS_VOICE").unwrap_or_else(|_| "Charon".to_string());
 
     let config = RealtimeConfig::default()
@@ -64,6 +65,8 @@ pub async fn build_runner(state: &Arc<AppState>) -> Result<RealtimeRunner> {
         .tool_arc(plan_tasks_def(), Arc::new(PlanTasks { state: state.clone() }))
         .tool_arc(update_task_def(), Arc::new(UpdateTask { state: state.clone() }))
         .tool_arc(use_skill_def(), Arc::new(UseSkill { state: state.clone() }))
+        .tool_arc(remember_def(), Arc::new(Remember { state: state.clone() }))
+        .tool_arc(recall_def(), Arc::new(Recall { state: state.clone() }))
         .tool_arc(erp_login_def(), Arc::new(ErpLoginTool { state: state.clone(), factory: factory.clone() }))
         .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), factory: factory.clone() }));
 
@@ -260,17 +263,35 @@ impl ToolHandler for UpdateTask {
         };
         let note = call.arguments["note"].as_str().map(String::from);
         let mut found = false;
+        let mut failed_title = None;
         {
             let mut tasks = self.state.tasks.write().await;
             if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
                 task.status = status;
+                if status == TaskStatus::Failed {
+                    failed_title = Some(task.title.clone());
+                }
                 if note.is_some() {
-                    task.note = note;
+                    task.note = note.clone();
                 }
                 found = true;
             }
         }
         self.state.push_tasks().await;
+
+        // Failures are how Amos learns: file the note as a lesson under the
+        // skill in play so the next run of that playbook sees it.
+        if let (Some(title), Some(note)) = (failed_title, note) {
+            let state = self.state.clone();
+            tokio::spawn(async move {
+                let skill = state.active_skill.read().await.clone();
+                let text = format!("While doing '{title}': {note}");
+                if state.memory.remember(crate::memory::MemoryKind::Lesson, &text, skill.as_deref()).await.is_ok() {
+                    info!("🧠 auto-lesson filed{}", skill.as_deref().map(|s| format!(" under {s}")).unwrap_or_default());
+                    state.push_json(json!({"type": "memory", "kind": "lesson", "text": text}));
+                }
+            });
+        }
         Ok(json!({"status": if found { "ok" } else { "unknown_task_id" }}))
     }
 }
@@ -305,8 +326,14 @@ impl ToolHandler for UseSkill {
     async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
         let name = call.arguments["name"].as_str().unwrap_or("").to_string();
         match self.state.skills.body_block(&name) {
-            Some(block) => {
+            Some(mut block) => {
                 info!("📖 use_skill: {name}");
+                // The learning loop: lessons filed under this skill (from past
+                // failures and corrections) ride along with the playbook.
+                if let Some(lessons) = self.state.memory.lessons_block(&name, &block).await {
+                    block.push_str(&lessons);
+                }
+                *self.state.active_skill.write().await = Some(name.clone());
                 self.state.push_json(json!({"type": "skill", "name": name}));
                 Ok(json!({"skill": name, "playbook": block, "instruction": "Follow this workflow exactly — tool order, checks, and confirmation gates."}))
             }
@@ -314,6 +341,94 @@ impl ToolHandler for UseSkill {
                 "error": format!("Unknown skill '{name}'"),
                 "available_skills": self.state.skills.names(),
             })),
+        }
+    }
+}
+
+// ─── remember / recall ───────────────────────────────────────────────────────
+
+fn remember_def() -> ToolDefinition {
+    ToolDefinition {
+        name: "remember".into(),
+        description: Some(
+            "Store a durable memory. Use kind 'profile' for business facts and the owner's \
+             preferences (especially when the user corrects you), and kind 'lesson' for \
+             workflow gotchas discovered while working (attach the skill name). \
+             Never store passwords, keys, or other secrets."
+                .into(),
+        ),
+        parameters: Some(json!({
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["profile", "lesson"]},
+                "content": {"type": "string", "description": "The fact or lesson, specific and self-contained"},
+                "skill": {"type": "string", "description": "For lessons: the skill this applies to (e.g. record-vendor-bill)"}
+            },
+            "required": ["kind", "content"]
+        })),
+    }
+}
+
+struct Remember {
+    state: Arc<AppState>,
+}
+
+#[async_trait]
+impl ToolHandler for Remember {
+    async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
+        let kind = crate::memory::MemoryKind::parse(call.arguments["kind"].as_str().unwrap_or(""))
+            .unwrap_or(crate::memory::MemoryKind::Profile);
+        let content = call.arguments["content"].as_str().unwrap_or("").to_string();
+        let skill = call.arguments["skill"].as_str().map(String::from);
+        if content.trim().is_empty() {
+            return Ok(json!({"error": "content must not be empty"}));
+        }
+        match self.state.memory.remember(kind, &content, skill.as_deref()).await {
+            Ok(()) => {
+                info!("🧠 remember [{kind:?}]: {content}");
+                self.state.push_json(json!({"type": "memory", "kind": kind, "text": content}));
+                Ok(json!({"status": "remembered"}))
+            }
+            Err(e) => {
+                warn!("remember failed: {e}");
+                Ok(json!({"error": e.to_string()}))
+            }
+        }
+    }
+}
+
+fn recall_def() -> ToolDefinition {
+    ToolDefinition {
+        name: "recall".into(),
+        description: Some(
+            "Search your long-term memory semantically. Use when the user references past \
+             work or preferences, or before starting a job you may have done before."
+                .into(),
+        ),
+        parameters: Some(json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What you're trying to remember"},
+                "skill": {"type": "string", "description": "Optional: also include lessons scoped to this skill"}
+            },
+            "required": ["query"]
+        })),
+    }
+}
+
+struct Recall {
+    state: Arc<AppState>,
+}
+
+#[async_trait]
+impl ToolHandler for Recall {
+    async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
+        let query = call.arguments["query"].as_str().unwrap_or("");
+        let skill = call.arguments["skill"].as_str();
+        match self.state.memory.recall(query, skill, 5).await {
+            Ok(items) if items.is_empty() => Ok(json!({"memories": [], "note": "nothing relevant remembered"})),
+            Ok(items) => Ok(json!({"memories": items})),
+            Err(e) => Ok(json!({"error": e.to_string()})),
         }
     }
 }

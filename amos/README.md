@@ -99,6 +99,29 @@ Installed pack:
 frontmatter fields, write the workflow as numbered tool sequences, restart
 Amos. `GET /api/skills` shows what loaded.
 
+## Memory — how Amos learns
+
+Amos has semantic long-term memory (adk-memory `PostgresMemoryService` with
+pgvector + Gemini embeddings; `AMOS_MEMORY_DATABASE_URL`, defaulting to the
+local ERP database; falls back to in-memory if unreachable). Three kinds:
+
+| Kind | What | How it's used |
+|---|---|---|
+| `profile` | Business facts & owner preferences | Injected into every session's prompt ("What you remember") |
+| `lesson` | Workflow gotchas, scoped per skill | Appended to the playbook when `use_skill` loads that skill |
+| `session` | End-of-session summaries | Latest one rides in the prompt for continuity |
+
+Write paths: the `remember` tool (model-initiated, e.g. on user corrections),
+an automatic lesson whenever a workplan task is marked **failed** with a note,
+and a **session-close distiller** that summarizes each transcript through
+Gemini (`AMOS_SUMMARY_MODEL`, default `gemini-flash-latest`) and files the
+durable parts. Read paths: prompt injection, per-skill lesson enrichment, and
+the semantic `recall` tool. The right-panel **Memory** section shows what Amos
+knows; `GET /api/memories` lists it. Wipe everything with
+`MemoryService::delete_user` semantics (`DELETE FROM memory_entries WHERE
+app_name='amos'` as the blunt admin option). Requires the `pgvector/pgvector:pg17`
+image (both compose files already use it).
+
 ## HTTP & WebSocket surface
 
 | Endpoint | Purpose |

@@ -100,7 +100,10 @@ jobs:
             echo "Now at: $(git log --oneline -1)"
 
             echo "==> Building & recreating containers"
-            docker compose -f docker-compose.prod.yml --env-file deploy/.env.prod up -d --build api amos caddy
+            # postgres included so image changes (e.g. pgvector) apply; compose
+            # only recreates it when the image differs, and the data volume
+            # persists across recreation.
+            docker compose -f docker-compose.prod.yml --env-file deploy/.env.prod up -d --build postgres api amos caddy
 
             echo "==> Pruning old images"
             docker image prune -f >/dev/null 2>&1 || true
