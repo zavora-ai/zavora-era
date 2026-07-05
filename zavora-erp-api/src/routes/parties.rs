@@ -567,5 +567,20 @@ pub async fn update_employee(
             .bind(is_active).bind(id).bind(ctx.entity_id)
             .execute(state.engine.pool()).await.ok();
     }
+    // HR org/contact fields (text)
+    for (key, col) in [("department","department"),("job_title","job_title"),("personal_email","personal_email"),("phone","phone")] {
+        if let Some(v) = patch.get(key).and_then(|v| v.as_str()) {
+            sqlx::query(&format!("UPDATE employees SET {col} = $1 WHERE id = $2 AND entity_id = $3"))
+                .bind(v).bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await.ok();
+        }
+    }
+    // Manager and leave approver (UUID refs; null clears)
+    for (key, col) in [("manager_id","manager_id"),("approver_user_id","approver_user_id")] {
+        if let Some(field) = patch.get(key) {
+            let val = field.as_str().and_then(|s| Uuid::parse_str(s).ok());
+            sqlx::query(&format!("UPDATE employees SET {col} = $1 WHERE id = $2 AND entity_id = $3"))
+                .bind(val).bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await.ok();
+        }
+    }
     Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }

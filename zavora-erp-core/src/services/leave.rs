@@ -11,6 +11,84 @@ use uuid::Uuid;
 use crate::engine::ErpEngine;
 use crate::error::{ErpError, ErpResult};
 use crate::hr::*;
+use crate::notifications::{NotificationEventType, SendNotificationRequest};
+use crate::types::Channel;
+
+// ─── Approval routing + notifications ────────────────────────────────────────
+
+/// Resolve who approves a given employee's leave: the employee's designated
+/// approver if set, else the HR/Owner/Admin pool (the Kenyan SME default).
+/// Returns (assigned_approver_id, recipient_emails).
+async fn resolve_approvers(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    employee_id: Uuid,
+) -> (Option<Uuid>, Vec<String>) {
+    // Designated approver on the employee record?
+    let designated: Option<Uuid> = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT approver_user_id FROM employees WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(employee_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+
+    if let Some(uid) = designated {
+        let email: Option<String> = sqlx::query_scalar(
+            "SELECT email FROM era_users WHERE id = $1 AND entity_id = $2 AND is_active = true",
+        )
+        .bind(uid)
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await
+        .ok()
+        .flatten();
+        return (Some(uid), email.into_iter().collect());
+    }
+
+    // Fallback: the HR/Owner/Admin pool.
+    let emails: Vec<String> = sqlx::query_scalar(
+        "SELECT email FROM era_users WHERE entity_id = $1 AND is_active = true \
+         AND role IN ('Owner','Admin','HrManager')",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default();
+    (None, emails)
+}
+
+/// Best-effort notification (never fails the caller).
+async fn notify(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    event: NotificationEventType,
+    recipients: Vec<String>,
+    subject: String,
+    body: String,
+    related_id: Uuid,
+) {
+    if recipients.is_empty() {
+        return;
+    }
+    let req = SendNotificationRequest {
+        event_type: event,
+        channels: vec![Channel::InApp, Channel::Email],
+        recipients,
+        subject: Some(subject),
+        body,
+        related_type: Some("leave_request".into()),
+        related_id: Some(related_id),
+        schedule_at: None,
+        attachments: Vec::new(),
+    };
+    if let Err(e) = crate::services::notifications::send_notification(engine, entity_id, req).await {
+        tracing::warn!("leave notification failed: {e}");
+    }
+}
 
 // ─── Leave types ─────────────────────────────────────────────────────────────
 
@@ -330,11 +408,12 @@ pub async fn create_leave_request(
 
     let mut tx = engine.pool().begin().await?;
     let id = Uuid::new_v4();
+    let (assigned_approver_id, approver_emails) = resolve_approvers(engine, entity_id, employee_id).await;
     sqlx::query(
         r#"INSERT INTO leave_requests
            (id, entity_id, employee_id, leave_type_id, start_date, end_date, half_day_start,
-            half_day_end, working_days, reason, attachment_url, status, created_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Pending',NOW())"#,
+            half_day_end, working_days, reason, attachment_url, status, assigned_approver_id, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Pending',$12,NOW())"#,
     )
     .bind(id)
     .bind(entity_id)
@@ -347,6 +426,7 @@ pub async fn create_leave_request(
     .bind(days)
     .bind(&req.reason)
     .bind(&req.attachment_url)
+    .bind(assigned_approver_id)
     .execute(&mut *tx)
     .await?;
 
@@ -363,7 +443,59 @@ pub async fn create_leave_request(
     .await?;
 
     tx.commit().await?;
+
+    // Notify the approver(s) that a request awaits them.
+    let emp_name = employee_name(engine, entity_id, employee_id).await;
+    notify(
+        engine,
+        entity_id,
+        NotificationEventType::LeaveRequestSubmitted,
+        approver_emails,
+        format!("Leave request awaiting approval — {emp_name}"),
+        format!(
+            "{emp_name} requested {} of {} ({} to {}, {} working day(s)). Review it in the Leave module.",
+            lt.name, req.start_date, req.start_date, req.end_date, days
+        ),
+        id,
+    )
+    .await;
+
     Ok(id)
+}
+
+/// Employee full name (for notification text), best-effort.
+async fn employee_name(engine: &ErpEngine, entity_id: Uuid, employee_id: Uuid) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT full_name FROM employees WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(employee_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "An employee".into())
+}
+
+/// The employee's contact emails for decision notifications (self-service login
+/// email + personal email).
+async fn employee_emails(engine: &ErpEngine, entity_id: Uuid, employee_id: Uuid) -> Vec<String> {
+    let mut emails = Vec::new();
+    if let Ok(Some(e)) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT email FROM employee_users WHERE employee_id = $1 AND entity_id = $2",
+    )
+    .bind(employee_id).bind(entity_id).fetch_optional(engine.pool()).await
+    {
+        if let Some(e) = e { emails.push(e); }
+    }
+    if let Ok(Some(pe)) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT personal_email FROM employees WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(employee_id).bind(entity_id).fetch_optional(engine.pool()).await
+    {
+        if let Some(pe) = pe { if !emails.contains(&pe) { emails.push(pe); } }
+    }
+    emails
 }
 
 fn fetch_request<'a>(
@@ -411,6 +543,17 @@ pub async fn approve_leave(
     .bind(r.employee_id).bind(r.leave_type_id).bind(year).bind(r.working_days)
     .execute(&mut *tx).await?;
     tx.commit().await?;
+
+    // Notify the employee their leave was approved.
+    let emails = employee_emails(engine, entity_id, r.employee_id).await;
+    notify(
+        engine, entity_id, NotificationEventType::LeaveRequestDecided, emails,
+        "Your leave request was approved".into(),
+        format!("Your leave from {} to {} ({} day(s)) has been approved.{}",
+            r.start_date, r.end_date, r.working_days,
+            note.as_deref().map(|n| format!(" Note: {n}")).unwrap_or_default()),
+        id,
+    ).await;
     Ok(())
 }
 
@@ -441,6 +584,17 @@ pub async fn decline_leave(
     .bind(r.employee_id).bind(r.leave_type_id).bind(year).bind(r.working_days)
     .execute(&mut *tx).await?;
     tx.commit().await?;
+
+    // Notify the employee their leave was declined.
+    let emails = employee_emails(engine, entity_id, r.employee_id).await;
+    notify(
+        engine, entity_id, NotificationEventType::LeaveRequestDecided, emails,
+        "Your leave request was declined".into(),
+        format!("Your leave from {} to {} was declined.{}",
+            r.start_date, r.end_date,
+            note.as_deref().map(|n| format!(" Reason: {n}")).unwrap_or_default()),
+        id,
+    ).await;
     Ok(())
 }
 
@@ -474,23 +628,28 @@ pub async fn cancel_leave(engine: &ErpEngine, entity_id: Uuid, id: Uuid) -> ErpR
 }
 
 /// List requests. When `employee_id` is set, scoped to that employee (ESS);
-/// otherwise all requests for the tenant (admin/approver view).
+/// otherwise all requests for the tenant (admin/approver view). When
+/// `assigned_to` is set, only requests routed to that approver (the
+/// "assigned to me" view).
 pub async fn list_leave_requests(
     engine: &ErpEngine,
     entity_id: Uuid,
     employee_id: Option<Uuid>,
     status: Option<String>,
+    assigned_to: Option<Uuid>,
 ) -> ErpResult<Vec<LeaveRequestRow>> {
     let rows = sqlx::query_as::<_, LeaveRequestRow>(
         r#"SELECT * FROM leave_requests
            WHERE entity_id = $1
              AND ($2::uuid IS NULL OR employee_id = $2)
              AND ($3::text IS NULL OR status = $3)
+             AND ($4::uuid IS NULL OR assigned_approver_id = $4)
            ORDER BY created_at DESC"#,
     )
     .bind(entity_id)
     .bind(employee_id)
     .bind(status)
+    .bind(assigned_to)
     .fetch_all(engine.pool())
     .await?;
     Ok(rows)

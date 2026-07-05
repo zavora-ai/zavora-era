@@ -25,7 +25,7 @@ type ApiResult = Result<Json<serde_json::Value>, axum::response::Response>;
 fn er(e: ErpError) -> axum::response::Response { use axum::response::IntoResponse; err_response(e).into_response() }
 
 #[derive(Deserialize)]
-pub struct YearQuery { pub year: Option<i32>, pub employee_id: Option<Uuid>, pub status: Option<String> }
+pub struct YearQuery { pub year: Option<i32>, pub employee_id: Option<Uuid>, pub status: Option<String>, #[serde(default)] pub mine: bool }
 
 fn this_year() -> i32 { chrono::Utc::now().year() }
 
@@ -80,7 +80,8 @@ pub async fn list_balances(ctx: AuthContext, State(state): State<Arc<AppState>>,
 
 pub async fn list_requests(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<YearQuery>) -> ApiResult {
     require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave requests").map_err(er)?;
-    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, q.employee_id, q.status).await.map_err(er)?;
+    let assigned = if q.mine { Some(ctx.user_id) } else { None };
+    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, q.employee_id, q.status, assigned).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 
@@ -121,7 +122,7 @@ pub async fn my_leave_balances(ctx: StaffContext, State(state): State<Arc<AppSta
 }
 
 pub async fn my_leave_requests(ctx: StaffContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, Some(ctx.employee_id), None).await.map_err(er)?;
+    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, Some(ctx.employee_id), None, None).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 

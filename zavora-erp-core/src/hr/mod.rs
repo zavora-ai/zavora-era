@@ -122,6 +122,8 @@ pub struct LeaveRequestRow {
     pub decided_at: Option<DateTime<Utc>>,
     pub decision_note: Option<String>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub assigned_approver_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

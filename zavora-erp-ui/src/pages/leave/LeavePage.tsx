@@ -51,8 +51,9 @@ export default function LeavePage() {
 function RequestsTab({ canApprove, canManage }: { canApprove: boolean; canManage: boolean }) {
   const qc = useQueryClient();
   const [filter, setFilter] = useState('');
+  const [mine, setMine] = useState(false);
   const [showNew, setShowNew] = useState(false);
-  const { data: requests = [] } = useQuery<any[]>({ queryKey: ['leave-requests'], queryFn: () => getLeaveRequests().then(r => r.data) });
+  const { data: requests = [] } = useQuery<any[]>({ queryKey: ['leave-requests', mine], queryFn: () => getLeaveRequests(mine ? { mine: true } : {}).then(r => r.data) });
   const { data: employees = [] } = useQuery<any[]>({ queryKey: ['employees'], queryFn: () => getEmployees().then(r => r.data) });
   const { data: types = [] } = useQuery<any[]>({ queryKey: ['leave-types'], queryFn: () => getLeaveTypes().then(r => r.data) });
 
@@ -74,6 +75,12 @@ function RequestsTab({ canApprove, canManage }: { canApprove: boolean; canManage
               {s || 'All'}
             </button>
           ))}
+          {canApprove && (
+            <button onClick={() => setMine(m => !m)}
+              className={`px-3 py-1 text-xs rounded-full ${mine ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              Assigned to me
+            </button>
+          )}
         </div>
         {canManage && <button className="btn-primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" /> New Request</button>}
       </div>

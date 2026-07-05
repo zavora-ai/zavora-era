@@ -440,7 +440,7 @@ export const createHoliday = (data: { date: string; name: string; recurring?: bo
 export const deleteHoliday = (id: string) => api.delete(`/holidays/${id}`);
 export const getLeaveBalances = (employeeId: string, year?: number) =>
   api.get('/leave-balances', { params: { employee_id: employeeId, ...(year ? { year } : {}) } });
-export const getLeaveRequests = (params?: { employee_id?: string; status?: string }) =>
+export const getLeaveRequests = (params?: { employee_id?: string; status?: string; mine?: boolean }) =>
   api.get('/leave-requests', { params: params || {} });
 export const createLeaveRequest = (data: any) => api.post('/leave-requests', data);
 export const approveLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/approve`, { note });
