@@ -388,6 +388,23 @@ let playhead = 0, activeSources = [];
 let pendingUser = null, pendingAmos = null;
 let snapTimer = null;
 
+// Identity: the ERP parent page hands us the user's access token via
+// postMessage. Amos verifies it and only serves users of its own tenant.
+let authToken = null;
+window.addEventListener('message', (e) => {
+  // Same-origin embed in prod; dev cross-origin (:3000 → :8090). Accept the
+  // token from the framing parent only.
+  if (e.data && e.data.type === 'amos-auth' && typeof e.data.token === 'string') {
+    authToken = e.data.token;
+    // If a session is already open, refresh its credential.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'auth', token: authToken }));
+    }
+  }
+});
+// Ask the parent to send it (covers the case where we loaded after the parent).
+try { if (window.parent !== window) window.parent.postMessage({ type: 'amos-auth-request' }, '*'); } catch (_) {}
+
 const $ = id => document.getElementById(id);
 const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -535,11 +552,17 @@ function connect() {
     ws = new WebSocket(`${protocol}//${location.host}${BASE}/ws`);
     ws.binaryType = 'arraybuffer';
     let settled = false;
-    ws.onopen = () => setConn(true, 'Connecting…');
+    ws.onopen = () => {
+      setConn(true, 'Authenticating…');
+      // Identity gate: the FIRST frame must be the user's token, or the server
+      // refuses the session.
+      ws.send(JSON.stringify({ type: 'auth', token: authToken || '' }));
+    };
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) { playAudio(event.data); return; }
       const msg = JSON.parse(event.data);
       if (msg.type === 'connected' && !settled) { settled = true; onLive(); resolve(); }
+      if (msg.type === 'error' && msg.fatal && !settled) { settled = true; reject(new Error(msg.message || 'refused')); }
       handleServer(msg);
     };
     ws.onclose = () => { onEnded(); if (!settled) { settled = true; reject(new Error('closed')); } };

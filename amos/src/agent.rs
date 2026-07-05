@@ -15,7 +15,10 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-pub async fn build_runner(state: &Arc<AppState>) -> Result<RealtimeRunner> {
+pub async fn build_runner(
+    state: &Arc<AppState>,
+    principal: Arc<crate::auth::Principal>,
+) -> Result<RealtimeRunner> {
     let instruction = persona::system_instruction(state)
         .replace("{memories}", &state.memory.profile_block(6).await);
     let voice = std::env::var("AMOS_VOICE").unwrap_or_else(|_| "Charon".to_string());
@@ -25,22 +28,32 @@ pub async fn build_runner(state: &Arc<AppState>) -> Result<RealtimeRunner> {
         .with_voice(voice)
         .with_transcription();
 
+    let session_id = uuid::Uuid::new_v4().to_string();
     let factory: Arc<dyn ToolContextFactory> = Arc::new(DefaultToolContextFactory {
         identity: SessionIdentity {
             app_name: "amos".into(),
-            user_id: "amos-user".into(),
-            session_id: uuid::Uuid::new_v4().to_string(),
+            user_id: principal.user_id.to_string(),
+            session_id: session_id.clone(),
         },
         memory_service: None,
     });
 
+    // Session authorization context for the scope wrapper + audit trail.
+    let granted = Arc::new(principal.scopes());
+    let user_id = principal.user_id.to_string();
+    let scope = |tool: Arc<dyn adk_core::Tool>| {
+        crate::scope::ScopedTool::wrap(tool, granted.clone(), user_id.clone(), session_id.clone(), state.audit.clone())
+    };
+
     let mut builder = RealtimeRunner::builder().model(state.model.clone()).config(config);
 
     let tools = mcp::agent_tools(&state.manager, &state.skills.extra_allowed_tools()).await?;
-    info!("Bridging {} MCP tools into the realtime session", tools.len());
+    info!("Bridging {} MCP tools (scopes: {:?}) into the realtime session", tools.len(), granted);
     for tool in tools {
         let mut def = ToolBridgeAdapter::definition(tool.as_ref());
         def.parameters = def.parameters.map(|p| sanitize_schema_root(&p));
+        // Every ERP/browser tool is scope-checked + audited before it runs.
+        let scoped = scope(tool);
         // browser_navigate to the ERP transparently signs in when the login
         // page appears — the model cannot flub authentication it never sees.
         if def.name == "browser_navigate" {
@@ -52,13 +65,13 @@ pub async fn build_runner(state: &Arc<AppState>) -> Result<RealtimeRunner> {
             builder = builder.tool_arc(
                 def,
                 Arc::new(AutoLoginNavigate {
-                    inner: ToolBridgeAdapter::new(tool, factory.clone()),
+                    inner: ToolBridgeAdapter::new(scoped, factory.clone()),
                     helper: ErpBrowserHelper { state: state.clone(), factory: factory.clone() },
                 }),
             );
             continue;
         }
-        builder = builder.tool_arc(def, Arc::new(ToolBridgeAdapter::new(tool, factory.clone())));
+        builder = builder.tool_arc(def, Arc::new(ToolBridgeAdapter::new(scoped, factory.clone())));
     }
 
     builder = builder
@@ -382,6 +395,11 @@ impl ToolHandler for Remember {
         let skill = call.arguments["skill"].as_str().map(String::from);
         if content.trim().is_empty() {
             return Ok(json!({"error": "content must not be empty"}));
+        }
+        // Enforce the AGENTS.md rule in code: secrets never enter memory.
+        if crate::guard::looks_like_secret(&content) {
+            warn!("remember rejected: content looks like a secret");
+            return Ok(json!({"error": "I won't store passwords, keys, or other secrets in memory."}));
         }
         match self.state.memory.remember(kind, &content, skill.as_deref()).await {
             Ok(()) => {

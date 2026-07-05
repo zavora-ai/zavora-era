@@ -17,6 +17,10 @@ adk-tool = { path = "../../adk-rust/adk-tool", features = ["mcp"] }
 adk-skill = { path = "../../adk-rust/adk-skill" }
 adk-memory = { path = "../../adk-rust/adk-memory", features = ["database-memory"] }
 adk-rag = { path = "../../adk-rust/adk-rag", features = ["gemini"] }
+adk-auth = { path = "../../adk-rust/adk-auth", features = ["postgres-audit"] }
+adk-guardrail = { path = "../../adk-rust/adk-guardrail" }
+jsonwebtoken = "9"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 
 # TLS crypto provider (required for rustls WebSocket connections)
 rustls = { version = "0.23", features = ["aws-lc-rs"] }

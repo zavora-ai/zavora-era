@@ -10,10 +10,14 @@
 //! ```
 
 mod agent;
+mod audit;
+mod auth;
 mod config;
 mod erp;
+mod guard;
 mod mcp;
 mod memory;
+mod scope;
 mod persona;
 mod routes;
 mod skills;
@@ -48,12 +52,23 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("showcase"));
     std::fs::create_dir_all(&showcase_dir)?;
 
+    // Resolve the single tenant this Amos serves — the only entity any user is
+    // allowed to access here. Explicit env wins; otherwise derive from the
+    // service account's own tenant.
+    let served_entity = resolve_served_entity().await?;
+    info!("🔒 Serving entity {served_entity} (sessions for other tenants are refused)");
+
     let manager = mcp::start_manager(&showcase_dir).await?;
     info!("✓ MCP servers started (erp + browser)");
 
-    let memory = memory::AmosMemory::connect().await;
-    let state = Arc::new(AppState::new(manager, memory)?);
-    info!("✓ Memory online ({})", state.memory.backend);
+    let memory = memory::AmosMemory::connect(served_entity).await;
+
+    // Optional Postgres audit trail (auth + tool-access), sharing the ERP DB.
+    let audit = build_audit_sink(served_entity).await;
+
+    let state = Arc::new(AppState::new(manager, memory, served_entity, audit)?);
+    info!("✓ Memory online ({}) · audit {}", state.memory.backend,
+        if state.audit.is_some() { "on" } else { "off" });
     let app = routes::create_router(state.clone());
 
     let port = std::env::var("AMOS_PORT").unwrap_or_else(|_| "8090".to_string());
@@ -70,6 +85,26 @@ async fn main() -> Result<()> {
     info!("Shutting down MCP servers…");
     let _ = state.manager.shutdown().await;
     Ok(())
+}
+
+/// The entity this Amos serves: `AMOS_SERVED_ENTITY_ID` if set, else derived
+/// from the service account's own tenant.
+async fn resolve_served_entity() -> Result<uuid::Uuid> {
+    if let Ok(id) = std::env::var("AMOS_SERVED_ENTITY_ID") {
+        return id.parse().map_err(|_| anyhow::anyhow!("AMOS_SERVED_ENTITY_ID is not a valid UUID"));
+    }
+    erp::ErpClient::from_env()?.resolve_entity().await
+}
+
+/// Amos audit sink over the ERP database, if reachable. Best-effort: a missing
+/// sink just means no audit rows, never a boot failure.
+async fn build_audit_sink(served_entity: uuid::Uuid) -> Option<Arc<dyn adk_auth::AuditSink>> {
+    let url = std::env::var("AMOS_MEMORY_DATABASE_URL")
+        .or_else(|_| std::env::var("AMOS_AUDIT_DATABASE_URL"))
+        .unwrap_or_else(|_| "postgres://zavora:zavora@localhost:5433/zavora_era".to_string());
+    audit::AmosAuditSink::connect(&url, served_entity)
+        .await
+        .map(|s| Arc::new(s) as Arc<dyn adk_auth::AuditSink>)
 }
 
 async fn shutdown_signal() {

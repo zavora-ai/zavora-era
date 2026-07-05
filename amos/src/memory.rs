@@ -17,7 +17,6 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 const APP: &str = "amos";
-const USER: &str = "zavora";
 /// Compact embeddings: plenty for recall quality, fits pgvector's direct
 /// HNSW index (≤2000 dims).
 const EMBEDDING_DIMS: i32 = 768;
@@ -81,6 +80,10 @@ pub struct MemoryItem {
 
 pub struct AmosMemory {
     service: Arc<dyn MemoryService>,
+    /// Tenant scope for every read/write (the served entity id). Isolates
+    /// memory per tenant — a different deployment (different entity) shares
+    /// none of it.
+    user_scope: String,
     pub backend: &'static str,
 }
 
@@ -89,19 +92,19 @@ fn skill_project(skill: &str) -> String {
 }
 
 impl AmosMemory {
-    pub async fn connect() -> Self {
+    pub async fn connect(served_entity: uuid::Uuid) -> Self {
         let url = std::env::var("AMOS_MEMORY_DATABASE_URL")
             .unwrap_or_else(|_| "postgres://zavora:zavora@localhost:5433/zavora_era".to_string());
 
         match Self::connect_postgres(&url).await {
             Ok(service) => {
                 info!("memory: postgres (pgvector, {EMBEDDING_DIMS} dims) at {url}");
-                return Self { service, backend: "postgres" };
+                return Self { service, user_scope: served_entity.to_string(), backend: "postgres" };
             }
             Err(e) => warn!("memory: postgres unavailable ({e}); falling back to in-memory"),
         }
 
-        Self { service: Arc::new(InMemoryMemoryService::new()), backend: "in-memory" }
+        Self { service: Arc::new(InMemoryMemoryService::new()), user_scope: served_entity.to_string(), backend: "in-memory" }
     }
 
     async fn connect_postgres(url: &str) -> Result<Arc<dyn MemoryService>> {
@@ -129,12 +132,12 @@ impl AmosMemory {
         match (kind, skill) {
             (MemoryKind::Lesson, Some(skill)) => {
                 self.service
-                    .add_entry_to_project(APP, USER, &skill_project(skill), entry)
+                    .add_entry_to_project(APP, &self.user_scope, &skill_project(skill), entry)
                     .await
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
             }
             _ => {
-                self.service.add_entry(APP, USER, entry).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+                self.service.add_entry(APP, &self.user_scope, entry).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             }
         }
         Ok(())
@@ -159,7 +162,7 @@ impl AmosMemory {
             .service
             .search(SearchRequest {
                 query: query.to_string(),
-                user_id: USER.to_string(),
+                user_id: self.user_scope.clone(),
                 app_name: APP.to_string(),
                 limit: Some(limit),
                 min_score,

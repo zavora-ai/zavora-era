@@ -8,6 +8,38 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-05 — Amos: complete tenant isolation & agent guardrails
+
+Amos is now a scoped, auditable agent. Each deployment serves exactly one
+entity and refuses everything else. See [`docs/AMOS.md`](docs/AMOS.md) §5b.
+
+#### Added
+- **Session identity gate.** The embedded ERP page hands the signed-in user's
+  access token to the Amos iframe (`postMessage`); Amos verifies it with the
+  shared `JWT_ACCESS_SECRET` (signature/expiry/type/issuer) and requires the
+  token's `entity_id` to equal the served entity. Wrong-entity, forged, expired,
+  or missing token ⇒ the WebSocket session is refused before the agent runner is
+  built — no tools, data, memory, or showcase. (`amos/src/auth.rs`, `routes.rs`;
+  `AmosPage.tsx` token handoff.)
+- **Role-based tool scoping** via `adk-auth` (`check_scopes`): the user's ERP
+  role grants `erp:read`/`erp:write`/`ledger:post`; each ERP/browser tool is
+  wrapped to check its required scope before running, so a read-only user's
+  session cannot post to the ledger regardless of what the model attempts.
+  (`amos/src/scope.rs`.)
+- **Prompt-injection & exfiltration guardrails** (`amos/src/guard.rs`): inbound
+  user turns are screened for instruction-override and secret/cross-tenant
+  probes before reaching the model; the `remember` tool rejects secret-shaped
+  content.
+- **Audit trail** (`amos/src/audit.rs`): session authentication and every tool
+  access (allowed/denied) are written to a dedicated `amos_audit_events` table,
+  keyed by entity + user + session.
+- **Entity-scoped memory**: memory is keyed by the served entity, isolating it
+  per tenant.
+
+#### Config
+- `amos` env: `JWT_ACCESS_SECRET` + `JWT_ISSUER` (prod, from the API's secret),
+  optional `AMOS_SERVED_ENTITY_ID`, and `AMOS_DEV_ALLOW_UNAUTH` (dev only).
+
 ### 2026-07-04 — Amos: your personal AI accountant
 
 Zavora ERA gains an agentic layer: **Amos**, a realtime voice + chat AI

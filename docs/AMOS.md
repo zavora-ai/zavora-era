@@ -155,11 +155,44 @@ pgvector-memory consumer, including the mia example).
 
 ---
 
+## 5b. Security & tenant isolation
+
+**One Amos = one tenant, enforced.** Each deployment serves exactly one entity
+and refuses every session that isn't for it.
+
+- **Identity gate** (`amos/src/auth.rs`, `routes.rs`): the embedded ERP page
+  hands the user's access token to the iframe via `postMessage`; the iframe
+  sends it as the first WebSocket frame. Amos verifies the token with the shared
+  `JWT_ACCESS_SECRET` (same secret as the API) — signature, expiry, type, issuer
+  — and requires `entity_id == the served entity`. A wrong-entity token, a
+  forged/expired token, or no token ⇒ the session is **refused before the runner
+  is built** (no tools, data, memory, or showcase). The served entity is derived
+  at startup from the service account's own tenant (`AMOS_SERVED_ENTITY_ID`
+  overrides). Dev standalone only: `AMOS_DEV_ALLOW_UNAUTH=1` permits an
+  unauthenticated local session (never set in production).
+- **Role scoping** (`amos/src/scope.rs`): the principal's ERP role grants scopes
+  (`erp:read`/`erp:write`/`ledger:post`, mirroring the API's role gates). Every
+  ERP/browser tool is wrapped so its required scope is checked before it runs —
+  a Viewer's session cannot post to the ledger no matter what the model or a
+  malicious prompt attempts.
+- **Prompt-injection guardrails** (`amos/src/guard.rs`): inbound user turns are
+  screened for instruction-override and secret/cross-tenant-exfiltration before
+  reaching the model; a hit is refused, not forwarded. The `remember` tool
+  rejects secret-shaped content.
+- **Audit trail** (`amos/src/audit.rs`): session accept/deny and every tool
+  access (allowed/denied) are written to `amos_audit_events` (its own table,
+  separate from the ERP's `audit_events`), keyed by entity + user + session.
+- **Memory** is keyed by the served entity id — a different deployment shares
+  none of it.
+
+To add a tenant: run another Amos instance with that tenant's service account
+(and `AMOS_SERVED_ENTITY_ID`) — a completely separate system, as intended.
+
 ## 6. Known constraints & operational notes
 
-- **Single-tenant today.** Amos authenticates as one fixed ERP service user
-  (`amos@zavora.ai`) and hard-codes `user_id = "zavora"` in memory. There is no
-  propagation of the logged-in human's tenant — this is the top item in §8.
+- **One Amos serves one tenant** (see §5b). A single shared multi-tenant Amos
+  (per-user-token data path, per-entity showcase) is the future SaaS path;
+  today, each tenant gets its own instance.
 - **Gemini Live tool-count sensitivity** — the tool set is filtered
   aggressively; large sets degrade the model.
 - **15-min JWT TTL** — handled inside the zavora backend (auto re-login).
@@ -195,23 +228,11 @@ Live at `https://erp.zavora.ai/amos-app/`.
 
 ## 8. Planned / pending work
 
-### 8.1 Security & tenant isolation — **P0, next up**
-The critical gap: Amos is single-tenant by construction. Planned:
-- **Propagate the logged-in user's identity** into the Amos session — pass the
-  ERP JWT / `entity_id` from the embedding page through the WebSocket, so tool
-  calls act as that user's tenant, not a fixed service account.
-- **Per-tenant memory isolation** — key `user_id`/`project_id` by `entity_id`
-  (adk-memory already supports project scoping); a user in tenant B must never
-  see tenant A's memories or ledger.
-- **End-to-end onboarding review** — how a new tenant provisions its own Amos
-  access (service identity, first-run state, empty-memory bootstrap).
-
-### 8.2 Guardrails against prompt injection / malicious prompts — **P1**
-- Evaluate `adk-guardrail` (adk-rust) callbacks/plugins; add input guards that
-  screen user turns and tool arguments for injection and out-of-scope requests.
-- Reinforce the confirm-before-write contract at the tool layer (defense in
-  depth beyond the persona), and cap/scrub memory writes (no secrets, already an
-  AGENTS.md rule — make it enforced, not just instructed).
+### 8.1 Security & tenant isolation — ✅ done (2026-07-05)
+Implemented — see §5b. Identity gate (verified JWT + served-entity binding),
+role scoping, prompt-injection guardrails, entity-keyed memory, and an audit
+trail. Remaining boundary: a single shared multi-tenant Amos (§8.4) if SaaS
+multi-tenancy is wanted later.
 
 ### 8.3 Robustness & continuity — **P2**
 - **Session resumption** when Gemini drops the ~15-min socket (workplan and

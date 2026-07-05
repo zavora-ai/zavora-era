@@ -84,6 +84,11 @@ services:
       ERP_UI_URL: http://caddy
       # Long-term memory (pgvector) — shares the ERP database.
       AMOS_MEMORY_DATABASE_URL: postgres://${POSTGRES_USER:-zavora}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zavora_era}
+      # Tenant isolation: verify each user's token with the ERP's own secret and
+      # refuse any session whose entity ≠ the served entity. No dev escape hatch
+      # in production (AMOS_DEV_ALLOW_UNAUTH is intentionally unset).
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set in .env.prod}
+      JWT_ISSUER: ${JWT_ISSUER:-zavora-erp}
       RUST_LOG: ${AMOS_RUST_LOG:-info,amos=info}
 
   caddy:

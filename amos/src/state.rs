@@ -42,6 +42,12 @@ pub struct AppState {
     pub erp: crate::erp::ErpClient,
     pub skills: crate::skills::SkillsCatalog,
     pub memory: crate::memory::AmosMemory,
+    /// Verifies user tokens and enforces the served-entity boundary.
+    pub verifier: crate::auth::TokenVerifier,
+    /// The single tenant this Amos serves.
+    pub served_entity: uuid::Uuid,
+    /// Optional audit sink (Postgres) — logs auth + tool-access events.
+    pub audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
     /// The skill last loaded via use_skill — failed tasks auto-file lessons
     /// under it. Cleared when a fresh workplan is created.
     pub active_skill: RwLock<Option<String>>,
@@ -56,7 +62,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(manager: Arc<McpServerManager>, memory: crate::memory::AmosMemory) -> Result<Self> {
+    pub fn new(
+        manager: Arc<McpServerManager>,
+        memory: crate::memory::AmosMemory,
+        served_entity: uuid::Uuid,
+        audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
+    ) -> Result<Self> {
         let api_key = std::env::var("GOOGLE_API_KEY")
             .map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY environment variable must be set"))?;
         let model_id = std::env::var("GEMINI_LIVE_MODEL")
@@ -77,6 +88,9 @@ impl AppState {
             erp: crate::erp::ErpClient::from_env()?,
             skills: crate::skills::SkillsCatalog::load(),
             memory,
+            verifier: crate::auth::TokenVerifier::new(served_entity)?,
+            served_entity,
+            audit,
             active_skill: RwLock::new(None),
             tasks: RwLock::new(Vec::new()),
             showcase: RwLock::new(Vec::new()),
