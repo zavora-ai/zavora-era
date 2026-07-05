@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   bootstrapStaffAuth, getStaffToken, getStaffIdentity, clearStaffSession, staffLogout,
   staffGetLeaveBalances, staffGetLeaveRequests, staffCreateLeaveRequest, staffCancelLeaveRequest,
-  staffGetPayslips, staffGetProfile, staffUpdateProfile, staffGetLeaveTypes,
+  staffGetPayslips, staffGetProfile, staffUpdateProfile, staffGetLeaveTypes, staffGetHolidays,
 } from '../../api/staffClient';
 import { CalendarClock, Receipt, UserCircle, LogOut, Plus } from 'lucide-react';
 
@@ -126,6 +126,33 @@ function MyLeave() {
         </div>
       </div>
       {showNew && <RequestModal types={types} onClose={() => setShowNew(false)} onSaved={() => { qc.invalidateQueries({ queryKey: ['my-requests'] }); qc.invalidateQueries({ queryKey: ['my-balances'] }); setShowNew(false); }} />}
+      <UpcomingHolidays />
+    </div>
+  );
+}
+
+function UpcomingHolidays() {
+  const { data: holidays = [] } = useQuery<any[]>({ queryKey: ['staff-holidays'], queryFn: () => staffGetHolidays().then(r => r.data).catch(() => []) });
+  const today = new Date().toISOString().split('T')[0];
+  // Expand recurring to this year for display; show upcoming, sorted.
+  const yr = new Date().getFullYear();
+  const upcoming = holidays.map(h => {
+    let date = h.date;
+    if (h.recurring) { const [, m, d] = h.date.split('-'); date = `${yr}-${m}-${d}`; if (date < today) date = `${yr + 1}-${m}-${d}`; }
+    return { name: h.name, date };
+  }).filter(h => h.date >= today).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 6);
+  if (upcoming.length === 0) return null;
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-gray-700 mb-2">Upcoming public holidays</h2>
+      <div className="card divide-y divide-gray-100">
+        {upcoming.map((h, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-2 text-sm">
+            <span className="text-gray-400 w-24">{h.date}</span>
+            <span className="font-medium text-gray-800">{h.name}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

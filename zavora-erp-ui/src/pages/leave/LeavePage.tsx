@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getLeaveTypes, createLeaveType, setLeaveTypeActive,
-  getHolidays, createHoliday, deleteHoliday,
+  getHolidays, createHoliday, deleteHoliday, getLeaveCalendar,
   getLeaveRequests, approveLeave, declineLeave, createLeaveRequest,
   getLeaveBalances, getEmployees,
 } from '../../api/client';
@@ -12,7 +12,7 @@ import Modal from '../../components/shared/Modal';
 import { workToday } from '../../utils/workDate';
 import { CheckCircle, XCircle, Plus, Trash2, CalendarDays } from 'lucide-react';
 
-type Tab = 'requests' | 'balances' | 'types' | 'holidays';
+type Tab = 'requests' | 'calendar' | 'balances' | 'types' | 'holidays';
 
 const statusColor = (s: string) =>
   s === 'Approved' ? 'bg-green-100 text-green-700'
@@ -29,7 +29,7 @@ export default function LeavePage() {
     <div>
       <PageHeader title="Leave" subtitle="Requests, balances, leave types and holidays" />
       <div className="flex gap-1 border-b border-gray-200 mb-5">
-        {([['requests','Requests'],['balances','Balances'],['types','Leave Types'],['holidays','Holidays']] as [Tab,string][])
+        {([['requests','Requests'],['calendar','Calendar'],['balances','Balances'],['types','Leave Types'],['holidays','Holidays']] as [Tab,string][])
           .map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -39,6 +39,7 @@ export default function LeavePage() {
         ))}
       </div>
       {tab === 'requests' && <RequestsTab canApprove={canApprove} canManage={canManage} />}
+      {tab === 'calendar' && <CalendarTab />}
       {tab === 'balances' && <BalancesTab />}
       {tab === 'types' && <TypesTab canManage={canManage} />}
       {tab === 'holidays' && <HolidaysTab canManage={canManage} />}
@@ -163,6 +164,66 @@ function NewRequestModal({ employees, types, onClose, onSaved }: { employees: an
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── Calendar ────────────────────────────────────────────────────────────────
+
+function CalendarTab() {
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const from = new Date(month.getFullYear(), month.getMonth(), 1).toISOString().split('T')[0];
+  const to = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString().split('T')[0];
+  const { data } = useQuery<any>({ queryKey: ['leave-calendar', from], queryFn: () => getLeaveCalendar(from, to).then(r => r.data) });
+  const leave: any[] = data?.leave ?? [];
+  const holidays: any[] = data?.holidays ?? [];
+  const holidaySet = new Set(holidays.map(h => h.date));
+
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const monthLabel = month.toLocaleString('en', { month: 'long', year: 'numeric' });
+  const dayHas = (day: number) => {
+    const dstr = new Date(month.getFullYear(), month.getMonth(), day).toISOString().split('T')[0];
+    return leave.filter(l => l.start_date <= dstr && l.end_date >= dstr);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary py-1" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
+          <span className="font-medium text-gray-800 w-40 text-center">{monthLabel}</span>
+          <button className="btn-secondary py-1" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>›</button>
+        </div>
+        <div className="text-xs text-gray-500 flex gap-3">
+          <span><span className="inline-block w-3 h-3 rounded bg-indigo-200 align-middle"></span> Leave</span>
+          <span><span className="inline-block w-3 h-3 rounded bg-rose-200 align-middle"></span> Holiday</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} className="text-center text-[11px] text-gray-400 font-medium py-1">{d}</div>)}
+        {(() => {
+          const firstDow = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7; // Mon=0
+          const cells = [] as any[];
+          for (let i = 0; i < firstDow; i++) cells.push(<div key={'e'+i} />);
+          for (let day = 1; day <= daysInMonth; day++) {
+            const dstr = new Date(month.getFullYear(), month.getMonth(), day).toISOString().split('T')[0];
+            const isHol = holidaySet.has(dstr);
+            const onLeave = dayHas(day);
+            cells.push(
+              <div key={day} className={`min-h-[64px] rounded border p-1 text-xs ${isHol ? 'bg-rose-50 border-rose-200' : 'bg-white border-gray-100'}`}>
+                <div className="text-gray-400">{day}</div>
+                {onLeave.slice(0,3).map((l, i) => (
+                  <div key={i} className={`truncate rounded px-1 mt-0.5 ${l.status === 'Approved' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`} title={`${l.employee_name} — ${l.leave_type} (${l.status})`}>
+                    {l.employee_name.split(' ')[0]}
+                  </div>
+                ))}
+                {onLeave.length > 3 && <div className="text-[10px] text-gray-400 mt-0.5">+{onLeave.length - 3} more</div>}
+              </div>
+            );
+          }
+          return cells;
+        })()}
+      </div>
+    </div>
   );
 }
 
@@ -306,7 +367,7 @@ function HolidaysTab({ canManage }: { canManage: boolean }) {
           <tbody className="divide-y divide-gray-100">
             {holidays.map(h => (
               <tr key={h.id}>
-                <td className="px-4 py-2.5"><CalendarDays className="w-4 h-4 inline mr-2 text-gray-400" />{h.date}</td>
+                <td className="px-4 py-2.5"><CalendarDays className="w-4 h-4 inline mr-2 text-gray-400" />{h.recurring ? new Date(h.date).toLocaleString('en', { month: 'short', day: 'numeric' }) : h.date}</td>
                 <td className="px-4 py-2.5 font-medium text-gray-800">{h.name}</td>
                 <td className="px-4 py-2.5 text-gray-500">{h.recurring ? 'Yearly' : '—'}</td>
                 <td className="px-4 py-2.5 text-right">{canManage && <button onClick={() => delMut.mutate(h.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-4 h-4" /></button>}</td>

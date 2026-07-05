@@ -175,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/staff/logout", post(routes::staff_auth::logout))
         .route("/api/v1/staff/me", get(routes::staff_auth::me))
         .route("/api/v1/staff/leave-types", get(routes::leave::my_leave_types))
+        .route("/api/v1/staff/holidays", get(routes::leave::my_holidays))
         .route("/api/v1/staff/profile", get(routes::leave::my_profile).put(routes::leave::my_profile_update))
         .route("/api/v1/staff/leave-balances", get(routes::leave::my_leave_balances))
         .route("/api/v1/staff/leave-requests", get(routes::leave::my_leave_requests).post(routes::leave::my_create_request))
@@ -302,6 +303,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/leave-requests", get(routes::leave::list_requests).post(routes::leave::create_request))
         .route("/api/v1/leave-requests/{id}/approve", post(routes::leave::approve))
         .route("/api/v1/leave-requests/{id}/decline", post(routes::leave::decline))
+        .route("/api/v1/leave-calendar", get(routes::leave::calendar))
         .route("/api/v1/employees/{id}/invite-ess", post(routes::leave::invite_ess))
         // Inventory
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))

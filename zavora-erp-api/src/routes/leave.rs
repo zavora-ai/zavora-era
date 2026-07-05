@@ -55,9 +55,23 @@ pub async fn set_type_active(ctx: AuthContext, State(state): State<Arc<AppState>
 // ─── Holidays (admin) ────────────────────────────────────────────────────────
 
 pub async fn list_holidays(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
+    svc::seed_kenyan_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
     let rows = svc::list_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
+
+/// Team-absence calendar (admin/approver).
+pub async fn calendar(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<CalendarQuery>) -> ApiResult {
+    require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave calendar").map_err(er)?;
+    let today = chrono::Utc::now().date_naive();
+    let from = q.from.unwrap_or(today);
+    let to = q.to.unwrap_or(from + chrono::Duration::days(60));
+    let cal = svc::leave_calendar(&state.engine, ctx.entity_id, from, to).await.map_err(er)?;
+    Ok(Json(cal))
+}
+
+#[derive(Deserialize)]
+pub struct CalendarQuery { pub from: Option<chrono::NaiveDate>, pub to: Option<chrono::NaiveDate> }
 pub async fn create_holiday(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateHolidayRequest>) -> ApiResult {
     require_role(ROLES_HR_MANAGE, &ctx, "manage holidays").map_err(er)?;
     let id = svc::create_holiday(&state.engine, ctx.entity_id, req).await.map_err(er)?;
@@ -112,6 +126,13 @@ pub async fn decline(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(
 pub async fn my_leave_types(ctx: StaffContext, State(state): State<Arc<AppState>>) -> ApiResult {
     svc::seed_default_leave_types(&state.engine, ctx.entity_id).await.map_err(er)?;
     let rows = svc::list_leave_types(&state.engine, ctx.entity_id).await.map_err(er)?;
+    Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
+}
+
+/// Company holidays visible to the employee.
+pub async fn my_holidays(ctx: StaffContext, State(state): State<Arc<AppState>>) -> ApiResult {
+    svc::seed_kenyan_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
+    let rows = svc::list_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 

@@ -201,6 +201,76 @@ pub async fn delete_holiday(engine: &ErpEngine, entity_id: Uuid, id: Uuid) -> Er
     Ok(())
 }
 
+/// Fixed-date Kenyan public holidays (recurring yearly). Variable holidays —
+/// Good Friday, Easter Monday, Eid al-Fitr, Eid al-Adha — are lunar/movable and
+/// must be added each year by HR. Seeded once per tenant if none exist.
+pub async fn seed_kenyan_holidays(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<()> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM holidays WHERE entity_id = $1")
+        .bind(entity_id)
+        .fetch_one(engine.pool())
+        .await?;
+    if count > 0 {
+        return Ok(());
+    }
+    // (month, day, name) — stored with a sentinel year; recurring matches m/d.
+    let fixed = [
+        (1u32, 1u32, "New Year's Day"),
+        (5, 1, "Labour Day"),
+        (6, 1, "Madaraka Day"),
+        (10, 10, "Utamaduni Day"),
+        (10, 20, "Mashujaa Day"),
+        (12, 12, "Jamhuri Day"),
+        (12, 25, "Christmas Day"),
+        (12, 26, "Boxing Day"),
+    ];
+    for (m, d, name) in fixed {
+        let date = NaiveDate::from_ymd_opt(2000, m, d).unwrap();
+        create_holiday(engine, entity_id, CreateHolidayRequest { date, name: name.into(), recurring: true }).await?;
+    }
+    Ok(())
+}
+
+/// Team-absence calendar: approved + pending leave overlapping [from, to],
+/// enriched with employee name and leave-type name, plus the holidays in range.
+pub async fn leave_calendar(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> ErpResult<serde_json::Value> {
+    let rows = sqlx::query(
+        r#"SELECT lr.id, lr.employee_id, e.full_name, lr.leave_type_id, lt.name AS type_name,
+                  lr.start_date, lr.end_date, lr.working_days, lr.status, lr.half_day_start, lr.half_day_end
+           FROM leave_requests lr
+           JOIN employees e   ON e.id = lr.employee_id
+           JOIN leave_types lt ON lt.id = lr.leave_type_id
+           WHERE lr.entity_id = $1 AND lr.status IN ('Approved','Pending')
+             AND lr.start_date <= $3 AND lr.end_date >= $2
+           ORDER BY lr.start_date"#,
+    )
+    .bind(entity_id).bind(from).bind(to)
+    .fetch_all(engine.pool()).await?;
+
+    use sqlx::Row;
+    let leave: Vec<serde_json::Value> = rows.iter().map(|r| serde_json::json!({
+        "id": r.get::<Uuid,_>("id"),
+        "employee_id": r.get::<Uuid,_>("employee_id"),
+        "employee_name": r.get::<String,_>("full_name"),
+        "leave_type": r.get::<String,_>("type_name"),
+        "start_date": r.get::<NaiveDate,_>("start_date").to_string(),
+        "end_date": r.get::<NaiveDate,_>("end_date").to_string(),
+        "working_days": r.get::<Decimal,_>("working_days").to_string(),
+        "status": r.get::<String,_>("status"),
+        "half_day_start": r.get::<bool,_>("half_day_start"),
+        "half_day_end": r.get::<bool,_>("half_day_end"),
+    })).collect();
+
+    let holidays: Vec<serde_json::Value> = holiday_dates(engine, entity_id, from, to).await?
+        .into_iter().map(|d| serde_json::json!({"date": d.to_string()})).collect();
+
+    Ok(serde_json::json!({ "leave": leave, "holidays": holidays }))
+}
+
 /// Holiday dates in a range (for the working-days calculation). Public so
 /// payroll can prorate unpaid leave on the period's working days.
 pub async fn holiday_dates_pub(

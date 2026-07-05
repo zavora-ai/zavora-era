@@ -436,6 +436,8 @@ export const getLeaveTypes = () => api.get('/leave-types');
 export const createLeaveType = (data: any) => api.post('/leave-types', data);
 export const setLeaveTypeActive = (id: string, active: boolean) => api.put(`/leave-types/${id}/active`, { active });
 export const getHolidays = () => api.get('/holidays');
+export const getLeaveCalendar = (from?: string, to?: string) =>
+  api.get('/leave-calendar', { params: { ...(from ? { from } : {}), ...(to ? { to } : {}) } });
 export const createHoliday = (data: { date: string; name: string; recurring?: boolean }) => api.post('/holidays', data);
 export const deleteHoliday = (id: string) => api.delete(`/holidays/${id}`);
 export const getLeaveBalances = (employeeId: string, year?: number) =>

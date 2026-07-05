@@ -77,6 +77,7 @@ export const staffGetProfile = () => staffApi.get('/staff/profile');
 export const staffUpdateProfile = (data: { phone?: string; personal_email?: string }) => staffApi.put('/staff/profile', data);
 export const staffGetLeaveBalances = () => staffApi.get('/staff/leave-balances');
 export const staffGetLeaveTypes = () => staffApi.get('/staff/leave-types');
+export const staffGetHolidays = () => staffApi.get('/staff/holidays');
 export const staffGetLeaveRequests = () => staffApi.get('/staff/leave-requests');
 export const staffCreateLeaveRequest = (data: any) => staffApi.post('/staff/leave-requests', data);
 export const staffCancelLeaveRequest = (id: string) => staffApi.post(`/staff/leave-requests/${id}/cancel`, {});
