@@ -17,7 +17,7 @@ export interface DashboardSummary {
   outstanding_invoices: InvoiceSummary[];
   pending_approvals: number;
   uncategorised_txns: number;
-  // QuickBooks-style widgets.
+  // Dashboard money-bar widgets.
   invoices_bar: InvoicesBar;
   expense_breakdown: CategoryAmount[];
   bank_accounts: BankAccountBalance[];

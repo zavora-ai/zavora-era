@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Stage 3 (parse): turn the QBO P&L Detail + Balance Sheet Detail CSVs into
+"""Stage 3 (parse): turn the source P&L Detail + Balance Sheet Detail CSVs into
 per-transaction records, tracking the account each line hits.
 
-Outputs sample_data/quickbooks/transactions.json and prints sanity totals to
-verify against QBO's summary before any replay.
+Outputs sample_data/migration/transactions.json and prints sanity totals to
+verify against the source system's summary before any replay.
 """
 import csv, json, sys
-sys.path.insert(0, "scripts/qbo")
+sys.path.insert(0, "scripts/migrate")
 from _parse import money
 
-QB = "sample_data/quickbooks"
+QB = "sample_data/migration"
 
 # Top-group -> Zavora account type (drives which side of the books / P&L bucket).
 PNL_GROUP_ZTYPE = {
@@ -25,7 +25,7 @@ BS_GROUP_ZTYPE = {
 
 
 def parse_detail(path, group_ztype, top_groups):
-    """Walk a QBO detail CSV. Returns list of line dicts with the resolved account
+    """Walk a source detail CSV. Returns list of line dicts with the resolved account
     and its Zavora type, plus the transaction identity."""
     rows = list(csv.reader(open(path)))
     lines = []
@@ -105,7 +105,7 @@ def main():
     exp = sum(l["amount"] for l in pnl if l["ztype"] == "Expense")
     print(f"\nP&L detail income sum (Revenue lines): {inc:,.2f}")
     print(f"P&L detail expense sum (Expense lines): {exp:,.2f}")
-    print(f"implied net: {inc - exp:,.2f}   (QBO Net Income = 1,642.46)")
+    print(f"implied net: {inc - exp:,.2f}   (source Net Income = 1,642.46)")
 
     # invoices income (for the invoice-flow replay)
     inv_income = defaultdict(float)

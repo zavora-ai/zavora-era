@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Stage 2: create a fresh Zavora tenant, build a chart of accounts mirroring
-Craig's QBO chart, set posting config (AR/AP), and load customers/vendors/products.
+the source chart of accounts, set posting config (AR/AP), and load customers/vendors/products.
 
-Writes sample_data/quickbooks/zavora_maps.json with the name->code/id maps that
+Writes sample_data/migration/zavora_maps.json with the name->code/id maps that
 Stage 3 (transaction replay) consumes.
 """
 import json, time, urllib.request, urllib.error, sys
 
 BASE = "http://localhost:8080/api/v1"
-QB = "sample_data/quickbooks"
+QB = "sample_data/migration"
 
 def call(method, path, token=None, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -24,7 +24,7 @@ def call(method, path, token=None, body=None):
         raw = e.read()
         return e.code, (json.loads(raw) if raw else None)
 
-# QBO account type -> (Zavora account_type, code range base). Ranges chosen so
+# source account type -> (Zavora account_type, code range base). Ranges chosen so
 # Zavora's P&L buckets correctly: 6xxx=COGS, 7xxx=opex, 8xxx=other.
 QBO_TO_Z = {
     "Bank": ("Asset", 1000), "Accounts receivable (A/R)": ("Asset", 1100),
@@ -44,11 +44,11 @@ def main():
     products = json.load(open(f"{QB}/products_services.json"))
 
     # ---- signup ----
-    email = f"craig{int(time.time())}@demo.co"
+    email = f"sample{int(time.time())}@demo.co"
     st, d = call("POST", "/auth/signup", body={
-        "organization_name": "Craig's Design and Landscaping (Zavora)",
+        "organization_name": "Sample Company (Zavora)",
         "organization_type": "private_limited", "kra_pin": "P051234567X",
-        "email": email, "display_name": "Craig", "password": "Passw0rd!23"})
+        "email": email, "display_name": "Sample Owner", "password": "Passw0rd!23"})
     token = (d or {}).get("access_token") or (d or {}).get("tokens", {}).get("access_token")
     assert token, f"signup failed: {st} {d}"
     print("tenant:", email)
@@ -71,9 +71,9 @@ def main():
     acct_map = {}          # "ztype||name" -> {code,name,ztype,qbo_type}
     for a in coa:
         qtype = a["type"]
-        if qtype not in QBO_TO_Z:
-            print("  ! unmapped QBO type:", qtype); continue
-        ztype, base = QBO_TO_Z[qtype]
+        if qtype not in source_TO_Z:
+            print("  ! unmapped source type:", qtype); continue
+        ztype, base = source_TO_Z[qtype]
         key = f"{ztype}||{a['name']}"
         if key in acct_map:
             continue  # duplicate leaf within same type -> merge
@@ -100,11 +100,11 @@ def main():
     ap_code = code_for("Liability", "Accounts Payable (A/P)")
     print("AR code:", ar_code, "AP code:", ap_code)
 
-    # ---- point posting config at the QBO accounts (not just AR/AP) ----
+    # ---- point posting config at the source accounts (not just AR/AP) ----
     # Leaving default_bank / default_sales / default_purchase / rounding on the
     # Kenya-seed codes makes fresh postings land in different accounts than the
-    # imported QBO history, fragmenting reports. Remap every default we can to a
-    # real QBO account so new transactions post consistently with replayed data.
+    # imported source history, fragmenting reports. Remap every default we can to a
+    # real source account so new transactions post consistently with replayed data.
     st, cfg = call("GET", "/settings", token)
     posting = (cfg or {}).get("posting", {})
     posting["accounts_receivable"] = ar_code
@@ -154,7 +154,7 @@ def main():
     print("vendors created:", len(vend_map))
 
     # ---- products (create them, and map item name -> {id, income code}) ----
-    # QBO product types: "Service", "Inventory", "NonInventory". Zavora's
+    # source product types: "Service", "Inventory", "NonInventory". Zavora's
     # ProductType is Service | Goods | Expense (serialised as-is). Inventory and
     # NonInventory both map to Goods; everything else to Service.
     prod_map = {}
@@ -171,7 +171,7 @@ def main():
             "name": p["name"],
             "description": p.get("description") or None,
             "product_type": ztype,
-            "vat_treatment": "ZeroRated",  # QBO sample has no VAT; matches invoice replay
+            "vat_treatment": "ZeroRated",  # source sample has no VAT; matches invoice replay
         }
         if income_code:
             body["sales_account"] = income_code
@@ -198,9 +198,9 @@ def main():
     print("products created:", created_products)
 
     # ---- inventory items for Inventory-type products ----
-    # QBO's export carries no per-item opening quantities. We reconstruct the
+    # the source system's export carries no per-item opening quantities. We reconstruct the
     # inventory subledger so that it ties to the GL Inventory Asset to the cent
-    # and reproduces QBO COGS exactly:
+    # and reproduces source COGS exactly:
     #
     #   GL Inventory Asset = START opening (567.50) + Check 75 (228.75)
     #                        + Bill (205.00) − invoice COGS (405.00) = 596.25
@@ -208,27 +208,27 @@ def main():
     # For the subledger to end at 596.25 with issues (COGS) of 405.00, opening
     # receipts must total 1001.25. Each *sold* item is seeded at its per-unit
     # COGS cost (Rock Fountain 125, Pump 10, Sprinkler Pipes 10) so the WAC
-    # engine books COGS at exactly the QBO cost; the never-sold "Sprinkler Heads"
+    # engine books COGS at exactly the source cost; the never-sold "Sprinkler Heads"
     # carries the residual opening value so the subledger total ties to the GL.
-    # Per-item opening *quantities* are synthetic (QBO didn't export them); the
+    # Per-item opening *quantities* are synthetic (source didn't export them); the
     # inventory *value* and total COGS are exact. (documented constraint)
     # Per-item opening (quantity, unit_cost). unit_cost is set to the item's true
-    # per-unit COGS so the WAC engine books COGS on each sale at exactly the QBO
+    # per-unit COGS so the WAC engine books COGS on each sale at exactly the source
     # cost. Units sold via "Sales of Product Income" across the whole dataset:
     # Rock Fountain 3, Pump 2, Sprinkler Pipes 2, Sprinkler Heads 1 — so seed at
     # least that many. The opening *value* must total 1001.25 so the inventory
     # subledger ties to the GL Inventory Asset (START 567.50 + Check 228.75 +
     # Bill 205.00 − COGS 405.00 = 596.25 ending; opening 1001.25 − 405 = 596.25).
-    # Per-unit COGS by item (from QBO COGS lines): RF 125, Pump 10, Pipes 5
-    # (2 issues totalling the QBO Pipes COGS of 10), Heads 0 (sold at zero cost).
-    # QBO's fractional cost layers make a clean whole-unit split impossible, so
-    # Rock Fountain carries a fractional opening qty (units are synthetic — QBO
+    # Per-unit COGS by item (from source COGS lines): RF 125, Pump 10, Pipes 5
+    # (2 issues totalling the source Pipes COGS of 10), Heads 0 (sold at zero cost).
+    # the source system's fractional cost layers make a clean whole-unit split impossible, so
+    # Rock Fountain carries a fractional opening qty (units are synthetic — source
     # exported values, not quantities; documented constraint).
     OPENING = {  # name -> (quantity, unit_cost)
         "Rock Fountain":  (7.37, 125.0),  # 921.25
         "Pump":           (6, 10.0),      #  60.00
         "Sprinkler Pipes":(4, 5.0),       #  20.00
-        "Sprinkler Heads":(2, 0.0),       #   0.00 (sold at zero cost in QBO)
+        "Sprinkler Heads":(2, 0.0),       #   0.00 (sold at zero cost in source)
     }                                      # total opening value = 1001.25 = GL inv debits
     inv_code = code_for("Asset", "Inventory Asset") or "1201"
     cogs_code = code_for("Expense", "Cost of Goods Sold") or "6001"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 3b: replay the QBO transactions into the Zavora tenant via real flows.
+"""Stage 3b: replay the source transactions into the Zavora tenant via real flows.
 
 - Invoices -> POST /invoices (+post)        [income lines, zero-rated]
 - Bills    -> POST /bills (+approve+post)    [expense lines, zero-rated]
@@ -12,10 +12,10 @@ Run AFTER stage2_setup.py (uses its saved token). Sales tax neutralized.
 """
 import json, sys, urllib.request, urllib.error
 from collections import defaultdict
-sys.path.insert(0, "scripts/qbo")
+sys.path.insert(0, "scripts/migrate")
 
 BASE = "http://localhost:8080/api/v1"
-QB = "sample_data/quickbooks"
+QB = "sample_data/migration"
 AR_NAME = "Accounts Receivable (A/R)"
 AP_NAME = "Accounts Payable (A/P)"
 
@@ -45,10 +45,10 @@ def code_for(zt, name):
 PRODUCTS = maps.get("products", {})
 
 def resolve_product(desc, account_name):
-    """Map a QBO invoice/bill line to a catalog product. Returns (product_id, info)
+    """Map a source invoice/bill line to a catalog product. Returns (product_id, info)
     or (None, None).
 
-    Inventory products in the QBO sample are only ever *sold as inventory* on
+    Inventory products in the source sample are only ever *sold as inventory* on
     lines posted to "Sales of Product Income". The same words (e.g. "Sprinkler
     Pipes") also appear as free-text on service lines posted to other revenue
     accounts (e.g. "Sprinklers and Drip Systems") — those are NOT inventory sales
@@ -94,7 +94,7 @@ def iso(d):
     m, dd, y = d.split("/"); return f"{y}-{m.zfill(2)}-{dd.zfill(2)}"
 
 # cash GL accounts that payments may land in -> we create bank_accounts for them
-CASH_ACCOUNTS = {  # QBO name : (ztype, ledger label)
+CASH_ACCOUNTS = {  # source name : (ztype, ledger label)
     "Checking": "Asset", "Savings": "Asset", "Undeposited Funds": "Asset",
     "Mastercard": "Liability", "Visa": "Liability",
 }
@@ -128,7 +128,7 @@ def main():
     inv_by_cust = {}               # customer_id -> [invoice_id]
     open_inv = defaultdict(list)   # customer_id -> [ {id,bal} ]
     open_bill = defaultdict(list)  # vendor_id  -> [ {id,bal} ]
-    bank_ids = {}                  # qbo cash account name -> bank_account id
+    bank_ids = {}                  # source cash account name -> bank_account id
 
     # periods
     for y in range(2014, 2027):
@@ -145,7 +145,7 @@ def main():
     print("bank accounts:", list(bank_ids))
 
     def cash_line_of(t):
-        """return (qbo cash account name, amount, ztype) for a payment's cash side."""
+        """return (source cash account name, amount, ztype) for a payment's cash side."""
         for l in t["bs_lines"]:
             if l["account"] in CASH_ACCOUNTS:
                 return l["account"], l["amount"], CASH_ACCOUNTS[l["account"]]
@@ -179,7 +179,7 @@ def main():
                 desc = l["description"] or l["account"]
                 # Link the line to a product so the invoice references the catalog
                 # and, for Inventory products, the post step issues stock + books
-                # COGS at WAC. Keep the exact QBO unit_price/account/vat.
+                # COGS at WAC. Keep the exact source unit_price/account/vat.
                 pid, pinfo = resolve_product(l["description"], l["account"])
                 line = {"description": desc, "quantity": 1, "unit_price": l["amount"],
                         "account_code": code, "vat_treatment": "ZeroRated"}
@@ -207,7 +207,7 @@ def main():
             # COGS for Inventory-tracked products is now booked by invoice posting
             # (DR COGS / CR Inventory at WAC). Only replay a manual COGS journal
             # for any expense/inventory lines NOT covered by a tracked product
-            # (none in the QBO sample, but kept for completeness).
+            # (none in the source sample, but kept for completeness).
             if not has_tracked_inventory:
                 cogs = []
                 for l in t["pnl_lines"]:
@@ -233,7 +233,7 @@ def main():
                 lines.append({"description": (l["description"] or l["account"]), "quantity": 1,
                               "unit_price": l["amount"], "account_code": code, "vat_treatment": "ZeroRated"})
                 total += l["amount"]
-            # Inventory purchases: QBO books these to Inventory Asset (a balance-sheet
+            # Inventory purchases: source books these to Inventory Asset (a balance-sheet
             # line), not to an expense. Replay them as bill lines posting to the
             # Inventory Asset account so AP and the GL Inventory Asset both move,
             # keeping the GL in step with the inventory subledger opening seed.
@@ -298,7 +298,7 @@ def main():
                                   "unit_price": abs(l["amount"]), "account_code": code, "vat_treatment": "ZeroRated"})
             if not lines: continue
             st, r = call("POST", f"/invoices/{inv}/credit-note", token,
-                         {"invoice_id": inv, "lines": lines, "reason": "QBO credit memo", "refund": False})
+                         {"invoice_id": inv, "lines": lines, "reason": "source credit memo", "refund": False})
             if st < 300: log["creditmemo_ok"] += 1
             else:
                 log["creditmemo_fail"] += 1; print(f"  CM FAIL {ref} {st}: {str(r)[:150]}")

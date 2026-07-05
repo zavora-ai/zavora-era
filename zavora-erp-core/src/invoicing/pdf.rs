@@ -323,7 +323,7 @@ mod tests {
 
     fn sample() -> InvoicePdfData {
         InvoicePdfData {
-            org_name: "Craig's Design".to_string(),
+            org_name: "Sample Co".to_string(),
             invoice_number: "INV-2026-0001".to_string(),
             invoice_type_label: "Tax Invoice".to_string(),
             issue_date: "2026-06-01".to_string(),

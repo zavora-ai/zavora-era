@@ -277,14 +277,15 @@ UI (not VAT-registered; trades heavily in USD/EUR). See `docs/UI_GAPS.md`.
 ### 2026-06-27 — End-to-end audit: idempotency, atomicity & multi-tenancy
 
 Backend and UI fixes from a full end-to-end accounting audit, plus a complete
-QuickBooks → Zavora rebuild used as the correctness oracle.
+external-ledger → Zavora rebuild used as the correctness oracle.
 
 #### Added
-- **QuickBooks rebuild harness** (`scripts/qbo/`): extract a QBO company, set up
-  a matching Zavora tenant + chart + masters, replay transactions through the
-  real AR/AP/banking flows, and compare Zavora reports against the QBO reports.
-  Result: **P&L matches QuickBooks to the cent**; Balance Sheet reconciled (tax
-  neutralised). See `sample_data/quickbooks/comparison_report.md`.
+- **External-ledger rebuild harness** (`scripts/migrate/`): extract a sample
+  company from another accounting system, set up a matching Zavora tenant +
+  chart + masters, replay transactions through the real AR/AP/banking flows,
+  and compare Zavora reports against the source reports. Result: **P&L matches
+  the source to the cent**; Balance Sheet reconciled (tax neutralised). See
+  `sample_data/migration/comparison_report.md`.
 - **Bank statement import** is now wired end-to-end (CSV / MT940 / OFX) and
   **idempotent** — re-importing the same file is rejected (file `content_hash`),
   and duplicate lines are skipped (`dedup_key`). Migration 027.
