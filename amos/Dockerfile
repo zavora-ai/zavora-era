@@ -47,8 +47,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Warm the npx cache for the pinned @playwright/mcp, then install the exact
 # Chromium build its bundled playwright-core expects (with system deps).
+# The path must target the package-root cli.js — playwright-core ships other
+# cli.js files (e.g. the tools/cli-client one) that a loose glob can match.
 RUN npx --yes "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" --version \
-    && PW_CLI=$(find /root/.npm/_npx -path '*playwright-core*/cli.js' | head -1) \
+    && PW_CLI=$(find /root/.npm/_npx -path '*/node_modules/playwright-core/cli.js' | head -1) \
+    && test -n "$PW_CLI" \
     && node "$PW_CLI" install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
