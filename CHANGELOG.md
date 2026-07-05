@@ -43,6 +43,16 @@ ERP shell (navigation + branding) stays consistent. Documentation:
   editable without recompiling.
 - **Service user.** Amos calls the API as `amos@zavora.ai` (Accountant role);
   the visible browser signs in as a configurable account (`ERP_LOGIN_*`).
+- **Semantic long-term memory (2026-07-05).** Amos now learns as he works:
+  pgvector-backed memory (adk-memory `PostgresMemoryService` + Gemini
+  embeddings, sharing the ERP database — postgres image switched to
+  `pgvector/pgvector:pg17`). Profile facts and the latest session summary are
+  injected into every session's prompt; per-skill *lessons* ride along with
+  playbooks when `use_skill` loads them; failed workplan tasks auto-file
+  lessons; a session-close distiller extracts durable knowledge from each
+  transcript. New `remember`/`recall` tools, a Memory panel in the UI, and
+  `GET /api/memories`. Upstream: `PostgresMemoryService::add_entry`
+  implemented in adk-memory (was "not implemented").
 
 #### Fixed
 - **Production deploy broke after the initial Amos merge** (PR #30 → #31): the

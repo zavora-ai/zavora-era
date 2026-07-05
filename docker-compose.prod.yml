@@ -11,7 +11,7 @@
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17  # postgres 17 + pgvector (Amos semantic memory)
     container_name: zavora-postgres
     restart: unless-stopped
     environment:
@@ -82,6 +82,8 @@ services:
       # The showcase browser browses the internal Caddy origin (the same SPA
       # users see) instead of looping out through the public CDN.
       ERP_UI_URL: http://caddy
+      # Long-term memory (pgvector) — shares the ERP database.
+      AMOS_MEMORY_DATABASE_URL: postgres://${POSTGRES_USER:-zavora}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zavora_era}
       RUST_LOG: ${AMOS_RUST_LOG:-info,amos=info}
 
   caddy:

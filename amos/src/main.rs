@@ -13,10 +13,12 @@ mod agent;
 mod config;
 mod erp;
 mod mcp;
+mod memory;
 mod persona;
 mod routes;
 mod skills;
 mod state;
+mod summarizer;
 
 use crate::state::AppState;
 use anyhow::Result;
@@ -49,7 +51,9 @@ async fn main() -> Result<()> {
     let manager = mcp::start_manager(&showcase_dir).await?;
     info!("✓ MCP servers started (erp + browser)");
 
-    let state = Arc::new(AppState::new(manager)?);
+    let memory = memory::AmosMemory::connect().await;
+    let state = Arc::new(AppState::new(manager, memory)?);
+    info!("✓ Memory online ({})", state.memory.backend);
     let app = routes::create_router(state.clone());
 
     let port = std::env::var("AMOS_PORT").unwrap_or_else(|_| "8090".to_string());

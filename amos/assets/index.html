@@ -358,6 +358,11 @@
       <div id="shotList"><div class="panel-empty">Screenshots of work performed in Zavora ERA are filed here for your review.</div></div>
     </div>
 
+    <div class="panel-section">
+      <div class="panel-head"><h3>Memory</h3><span class="meta" id="memMeta"></span></div>
+      <div class="log" id="memList"><div class="panel-empty">Facts and lessons Amos has learned appear here — he carries them across sessions.</div></div>
+    </div>
+
     <div class="panel-section" style="border-bottom:none">
       <div class="panel-head"><h3>Activity</h3></div>
       <div class="log" id="log"><div class="panel-empty">A timestamped record of every action Amos takes.</div></div>
@@ -433,6 +438,21 @@ function logAction(name) {
   row.innerHTML = `<span class="log-time">${now()}</span><span class="log-text">${esc(actionLabel(name))}${WRITES.has(name) ? '<span class="log-badge">Posting</span>' : ''}</span>`;
   log.prepend(row);
   while (log.children.length > 40) log.removeChild(log.lastChild);
+}
+
+const MEM_KIND_STYLE = { profile: 'var(--accent)', lesson: 'var(--amber)', session: 'var(--ink-4)' };
+function addMemory(item, prepend) {
+  const el = $('memList');
+  const empty = el.querySelector('.panel-empty');
+  if (empty) empty.remove();
+  const count = el.querySelectorAll('.log-row').length + 1;
+  $('memMeta').textContent = count + (count === 1 ? ' memory' : ' memories');
+  const row = document.createElement('div');
+  row.className = 'log-row';
+  const color = MEM_KIND_STYLE[item.kind] || 'var(--ink-4)';
+  row.innerHTML = `<span class="log-time" style="color:${color}">${esc(item.kind)}</span><span class="log-text">${esc(item.text)}</span>`;
+  if (prepend) el.prepend(row); else el.appendChild(row);
+  while (el.children.length > 20) el.removeChild(el.lastChild);
 }
 
 function logSkill(name) {
@@ -559,6 +579,7 @@ function handleServer(msg) {
     case 'tasks':            renderTasks(msg.tasks); break;
     case 'showcase':         addEvidence(msg.step); break;
     case 'skill':            logSkill(msg.name); break;
+    case 'memory':           addMemory({kind: msg.kind, text: msg.text, at: new Date().toISOString()}, true); break;
     case 'error':            addNotice(msg.message); break;
   }
 }
@@ -766,12 +787,14 @@ if (new URLSearchParams(location.search).get('embed') === '1') {
 async function boot() {
   loadSnapshot();
   try {
-    const [tasks, shots] = await Promise.all([
+    const [tasks, shots, mems] = await Promise.all([
       fetch(`${BASE}/api/tasks`).then(r => r.json()),
       fetch(`${BASE}/api/showcase`).then(r => r.json()),
+      fetch(`${BASE}/api/memories`).then(r => r.json()),
     ]);
     renderTasks(tasks);
     for (const s of shots) addEvidence(s);
+    for (const m of mems) addMemory(m, false);
   } catch (_) { /* panels stay in their empty state */ }
 }
 boot();

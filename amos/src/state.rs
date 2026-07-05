@@ -41,6 +41,10 @@ pub struct AppState {
     pub manager: Arc<McpServerManager>,
     pub erp: crate::erp::ErpClient,
     pub skills: crate::skills::SkillsCatalog,
+    pub memory: crate::memory::AmosMemory,
+    /// The skill last loaded via use_skill — failed tasks auto-file lessons
+    /// under it. Cleared when a fresh workplan is created.
+    pub active_skill: RwLock<Option<String>>,
     pub tasks: RwLock<Vec<AmosTask>>,
     pub showcase: RwLock<Vec<ShowcaseStep>>,
     /// JSON messages pushed to every connected UI websocket.
@@ -52,7 +56,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(manager: Arc<McpServerManager>) -> Result<Self> {
+    pub fn new(manager: Arc<McpServerManager>, memory: crate::memory::AmosMemory) -> Result<Self> {
         let api_key = std::env::var("GOOGLE_API_KEY")
             .map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY environment variable must be set"))?;
         let model_id = std::env::var("GEMINI_LIVE_MODEL")
@@ -72,6 +76,8 @@ impl AppState {
             manager,
             erp: crate::erp::ErpClient::from_env()?,
             skills: crate::skills::SkillsCatalog::load(),
+            memory,
+            active_skill: RwLock::new(None),
             tasks: RwLock::new(Vec::new()),
             showcase: RwLock::new(Vec::new()),
             push,

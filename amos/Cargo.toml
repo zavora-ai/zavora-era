@@ -15,6 +15,8 @@ adk-core = { path = "../../adk-rust/adk-core" }
 adk-realtime = { path = "../../adk-rust/adk-realtime", features = ["gemini", "integration"] }
 adk-tool = { path = "../../adk-rust/adk-tool", features = ["mcp"] }
 adk-skill = { path = "../../adk-rust/adk-skill" }
+adk-memory = { path = "../../adk-rust/adk-memory", features = ["database-memory"] }
+adk-rag = { path = "../../adk-rust/adk-rag", features = ["gemini"] }
 
 # TLS crypto provider (required for rustls WebSocket connections)
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
