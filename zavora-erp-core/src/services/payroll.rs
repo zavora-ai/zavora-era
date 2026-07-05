@@ -145,6 +145,23 @@ pub async fn run_payroll(engine: &ErpEngine, entity_id: Uuid, req: RunPayrollReq
     .execute(engine.pool())
     .await?;
 
+    // Persist each payslip so ESS, PDF export, and email have the detail.
+    for ps in &pay_run.payslips {
+        sqlx::query(
+            r#"INSERT INTO payslips (id, pay_run_id, employee_id, deductions, custom_deductions, custom_earnings)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (id) DO NOTHING"#,
+        )
+        .bind(ps.id)
+        .bind(id)
+        .bind(ps.employee_id)
+        .bind(serde_json::to_value(&ps.deductions).unwrap_or_default())
+        .bind(serde_json::to_value(&ps.custom_deductions).unwrap_or_else(|_| serde_json::json!([])))
+        .bind(serde_json::to_value(&ps.custom_earnings).unwrap_or_else(|_| serde_json::json!([])))
+        .execute(engine.pool())
+        .await?;
+    }
+
     Ok(pay_run)
 }
 
@@ -360,10 +377,55 @@ pub async fn post_pay_run(
         .execute(engine.pool())
         .await?;
 
+    // Best-effort: email each employee their payslip PDF.
+    email_payslips(engine, entity_id, pay_run_id).await;
+
     Ok(entry.id)
 }
 
-/// Mark a posted pay run as paid after salary disbursement (R14.3).
+/// Email every employee on a pay run their payslip PDF (best-effort; skips
+/// employees without an email; never fails the post).
+async fn email_payslips(engine: &ErpEngine, entity_id: Uuid, pay_run_id: Uuid) {
+    use base64::Engine as _;
+    let rows = sqlx::query_scalar::<_, Uuid>(
+        "SELECT employee_id FROM payslips WHERE pay_run_id = $1",
+    )
+    .bind(pay_run_id)
+    .fetch_all(engine.pool())
+    .await
+    .unwrap_or_default();
+
+    for emp_id in rows {
+        // Recipient: ESS login email, else personal email.
+        let email: Option<String> = sqlx::query_scalar(
+            "SELECT COALESCE((SELECT email FROM employee_users WHERE employee_id = e.id AND entity_id = e.entity_id LIMIT 1), e.personal_email) \
+             FROM employees e WHERE e.id = $1 AND e.entity_id = $2",
+        )
+        .bind(emp_id).bind(entity_id).fetch_optional(engine.pool()).await.ok().flatten().flatten();
+        let Some(email) = email else { continue };
+
+        let pdf = match payslip_pdf(engine, entity_id, pay_run_id, emp_id).await {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let req = crate::notifications::SendNotificationRequest {
+            event_type: crate::notifications::NotificationEventType::PayRunApprovalNeeded,
+            channels: vec![crate::types::Channel::Email],
+            recipients: vec![email],
+            subject: Some("Your payslip".into()),
+            body: "Please find your payslip attached.".into(),
+            related_type: Some("pay_run".into()),
+            related_id: Some(pay_run_id),
+            schedule_at: None,
+            attachments: vec![crate::notifications::NotificationAttachment {
+                filename: "payslip.pdf".into(),
+                mime_type: "application/pdf".into(),
+                content_base64: base64::engine::general_purpose::STANDARD.encode(&pdf),
+            }],
+        };
+        let _ = crate::services::notifications::send_notification(engine, entity_id, req).await;
+    }
+}
 ///
 /// State transition: Posted → Paid.
 /// Rejects if pay run is not in Posted status.
@@ -420,4 +482,59 @@ pub async fn mark_pay_run_paid(
         .await;
 
     Ok(())
+}
+
+/// Build a payslip PDF for a specific (pay_run, employee). Reads the persisted
+/// payslip deductions + employee + company name. Returns PDF bytes.
+pub async fn payslip_pdf(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    pay_run_id: Uuid,
+    employee_id: Uuid,
+) -> ErpResult<Vec<u8>> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        r#"SELECT ps.deductions, pr.pay_date, e.full_name, e.staff_number, e.kra_pin
+           FROM payslips ps
+           JOIN pay_runs pr ON pr.id = ps.pay_run_id
+           JOIN employees e ON e.id = ps.employee_id
+           WHERE ps.pay_run_id = $1 AND ps.employee_id = $2 AND pr.entity_id = $3"#,
+    )
+    .bind(pay_run_id)
+    .bind(employee_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Payslip".into(), id: pay_run_id })?;
+
+    let deductions: crate::payroll::statutory::PayslipDeductions =
+        serde_json::from_value(row.get::<serde_json::Value, _>("deductions"))
+            .map_err(|e| ErpError::Internal(format!("payslip decode: {e}")))?;
+    let pay_date: chrono::NaiveDate = row.get("pay_date");
+    let company_name = engine
+        .config_for(entity_id)
+        .await
+        .map(|c| c.branding.company_name.clone())
+        .unwrap_or_else(|_| "Company".to_string());
+
+    let d = crate::payroll::payslip_pdf::PayslipPdfData {
+        company_name,
+        employee_name: row.get::<String, _>("full_name"),
+        staff_number: row.get::<String, _>("staff_number"),
+        kra_pin: row.get::<String, _>("kra_pin"),
+        pay_date: pay_date.to_string(),
+        period_label: pay_date.format("%B %Y").to_string(),
+        gross_salary: deductions.gross_salary,
+        taxable_income: deductions.taxable_income,
+        paye: deductions.paye,
+        personal_relief: deductions.personal_relief,
+        net_paye: deductions.net_paye,
+        nssf_employee: deductions.nssf_employee,
+        sha: deductions.sha,
+        housing_levy_employee: deductions.housing_levy_employee,
+        helb: deductions.helb,
+        total_deductions: deductions.total_deductions,
+        net_salary: deductions.net_salary,
+    };
+    Ok(crate::payroll::payslip_pdf::render_payslip_pdf(&d))
 }

@@ -271,3 +271,25 @@ pub async fn invite_ess(ctx: AuthContext, State(state): State<Arc<AppState>>, Pa
 
     Ok(Json(serde_json::json!({"employee_user_id": staff_id, "email": req.email, "status": status})))
 }
+
+/// GET /staff/payslips/{run_id}/pdf — the employee's own payslip PDF.
+pub async fn my_payslip_pdf(
+    ctx: StaffContext,
+    State(state): State<Arc<AppState>>,
+    Path(run_id): Path<Uuid>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    // Scoped to the caller's employee_id — cannot fetch another's payslip.
+    match zavora_erp_core::services::payroll::payslip_pdf(&state.engine, ctx.entity_id, run_id, ctx.employee_id).await {
+        Ok(bytes) => {
+            use axum::response::IntoResponse;
+            Ok((
+                [
+                    (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
+                    (axum::http::header::CONTENT_DISPOSITION, "inline; filename=\"payslip.pdf\"".to_string()),
+                ],
+                bytes,
+            ).into_response())
+        }
+        Err(e) => Err(er(e)),
+    }
+}

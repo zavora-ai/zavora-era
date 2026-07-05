@@ -62,3 +62,28 @@ pub async fn mark_paid(
         Err(e) => Err(err_response(e)),
     }
 }
+
+/// GET /payroll/{run_id}/payslips/{employee_id}/pdf — back-office payslip PDF.
+pub async fn payslip_pdf(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path((run_id, employee_id)): Path<(Uuid, Uuid)>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_role(ROLES_CREATE, &ctx, "view payslip").map_err(|e| err_response(e).into_response())?;
+    match svc::payslip_pdf(&state.engine, ctx.entity_id, run_id, employee_id).await {
+        Ok(bytes) => Ok(pdf_response(bytes, "payslip.pdf")),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
+fn pdf_response(bytes: Vec<u8>, filename: &str) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
+            (axum::http::header::CONTENT_DISPOSITION, format!("inline; filename=\"{filename}\"")),
+        ],
+        bytes,
+    ).into_response()
+}

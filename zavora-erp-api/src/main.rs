@@ -186,7 +186,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/staff/leave-balances", get(routes::leave::my_leave_balances))
         .route("/api/v1/staff/leave-requests", get(routes::leave::my_leave_requests).post(routes::leave::my_create_request))
         .route("/api/v1/staff/leave-requests/{id}/cancel", post(routes::leave::my_cancel_request))
-        .route("/api/v1/staff/payslips", get(routes::leave::my_payslips));
+        .route("/api/v1/staff/payslips", get(routes::leave::my_payslips))
+        .route("/api/v1/staff/payslips/{run_id}/pdf", get(routes::leave::my_payslip_pdf));
 
     // Protected routes — gated by the auth middleware applied below.
     let protected = Router::new()
@@ -300,6 +301,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payroll/{id}/approve", post(routes::payroll::approve))
         .route("/api/v1/payroll/{id}/post", post(routes::payroll::post_run))
         .route("/api/v1/payroll/{id}/paid", post(routes::payroll::mark_paid))
+        .route("/api/v1/payroll/{run_id}/payslips/{employee_id}/pdf", get(routes::payroll::payslip_pdf))
         // HR — leave management (back-office / era_users; protected router)
         .route("/api/v1/leave-types", get(routes::leave::list_types).post(routes::leave::create_type))
         .route("/api/v1/leave-types/{id}/active", axum::routing::put(routes::leave::set_type_active))

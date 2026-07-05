@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   bootstrapStaffAuth, getStaffToken, getStaffIdentity, clearStaffSession, staffLogout,
   staffGetLeaveBalances, staffGetLeaveRequests, staffCreateLeaveRequest, staffCancelLeaveRequest,
-  staffGetPayslips, staffGetProfile, staffUpdateProfile, staffGetLeaveTypes, staffGetHolidays,
+  staffGetPayslips, staffGetProfile, staffUpdateProfile, staffGetLeaveTypes, staffGetHolidays, staffGetPayslipPdf,
 } from '../../api/staffClient';
 import { CalendarClock, Receipt, UserCircle, LogOut, Plus } from 'lucide-react';
 
@@ -193,19 +193,21 @@ function RequestModal({ types, onClose, onSaved }: { types: any[]; onClose: () =
 
 function MyPayslips() {
   const { data: payslips = [] } = useQuery<any[]>({ queryKey: ['my-payslips'], queryFn: () => staffGetPayslips().then(r => r.data) });
+  const download = async (runId: string) => { const r = await staffGetPayslipPdf(runId); window.open(URL.createObjectURL(r.data), '_blank'); };
   return (
     <div className="card overflow-hidden">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-xs text-gray-500 uppercase"><tr><th className="text-left px-4 py-2.5">Pay date</th><th className="text-left px-4 py-2.5">Status</th><th className="text-left px-4 py-2.5">Deductions</th></tr></thead>
+        <thead className="bg-gray-50 text-xs text-gray-500 uppercase"><tr><th className="text-left px-4 py-2.5">Pay date</th><th className="text-left px-4 py-2.5">Status</th><th className="text-left px-4 py-2.5">Deductions</th><th className="px-4 py-2.5"></th></tr></thead>
         <tbody className="divide-y divide-gray-100">
           {payslips.map((p, i) => (
             <tr key={i}>
               <td className="px-4 py-2.5 font-medium text-gray-800">{p.pay_date}</td>
               <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">{p.status}</span></td>
               <td className="px-4 py-2.5 text-gray-500 text-xs">{p.deductions ? Object.keys(p.deductions).length + ' items' : '—'}</td>
+              <td className="px-4 py-2.5 text-right"><button onClick={() => download(p.pay_run_id)} className="text-indigo-600 text-xs hover:underline">Download PDF</button></td>
             </tr>
           ))}
-          {payslips.length === 0 && <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">No payslips available yet</td></tr>}
+          {payslips.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No payslips available yet</td></tr>}
         </tbody>
       </table>
     </div>

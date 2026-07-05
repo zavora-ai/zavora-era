@@ -82,5 +82,6 @@ export const staffGetLeaveRequests = () => staffApi.get('/staff/leave-requests')
 export const staffCreateLeaveRequest = (data: any) => staffApi.post('/staff/leave-requests', data);
 export const staffCancelLeaveRequest = (id: string) => staffApi.post(`/staff/leave-requests/${id}/cancel`, {});
 export const staffGetPayslips = () => staffApi.get('/staff/payslips');
+export const staffGetPayslipPdf = (runId: string) => staffApi.get(`/staff/payslips/${runId}/pdf`, { responseType: 'blob' });
 
 export default staffApi;

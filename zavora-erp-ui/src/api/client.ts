@@ -438,6 +438,8 @@ export const setLeaveTypeActive = (id: string, active: boolean) => api.put(`/lea
 export const getHolidays = () => api.get('/holidays');
 export const getLeaveCalendar = (from?: string, to?: string) =>
   api.get('/leave-calendar', { params: { ...(from ? { from } : {}), ...(to ? { to } : {}) } });
+export const getPayslipPdf = (runId: string, employeeId: string) =>
+  api.get(`/payroll/${runId}/payslips/${employeeId}/pdf`, { responseType: 'blob' });
 export const createHoliday = (data: { date: string; name: string; recurring?: boolean }) => api.post('/holidays', data);
 export const deleteHoliday = (id: string) => api.delete(`/holidays/${id}`);
 export const getLeaveBalances = (employeeId: string, year?: number) =>

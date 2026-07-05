@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { runPayroll, approvePayRun, postPayRun, getPeriods } from '../../api/client';
+import { runPayroll, approvePayRun, postPayRun, getPeriods, getPayslipPdf } from '../../api/client';
 import { formatCurrency } from '../../utils/format';
 import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
 import PageHeader from '../../components/shared/PageHeader';
@@ -112,7 +112,7 @@ export default function PayrollPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-xs text-gray-500 uppercase">
-                  <th className="px-3 py-2">Employee</th><th className="px-3 py-2 text-right">Gross</th><th className="px-3 py-2 text-right">PAYE</th><th className="px-3 py-2 text-right">NSSF</th><th className="px-3 py-2 text-right">SHA</th><th className="px-3 py-2 text-right">Net</th>
+                  <th className="px-3 py-2">Employee</th><th className="px-3 py-2 text-right">Gross</th><th className="px-3 py-2 text-right">PAYE</th><th className="px-3 py-2 text-right">NSSF</th><th className="px-3 py-2 text-right">SHA</th><th className="px-3 py-2 text-right">Net</th><th className="px-3 py-2"></th>
                 </tr></thead>
                 <tbody>
                   {payRun.payslips.map((ps: any) => (
@@ -123,6 +123,9 @@ export default function PayrollPage() {
                       <td className="px-3 py-2 text-right">{formatCurrency(ps.deductions.nssf_employee)}</td>
                       <td className="px-3 py-2 text-right">{formatCurrency(ps.deductions.sha)}</td>
                       <td className="px-3 py-2 text-right font-medium">{formatCurrency(ps.deductions.net_salary)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={async () => { const r = await getPayslipPdf(payRun.id, ps.employee_id); window.open(URL.createObjectURL(r.data), '_blank'); }} className="text-indigo-600 text-xs hover:underline">PDF</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
