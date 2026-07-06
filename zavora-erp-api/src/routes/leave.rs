@@ -25,7 +25,7 @@ type ApiResult = Result<Json<serde_json::Value>, axum::response::Response>;
 fn er(e: ErpError) -> axum::response::Response { use axum::response::IntoResponse; err_response(e).into_response() }
 
 #[derive(Deserialize)]
-pub struct YearQuery { pub year: Option<i32>, pub employee_id: Option<Uuid>, pub status: Option<String> }
+pub struct YearQuery { pub year: Option<i32>, pub employee_id: Option<Uuid>, pub status: Option<String>, #[serde(default)] pub mine: bool }
 
 fn this_year() -> i32 { chrono::Utc::now().year() }
 
@@ -55,9 +55,23 @@ pub async fn set_type_active(ctx: AuthContext, State(state): State<Arc<AppState>
 // ─── Holidays (admin) ────────────────────────────────────────────────────────
 
 pub async fn list_holidays(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
+    svc::seed_kenyan_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
     let rows = svc::list_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
+
+/// Team-absence calendar (admin/approver).
+pub async fn calendar(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<CalendarQuery>) -> ApiResult {
+    require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave calendar").map_err(er)?;
+    let today = chrono::Utc::now().date_naive();
+    let from = q.from.unwrap_or(today);
+    let to = q.to.unwrap_or(from + chrono::Duration::days(60));
+    let cal = svc::leave_calendar(&state.engine, ctx.entity_id, from, to).await.map_err(er)?;
+    Ok(Json(cal))
+}
+
+#[derive(Deserialize)]
+pub struct CalendarQuery { pub from: Option<chrono::NaiveDate>, pub to: Option<chrono::NaiveDate> }
 pub async fn create_holiday(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateHolidayRequest>) -> ApiResult {
     require_role(ROLES_HR_MANAGE, &ctx, "manage holidays").map_err(er)?;
     let id = svc::create_holiday(&state.engine, ctx.entity_id, req).await.map_err(er)?;
@@ -80,7 +94,8 @@ pub async fn list_balances(ctx: AuthContext, State(state): State<Arc<AppState>>,
 
 pub async fn list_requests(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<YearQuery>) -> ApiResult {
     require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave requests").map_err(er)?;
-    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, q.employee_id, q.status).await.map_err(er)?;
+    let assigned = if q.mine { Some(ctx.user_id) } else { None };
+    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, q.employee_id, q.status, assigned).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 
@@ -114,6 +129,13 @@ pub async fn my_leave_types(ctx: StaffContext, State(state): State<Arc<AppState>
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 
+/// Company holidays visible to the employee.
+pub async fn my_holidays(ctx: StaffContext, State(state): State<Arc<AppState>>) -> ApiResult {
+    svc::seed_kenyan_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
+    let rows = svc::list_holidays(&state.engine, ctx.entity_id).await.map_err(er)?;
+    Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
+}
+
 pub async fn my_leave_balances(ctx: StaffContext, State(state): State<Arc<AppState>>, Query(q): Query<YearQuery>) -> ApiResult {
     svc::seed_default_leave_types(&state.engine, ctx.entity_id).await.map_err(er)?;
     let rows = svc::list_balances(&state.engine, ctx.entity_id, ctx.employee_id, q.year.unwrap_or_else(this_year)).await.map_err(er)?;
@@ -121,7 +143,7 @@ pub async fn my_leave_balances(ctx: StaffContext, State(state): State<Arc<AppSta
 }
 
 pub async fn my_leave_requests(ctx: StaffContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, Some(ctx.employee_id), None).await.map_err(er)?;
+    let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, Some(ctx.employee_id), None, None).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 
@@ -247,5 +269,45 @@ pub async fn invite_ess(ctx: AuthContext, State(state): State<Arc<AppState>>, Pa
         }
     };
 
+    // When invited without a password, issue a single-use token (7 days) and
+    // email an "accept invite / set password" link.
+    if password_hash.is_none() {
+        let token = Uuid::new_v4().to_string();
+        sqlx::query("UPDATE employee_users SET set_token = $1, set_token_expires = NOW() + INTERVAL '7 days' WHERE id = $2")
+            .bind(&token).bind(staff_id).execute(state.engine.pool()).await.map_err(|e| er(ErpError::Database(e)))?;
+        let link = format!("{}/staff/set-password?token={}", crate::routes::staff_auth::portal_base_url(), token);
+        let email_req = zavora_erp_core::notifications::SendNotificationRequest {
+            event_type: zavora_erp_core::notifications::NotificationEventType::LeaveRequestDecided,
+            channels: vec![zavora_erp_core::types::Channel::Email],
+            recipients: vec![req.email.trim().to_lowercase()],
+            subject: Some(format!("Set up your {} self-service account", emp.full_name.split(' ').next().unwrap_or("staff"))),
+            body: format!("You've been invited to Employee Self-Service. Set your password here: {link}\n\nThis link expires in 7 days."),
+            related_type: Some("employee_user".into()), related_id: Some(staff_id), schedule_at: None, attachments: Vec::new(),
+        };
+        let _ = zavora_erp_core::services::notifications::send_notification(&state.engine, ctx.entity_id, email_req).await;
+    }
+
     Ok(Json(serde_json::json!({"employee_user_id": staff_id, "email": req.email, "status": status})))
+}
+
+/// GET /staff/payslips/{run_id}/pdf — the employee's own payslip PDF.
+pub async fn my_payslip_pdf(
+    ctx: StaffContext,
+    State(state): State<Arc<AppState>>,
+    Path(run_id): Path<Uuid>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    // Scoped to the caller's employee_id — cannot fetch another's payslip.
+    match zavora_erp_core::services::payroll::payslip_pdf(&state.engine, ctx.entity_id, run_id, ctx.employee_id).await {
+        Ok(bytes) => {
+            use axum::response::IntoResponse;
+            Ok((
+                [
+                    (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
+                    (axum::http::header::CONTENT_DISPOSITION, "inline; filename=\"payslip.pdf\"".to_string()),
+                ],
+                bytes,
+            ).into_response())
+        }
+        Err(e) => Err(er(e)),
+    }
 }

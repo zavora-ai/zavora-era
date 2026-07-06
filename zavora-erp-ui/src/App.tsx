@@ -12,9 +12,22 @@ import EstimatesPage from './pages/invoicing/EstimatesPage';
 import RecurringInvoicesPage from './pages/invoicing/RecurringInvoicesPage';
 import BillsPage from './pages/bills/BillsPage';
 import SupplierCreditNotesPage from './pages/bills/SupplierCreditNotesPage';
+import RequisitionsPage from './pages/procurement/RequisitionsPage';
 import TendersPage from './pages/procurement/TendersPage';
 import PurchaseOrdersPage from './pages/procurement/PurchaseOrdersPage';
+import ProcurementAnalyticsPage from './pages/procurement/ProcurementAnalyticsPage';
+import DebitNotesPage from './pages/procurement/DebitNotesPage';
+import ExpenseClaimsPage from './pages/procurement/ExpenseClaimsPage';
+import ApprovalLimitsPage from './pages/settings/ApprovalLimitsPage';
+import CrmPage from './pages/crm/CrmPage';
 import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
+import PortalShell from './pages/portal/PortalShell';
+import VendorLoginPage from './pages/portal/VendorLoginPage';
+import VendorRegisterPage from './pages/portal/VendorRegisterPage';
+import PortalTendersPage from './pages/portal/PortalTendersPage';
+import PortalBidsPage from './pages/portal/PortalBidsPage';
+import PortalPurchaseOrdersPage from './pages/portal/PortalPurchaseOrdersPage';
+import PortalStatementPage from './pages/portal/PortalStatementPage';
 import PaymentsPage from './pages/payments/PaymentsPage';
 import CustomersPage from './pages/customers/CustomersPage';
 import CustomerDetailPage from './pages/customers/CustomerDetailPage';
@@ -24,8 +37,15 @@ import ProductsPage from './pages/products/ProductsPage';
 import BankingPage from './pages/banking/BankingPage';
 import TransactionsPage from './pages/banking/TransactionsPage';
 import PayrollPage from './pages/payroll/PayrollPage';
+import PayrollSettingsPage from './pages/payroll/PayrollSettingsPage';
+import PayrollReportsPage from './pages/payroll/PayrollReportsPage';
 import LeavePage from './pages/leave/LeavePage';
+import OnboardingPage from './pages/hr/OnboardingPage';
 import StaffLoginPage from './pages/staff/StaffLoginPage';
+import StaffSetPasswordPage from './pages/staff/StaffSetPasswordPage';
+import CustomerLoginPage from './pages/customerportal/CustomerLoginPage';
+import CustomerSetPasswordPage from './pages/customerportal/CustomerSetPasswordPage';
+import CustomerPortal from './pages/customerportal/CustomerPortal';
 import StaffPortal from './pages/staff/StaffPortal';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
@@ -48,6 +68,9 @@ import ReportPage from './pages/reports/ReportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
+import PosSellPage from './pages/pos/PosSellPage';
+import PosSessionsPage from './pages/pos/PosSessionsPage';
+import MobileStockPage from './pages/pos/MobileStockPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
@@ -97,8 +120,23 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Vendor portal — a fully separate surface with its own auth (see
+              portalClient.ts + PortalShell). Public auth pages, then the gated shell. */}
+          <Route path="/vendorportal/login" element={<VendorLoginPage />} />
+          <Route path="/vendorportal/register" element={<VendorRegisterPage />} />
+          <Route path="/vendorportal" element={<PortalShell />}>
+            <Route index element={<PortalTendersPage />} />
+            <Route path="bids" element={<PortalBidsPage />} />
+            <Route path="purchase-orders" element={<PortalPurchaseOrdersPage />} />
+            <Route path="statement" element={<PortalStatementPage />} />
+          </Route>
           <Route path="/staff/login" element={<StaffLoginPage />} />
+          <Route path="/staff/set-password" element={<StaffSetPasswordPage />} />
           <Route path="/staff" element={<StaffPortal />} />
+          <Route path="/customerportal/login" element={<CustomerLoginPage />} />
+          <Route path="/customerportal/register" element={<CustomerLoginPage />} />
+          <Route path="/customerportal/set-password" element={<CustomerSetPasswordPage />} />
+          <Route path="/customerportal" element={<CustomerPortal />} />
           <Route
             element={
               <RequireAuth>
@@ -114,9 +152,15 @@ export default function App() {
             <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
             <Route path="bills" element={<BillsPage />} />
             <Route path="supplier-credit-notes" element={<SupplierCreditNotesPage />} />
+            <Route path="requisitions" element={<RequisitionsPage />} />
             <Route path="tenders" element={<TendersPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
             <Route path="vendor-applications" element={<VendorApplicationsPage />} />
+            <Route path="procurement-analytics" element={<ProcurementAnalyticsPage />} />
+            <Route path="debit-notes" element={<DebitNotesPage />} />
+            <Route path="expense-claims" element={<ExpenseClaimsPage />} />
+            <Route path="approval-limits" element={<ApprovalLimitsPage />} />
+            <Route path="crm" element={<CrmPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
@@ -128,7 +172,10 @@ export default function App() {
             <Route path="reconciliation" element={<ReconciliationPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
+            <Route path="payroll-settings" element={<PayrollSettingsPage />} />
+            <Route path="payroll-reports" element={<PayrollReportsPage />} />
             <Route path="leave" element={<LeavePage />} />
+            <Route path="onboarding" element={<OnboardingPage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="journal-entries" element={<JournalEntriesPage />} />
@@ -149,6 +196,9 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="pos" element={<PosSellPage />} />
+            <Route path="pos/sessions" element={<PosSessionsPage />} />
+            <Route path="pos/stock" element={<MobileStockPage />} />
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />
             <Route path="audit" element={<AuditPage />} />

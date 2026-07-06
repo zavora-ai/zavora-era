@@ -24,6 +24,12 @@ fn er(e: ErpError) -> Response {
 
 const REFRESH_COOKIE: &str = "staff_refresh";
 
+/// Base URL for building portal links in emails (invite/reset). Falls back to
+/// localhost for dev.
+pub fn portal_base_url() -> String {
+    std::env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
+}
+
 fn is_production() -> bool {
     std::env::var("APP_ENV").map(|v| v.eq_ignore_ascii_case("production")).unwrap_or(false)
 }
@@ -162,4 +168,64 @@ pub async fn me(
     let staff = fetch_staff(state.engine.pool(), ctx.employee_user_id, ctx.entity_id).await.map_err(er)?
         .ok_or_else(|| er(ErpError::Unauthorized { message: "Staff not found".into() }))?;
     Ok(Json(staff))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ForgotPasswordRequest { pub email: String }
+
+/// POST /api/v1/staff/forgot-password — issue a reset token + email a link.
+/// Always returns ok (no account enumeration).
+pub async fn forgot_password(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ForgotPasswordRequest>,
+) -> Response {
+    let entity_id = crate::middleware::auth::served_entity();
+    let row: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, email FROM employee_users WHERE entity_id = $1 AND lower(email) = lower($2)",
+    )
+    .bind(entity_id).bind(req.email.trim())
+    .fetch_optional(state.engine.pool()).await.ok().flatten();
+
+    if let Some((id, email)) = row {
+        let token = Uuid::new_v4().to_string();
+        let _ = sqlx::query("UPDATE employee_users SET set_token = $1, set_token_expires = NOW() + INTERVAL '1 hour' WHERE id = $2")
+            .bind(&token).bind(id).execute(state.engine.pool()).await;
+        let link = format!("{}/staff/set-password?token={}", portal_base_url(), token);
+        let email_req = zavora_erp_core::notifications::SendNotificationRequest {
+            event_type: zavora_erp_core::notifications::NotificationEventType::LeaveRequestDecided,
+            channels: vec![zavora_erp_core::types::Channel::Email],
+            recipients: vec![email],
+            subject: Some("Reset your self-service password".into()),
+            body: format!("Reset your password here: {link}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email."),
+            related_type: Some("employee_user".into()), related_id: Some(id), schedule_at: None, attachments: Vec::new(),
+        };
+        let _ = zavora_erp_core::services::notifications::send_notification(&state.engine, entity_id, email_req).await;
+    }
+    Json(serde_json::json!({ "ok": true, "message": "If that account exists, a reset link has been sent." })).into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct SetPasswordRequest { pub token: String, pub password: String }
+
+/// POST /api/v1/staff/set-password — consume a single-use token (invite accept
+/// or password reset), set the password, and activate the account.
+pub async fn set_password(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SetPasswordRequest>,
+) -> Result<Response, Response> {
+    if req.password.len() < 8 {
+        return Err(er(ErpError::ValidationFailed { message: "Password must be at least 8 characters".into() }));
+    }
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM employee_users WHERE set_token = $1 AND set_token_expires > NOW()",
+    )
+    .bind(req.token.trim())
+    .fetch_optional(state.engine.pool()).await.map_err(|e| er(ErpError::Database(e)))?;
+    let (id,) = row.ok_or_else(|| er(ErpError::ValidationFailed { message: "This link is invalid or has expired. Ask HR to re-send it.".into() }))?;
+
+    let hash = auth::hash_password(&req.password).map_err(er)?;
+    sqlx::query("UPDATE employee_users SET password_hash = $1, status = 'active', set_token = NULL, set_token_expires = NULL WHERE id = $2")
+        .bind(&hash).bind(id).execute(state.engine.pool()).await.map_err(|e| er(ErpError::Database(e)))?;
+
+    Ok(Json(serde_json::json!({ "ok": true, "message": "Password set. You can now sign in." })).into_response())
 }

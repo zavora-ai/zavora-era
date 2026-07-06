@@ -94,6 +94,7 @@ Installed pack:
 | `manual-journal` | Balanced entries, account verification, reversal-based corrections, confirmation gate |
 | `erp-showcase` | Browser evidence: snapshot-before-acting, the ERP route map, captioning, retry ladder |
 | `month-end-review` | Read-only five-check close ritual with a structured verdict |
+| `hr-payroll` | HR & payroll: analyse via payroll reports, run/review/commit a pay run in the UI, adjustments, effective-dated statutory rates, plain-language PAYE/NSSF/SHA/Housing/HELB |
 
 **Authoring a new skill**: copy any folder under `skills/`, keep the
 frontmatter fields, write the workflow as numbered tool sequences, restart

@@ -117,6 +117,12 @@ async fn main() -> anyhow::Result<()> {
                 Ok(_) => {}
                 Err(e) => tracing::error!("Depreciation scheduler error: {}", e),
             }
+            // Advance leave balances for all tenants (accrual by tenure + carryover; idempotent).
+            match zavora_erp_core::services::scheduler::advance_leave_balances_all(&scheduler_engine).await {
+                Ok(n) if n > 0 => tracing::info!("Leave balances advanced for {} employee(s)", n),
+                Ok(_) => {}
+                Err(e) => tracing::error!("Leave accrual scheduler error: {}", e),
+            }
         }
     });
 
@@ -163,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/portal/bids", get(routes::portal::my_bids))
         .route("/api/v1/portal/purchase-orders", get(routes::portal::my_purchase_orders))
         .route("/api/v1/portal/purchase-orders/{id}", get(routes::portal::get_purchase_order))
+        .route("/api/v1/portal/purchase-orders/{id}/document", get(routes::portal::purchase_order_document))
         .route("/api/v1/portal/purchase-orders/{id}/invoice", post(routes::portal::lodge_invoice))
         .route("/api/v1/portal/invoices", get(routes::portal::my_invoices))
         .route("/api/v1/portal/statement", get(routes::portal::statement))
@@ -171,15 +178,35 @@ async fn main() -> anyhow::Result<()> {
         // `StaffContext`, so they live on the public router (like the vendor
         // portal) and are unreachable with a back-office token. ──
         .route("/api/v1/staff/login", post(routes::staff_auth::login))
+        .route("/api/v1/staff/forgot-password", post(routes::staff_auth::forgot_password))
+        .route("/api/v1/staff/set-password", post(routes::staff_auth::set_password))
         .route("/api/v1/staff/refresh", post(routes::staff_auth::refresh))
         .route("/api/v1/staff/logout", post(routes::staff_auth::logout))
         .route("/api/v1/staff/me", get(routes::staff_auth::me))
         .route("/api/v1/staff/leave-types", get(routes::leave::my_leave_types))
+        .route("/api/v1/staff/holidays", get(routes::leave::my_holidays))
         .route("/api/v1/staff/profile", get(routes::leave::my_profile).put(routes::leave::my_profile_update))
         .route("/api/v1/staff/leave-balances", get(routes::leave::my_leave_balances))
         .route("/api/v1/staff/leave-requests", get(routes::leave::my_leave_requests).post(routes::leave::my_create_request))
         .route("/api/v1/staff/leave-requests/{id}/cancel", post(routes::leave::my_cancel_request))
-        .route("/api/v1/staff/payslips", get(routes::leave::my_payslips));
+        .route("/api/v1/staff/payslips", get(routes::leave::my_payslips))
+        .route("/api/v1/staff/payslips/{run_id}/pdf", get(routes::leave::my_payslip_pdf))
+        // ── Customer portal (CRM add-in): external `customer_users` principal,
+        // role="Customer"; verified per-request via CustomerContext (public
+        // router, like the vendor/staff portals). ──
+        .route("/api/v1/customerportal/login", post(routes::customerportal_auth::login))
+        .route("/api/v1/customerportal/register", post(routes::customerportal_auth::register))
+        .route("/api/v1/customerportal/set-password", post(routes::customerportal_auth::set_password))
+        .route("/api/v1/customerportal/forgot-password", post(routes::customerportal_auth::forgot_password))
+        .route("/api/v1/customerportal/refresh", post(routes::customerportal_auth::refresh))
+        .route("/api/v1/customerportal/logout", post(routes::customerportal_auth::logout))
+        .route("/api/v1/customerportal/me", get(routes::customerportal_auth::me))
+        .route("/api/v1/customerportal/profile", get(routes::customerportal::profile).put(routes::customerportal::update_profile))
+        .route("/api/v1/customerportal/invoices", get(routes::customerportal::invoices))
+        .route("/api/v1/customerportal/statement", get(routes::customerportal::statement))
+        .route("/api/v1/customerportal/tickets", get(routes::customerportal::list_tickets).post(routes::customerportal::create_ticket))
+        .route("/api/v1/customerportal/tickets/{id}", get(routes::customerportal::get_ticket))
+        .route("/api/v1/customerportal/tickets/{id}/reply", post(routes::customerportal::reply_ticket));
 
     // Protected routes — gated by the auth middleware applied below.
     let protected = Router::new()
@@ -262,8 +289,35 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/tenders/{id}/publish", post(routes::procurement::publish_tender))
         .route("/api/v1/tenders/{id}/bids", get(routes::procurement::list_bids))
         .route("/api/v1/tenders/{id}/award", post(routes::procurement::award_tender))
-        .route("/api/v1/purchase-orders", get(routes::procurement::list_purchase_orders))
+        .route("/api/v1/approval-limits", get(routes::approval::list).put(routes::approval::set))
+        .route("/api/v1/pos/session", get(routes::pos::current_session))
+        .route("/api/v1/pos/sessions", get(routes::pos::list_sessions))
+        .route("/api/v1/pos/session/open", post(routes::pos::open_session))
+        .route("/api/v1/pos/session/{id}/sale", post(routes::pos::complete_sale))
+        .route("/api/v1/pos/session/{id}/z-report", get(routes::pos::z_report))
+        .route("/api/v1/pos/session/{id}/close", post(routes::pos::close_session))
+        .route("/api/v1/pos/receipt/{id}", get(routes::pos::receipt))
+        .route("/api/v1/procurement/analytics", get(routes::procurement::analytics))
+        .route("/api/v1/procurement/budget-control", get(routes::procurement::budget_control))
+        .route("/api/v1/debit-notes", get(routes::procurement::list_debit_notes).post(routes::procurement::create_debit_note))
+        .route("/api/v1/debit-notes/{id}", get(routes::procurement::get_debit_note))
+        .route("/api/v1/expense-claims", get(routes::procurement::list_expense_claims).post(routes::procurement::create_expense_claim))
+        .route("/api/v1/expense-claims/{id}", get(routes::procurement::get_expense_claim))
+        .route("/api/v1/expense-claims/{id}/submit", post(routes::procurement::submit_expense_claim))
+        .route("/api/v1/expense-claims/{id}/approve", post(routes::procurement::approve_expense_claim))
+        .route("/api/v1/expense-claims/{id}/reject", post(routes::procurement::reject_expense_claim))
+        .route("/api/v1/requisitions", get(routes::procurement::list_requisitions).post(routes::procurement::create_requisition))
+        .route("/api/v1/requisitions/{id}", get(routes::procurement::get_requisition))
+        .route("/api/v1/requisitions/{id}/submit", post(routes::procurement::submit_requisition))
+        .route("/api/v1/requisitions/{id}/approve", post(routes::procurement::approve_requisition))
+        .route("/api/v1/requisitions/{id}/reject", post(routes::procurement::reject_requisition))
+        .route("/api/v1/requisitions/{id}/convert", post(routes::procurement::convert_requisition))
+        .route("/api/v1/purchase-orders", get(routes::procurement::list_purchase_orders).post(routes::procurement::create_purchase_order))
         .route("/api/v1/purchase-orders/{id}", get(routes::procurement::get_purchase_order))
+        .route("/api/v1/purchase-orders/{id}/document", get(routes::procurement::purchase_order_document))
+        .route("/api/v1/purchase-orders/{id}/send", post(routes::procurement::send_purchase_order))
+        .route("/api/v1/purchase-orders/{id}/receipts", get(routes::procurement::list_goods_receipts).post(routes::procurement::create_goods_receipt))
+        .route("/api/v1/purchase-orders/{id}/match", get(routes::procurement::purchase_order_match))
         // Supplier credit notes (AP)
         .route("/api/v1/supplier-credit-notes", get(routes::supplier_credit_notes::list).post(routes::supplier_credit_notes::create))
         .route("/api/v1/supplier-credit-notes/{id}", get(routes::supplier_credit_notes::get_one))
@@ -289,10 +343,26 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank/reconciliations/complete", post(routes::reconciliation::complete))
         .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
         // Payroll
+        .route("/api/v1/payroll", get(routes::payroll::list))
         .route("/api/v1/payroll/run", post(routes::payroll::run))
+        // Payroll masters & config
+        .route("/api/v1/payroll/earning-types", get(routes::payroll_masters::list_earning_types).post(routes::payroll_masters::create_earning_type))
+        .route("/api/v1/payroll/earning-types/{id}/active", axum::routing::put(routes::payroll_masters::set_earning_type_active))
+        .route("/api/v1/payroll/deduction-types", get(routes::payroll_masters::list_deduction_types).post(routes::payroll_masters::create_deduction_type))
+        .route("/api/v1/payroll/deduction-types/{id}/active", axum::routing::put(routes::payroll_masters::set_deduction_type_active))
+        .route("/api/v1/payroll/departments", get(routes::payroll_masters::list_departments).post(routes::payroll_masters::create_department))
+        .route("/api/v1/payroll/statutory-config", get(routes::payroll_masters::list_statutory).post(routes::payroll_masters::upsert_statutory))
+        .route("/api/v1/payroll/recurring-items", get(routes::payroll_masters::list_recurring).post(routes::payroll_masters::create_recurring))
+        .route("/api/v1/payroll/recurring-items/{id}", axum::routing::delete(routes::payroll_masters::delete_recurring))
+        .route("/api/v1/payroll/loans", get(routes::payroll_masters::list_loans).post(routes::payroll_masters::create_loan))
+        .route("/api/v1/payroll/{id}", get(routes::payroll::detail).delete(routes::payroll::delete_draft))
+        .route("/api/v1/payroll/{id}/recompute", post(routes::payroll::recompute))
+        .route("/api/v1/payroll/{id}/inputs", get(routes::payroll::list_inputs).post(routes::payroll::add_input))
+        .route("/api/v1/payroll/{id}/inputs/{input_id}", axum::routing::delete(routes::payroll::delete_input))
         .route("/api/v1/payroll/{id}/approve", post(routes::payroll::approve))
         .route("/api/v1/payroll/{id}/post", post(routes::payroll::post_run))
         .route("/api/v1/payroll/{id}/paid", post(routes::payroll::mark_paid))
+        .route("/api/v1/payroll/{run_id}/payslips/{employee_id}/pdf", get(routes::payroll::payslip_pdf))
         // HR — leave management (back-office / era_users; protected router)
         .route("/api/v1/leave-types", get(routes::leave::list_types).post(routes::leave::create_type))
         .route("/api/v1/leave-types/{id}/active", axum::routing::put(routes::leave::set_type_active))
@@ -302,7 +372,33 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/leave-requests", get(routes::leave::list_requests).post(routes::leave::create_request))
         .route("/api/v1/leave-requests/{id}/approve", post(routes::leave::approve))
         .route("/api/v1/leave-requests/{id}/decline", post(routes::leave::decline))
+        .route("/api/v1/leave-calendar", get(routes::leave::calendar))
         .route("/api/v1/employees/{id}/invite-ess", post(routes::leave::invite_ess))
+        // HR — onboarding
+        .route("/api/v1/onboarding", get(routes::hr_onboarding::list).post(routes::hr_onboarding::create))
+        .route("/api/v1/onboarding/{id}", get(routes::hr_onboarding::get_one))
+        .route("/api/v1/onboarding/{id}/complete", post(routes::hr_onboarding::complete))
+        .route("/api/v1/onboarding/{case}/tasks/{task}", axum::routing::put(routes::hr_onboarding::set_task))
+
+        // ── CRM (optional add-in; data routes gated by crm_settings.enabled) ──
+        .route("/api/v1/crm/settings", get(routes::crm::get_settings).put(routes::crm::set_enabled))
+        .route("/api/v1/crm/pipelines", get(routes::crm::list_pipelines))
+        .route("/api/v1/crm/pipelines/{id}/stages", get(routes::crm::list_stages))
+        .route("/api/v1/crm/leads", get(routes::crm::list_leads).post(routes::crm::create_lead))
+        .route("/api/v1/crm/leads/{id}", axum::routing::put(routes::crm::update_lead))
+        .route("/api/v1/crm/leads/{id}/convert", post(routes::crm::convert_lead))
+        .route("/api/v1/crm/opportunities", get(routes::crm::list_opportunities).post(routes::crm::create_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/move", post(routes::crm::move_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/win", post(routes::crm::win_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/lose", post(routes::crm::lose_opportunity))
+        .route("/api/v1/crm/activities", get(routes::crm::list_activities).post(routes::crm::create_activity))
+        .route("/api/v1/crm/activities/{id}/done", post(routes::crm::complete_activity))
+        .route("/api/v1/crm/tickets", get(routes::crm::list_tickets))
+        .route("/api/v1/crm/tickets/{id}", get(routes::crm::get_ticket))
+        .route("/api/v1/crm/tickets/{id}/reply", post(routes::crm::reply_ticket))
+        .route("/api/v1/crm/tickets/{id}/status", axum::routing::put(routes::crm::set_ticket_status))
+        .route("/api/v1/crm/analytics", get(routes::crm::analytics))
+        .route("/api/v1/crm/customers/invite-portal", post(routes::crm::invite_customer))
         // Inventory
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))

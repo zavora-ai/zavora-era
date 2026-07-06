@@ -19,6 +19,8 @@ pub enum NotificationEventType {
     CreditLimitExceeded,
     ScheduledReport,
     InvoiceSent,
+    LeaveRequestSubmitted,
+    LeaveRequestDecided,
 }
 
 /// Status of a notification.

@@ -122,6 +122,8 @@ pub struct LeaveRequestRow {
     pub decided_at: Option<DateTime<Utc>>,
     pub decision_note: Option<String>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub assigned_approver_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,6 +200,64 @@ pub struct InviteStaffRequest {
     pub email: String,
     #[serde(default)]
     pub password: Option<String>,
+}
+
+// ─── Onboarding / offboarding cases ──────────────────────────────────────────
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct OnboardingCaseRow {
+    pub id: Uuid,
+    pub entity_id: Uuid,
+    pub employee_id: Uuid,
+    pub r#type: String,
+    pub status: String,
+    pub start_date: NaiveDate,
+    pub target_date: Option<NaiveDate>,
+    pub probation_end: Option<NaiveDate>,
+    pub notes: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct OnboardingTaskRow {
+    pub id: Uuid,
+    pub entity_id: Uuid,
+    pub case_id: Uuid,
+    pub title: String,
+    pub is_done: bool,
+    pub done_at: Option<DateTime<Utc>>,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateOnboardingRequest {
+    pub employee_id: Uuid,
+    pub start_date: NaiveDate,
+    #[serde(default)]
+    pub target_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub probation_end: Option<NaiveDate>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub tasks: Option<Vec<String>>,
+}
+
+/// Default Kenyan-SME onboarding checklist.
+pub fn default_onboarding_tasks() -> Vec<&'static str> {
+    vec![
+        "Signed employment contract on file",
+        "KRA PIN recorded",
+        "NSSF & SHA numbers recorded",
+        "Bank account details captured",
+        "Statutory IDs verified (ID/passport)",
+        "Workstation & equipment issued",
+        "Email & system access provisioned",
+        "Employee self-service invite sent",
+        "Company induction completed",
+    ]
 }
 
 // ─── Working-days calculation (pure) ─────────────────────────────────────────

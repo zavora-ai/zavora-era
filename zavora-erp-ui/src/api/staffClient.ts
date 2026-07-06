@@ -71,15 +71,19 @@ staffApi.interceptors.response.use(
 // ── Staff auth ──
 export const staffLogin = (email: string, password: string) => staffApi.post('/staff/login', { email, password });
 export const staffLogout = () => staffApi.post('/staff/logout', {});
+export const staffForgotPassword = (email: string) => staffApi.post('/staff/forgot-password', { email });
+export const staffSetPassword = (token: string, password: string) => staffApi.post('/staff/set-password', { token, password });
 
 // ── Staff self-service (own records only) ──
 export const staffGetProfile = () => staffApi.get('/staff/profile');
 export const staffUpdateProfile = (data: { phone?: string; personal_email?: string }) => staffApi.put('/staff/profile', data);
 export const staffGetLeaveBalances = () => staffApi.get('/staff/leave-balances');
 export const staffGetLeaveTypes = () => staffApi.get('/staff/leave-types');
+export const staffGetHolidays = () => staffApi.get('/staff/holidays');
 export const staffGetLeaveRequests = () => staffApi.get('/staff/leave-requests');
 export const staffCreateLeaveRequest = (data: any) => staffApi.post('/staff/leave-requests', data);
 export const staffCancelLeaveRequest = (id: string) => staffApi.post(`/staff/leave-requests/${id}/cancel`, {});
 export const staffGetPayslips = () => staffApi.get('/staff/payslips');
+export const staffGetPayslipPdf = (runId: string) => staffApi.get(`/staff/payslips/${runId}/pdf`, { responseType: 'blob' });
 
 export default staffApi;

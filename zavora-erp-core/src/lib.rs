@@ -48,6 +48,7 @@ pub mod transactions;
 pub mod bank;
 pub mod payroll;
 pub mod hr;
+pub mod crm;
 pub mod period;
 pub mod tax;
 pub mod fx;

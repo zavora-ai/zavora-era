@@ -20,13 +20,20 @@ const navigation = [
   { divider: true, label: 'PURCHASES' },
   { name: 'Bills', href: '/bills', icon: Receipt },
   { name: 'Supplier Credits', href: '/supplier-credit-notes', icon: FileMinus },
+  { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
+  { name: 'Expense Claims', href: '/expense-claims', icon: Wallet },
   { name: 'Capture Receipt', href: '/receipts/capture', icon: Camera },
   { name: 'Vendors', href: '/vendors', icon: Building2 },
 
   { divider: true, label: 'PROCUREMENT' },
+  { name: 'Requisitions', href: '/requisitions', icon: ClipboardList },
   { name: 'Tenders', href: '/tenders', icon: Gavel },
   { name: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart },
+  { name: 'Analytics', href: '/procurement-analytics', icon: BarChart3 },
   { name: 'Vendor Applications', href: '/vendor-applications', icon: UserPlus },
+
+  { divider: true, label: 'CRM' },
+  { name: 'CRM', href: '/crm', icon: Target },
 
   { divider: true, label: 'BANKING' },
   { name: 'Payments', href: '/payments', icon: CreditCard },
@@ -37,11 +44,17 @@ const navigation = [
   { divider: true, label: 'PRODUCTS & INVENTORY' },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Boxes },
+  { name: 'Point of Sale', href: '/pos', icon: ShoppingCart },
+  { name: 'Till Sessions', href: '/pos/sessions', icon: Landmark },
+  { name: 'Stock (Mobile)', href: '/pos/stock', icon: Camera },
 
   { divider: true, label: 'PAYROLL & HR' },
   { name: 'Employees', href: '/employees', icon: UserCheck },
+  { name: 'Onboarding', href: '/onboarding', icon: UserPlus },
   { name: 'Leave', href: '/leave', icon: CalendarClock },
   { name: 'Payroll', href: '/payroll', icon: Wallet },
+  { name: 'Payroll Settings', href: '/payroll-settings', icon: Settings },
+  { name: 'Payroll Reports', href: '/payroll-reports', icon: BarChart3 },
 
   { divider: true, label: 'ACCOUNTING' },
   { name: 'Chart of Accounts', href: '/accounts', icon: BookOpen },
@@ -62,6 +75,7 @@ const navigation = [
   { name: 'WHT Rates', href: '/wht-rates', icon: Percent },
 
   { divider: true, label: 'ADMIN' },
+  { name: 'Approval Limits', href: '/approval-limits', icon: Scale },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Users & Roles', href: '/users', icon: UserCog },
   { name: 'FX Rates', href: '/fx-rates', icon: RefreshCw },

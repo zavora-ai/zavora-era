@@ -177,6 +177,20 @@ pub async fn approve_bill(engine: &ErpEngine, entity_id: Uuid, req: ApproveBillR
         });
     }
 
+    // Delegation of Authority: the approver may not approve above their limit.
+    crate::services::approval::assert_within_limit(engine, entity_id, req.approved_by, bill.gross_total, "bill").await?;
+
+    // 3-way match gate: a PO-linked bill can't be approved for goods not yet
+    // received. Bills without a PO are unaffected. (`po_id` isn't on BillRow, so
+    // read it directly.)
+    let po_id: Option<Uuid> = sqlx::query_scalar("SELECT po_id FROM bills WHERE id = $1")
+        .bind(req.bill_id)
+        .fetch_one(engine.pool())
+        .await?;
+    if let Some(po_id) = po_id {
+        crate::services::procurement::assert_bill_receivable(engine, entity_id, po_id).await?;
+    }
+
     // Validate target fiscal period is Open (Requirements 10.5, 10.6)
     let period = crate::services::periods::period_for_date(engine, entity_id, bill.issue_date).await?;
     let period_status = period.parsed_status();

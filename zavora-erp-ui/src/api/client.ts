@@ -275,6 +275,30 @@ export const applyPayment = (data: { payment_id: string; document_id: string; am
 export const runPayroll = (data: any) => api.post('/payroll/run', data);
 export const approvePayRun = (id: string) => api.post(`/payroll/${id}/approve`);
 export const postPayRun = (id: string) => api.post(`/payroll/${id}/post`);
+export const markPayRunPaid = (id: string) => api.post(`/payroll/${id}/paid`);
+export const listPayRuns = () => api.get('/payroll');
+export const getPayRun = (id: string) => api.get(`/payroll/${id}`);
+export const recomputePayRun = (id: string) => api.post(`/payroll/${id}/recompute`);
+export const deletePayRun = (id: string) => api.delete(`/payroll/${id}`);
+export const listRunInputs = (id: string) => api.get(`/payroll/${id}/inputs`);
+export const addRunInput = (id: string, data: any) => api.post(`/payroll/${id}/inputs`, data);
+export const deleteRunInput = (id: string, inputId: string) => api.delete(`/payroll/${id}/inputs/${inputId}`);
+// Payroll masters & config
+export const listEarningTypes = () => api.get('/payroll/earning-types');
+export const createEarningType = (data: any) => api.post('/payroll/earning-types', data);
+export const setEarningTypeActive = (id: string, active: boolean) => api.put(`/payroll/earning-types/${id}/active`, { active });
+export const listDeductionTypes = () => api.get('/payroll/deduction-types');
+export const createDeductionType = (data: any) => api.post('/payroll/deduction-types', data);
+export const setDeductionTypeActive = (id: string, active: boolean) => api.put(`/payroll/deduction-types/${id}/active`, { active });
+export const listDepartments = () => api.get('/payroll/departments');
+export const createDepartment = (data: any) => api.post('/payroll/departments', data);
+export const listStatutoryConfig = () => api.get('/payroll/statutory-config');
+export const upsertStatutoryConfig = (data: any) => api.post('/payroll/statutory-config', data);
+export const listRecurringItems = (employeeId: string) => api.get('/payroll/recurring-items', { params: { employee_id: employeeId } });
+export const createRecurringItem = (data: any) => api.post('/payroll/recurring-items', data);
+export const deleteRecurringItem = (id: string) => api.delete(`/payroll/recurring-items/${id}`);
+export const listLoans = (employeeId: string) => api.get('/payroll/loans', { params: { employee_id: employeeId } });
+export const createLoan = (data: any) => api.post('/payroll/loans', data);
 
 // === Reports ===
 export const generateReport = (data: any) => api.post('/reports', data);
@@ -317,6 +341,21 @@ export const getInventory = () => api.get('/inventory');
 export const createInventoryItem = (data: any) => api.post('/inventory', data);
 export const receiveInventory = (data: any) => api.post('/inventory/receive', data);
 export const issueInventory = (data: any) => api.post('/inventory/issue', data);
+
+// ── Point of Sale ────────────────────────────────────────────────────────────
+export const getPosSession = () => api.get('/pos/session');
+export const getPosSessions = () => api.get('/pos/sessions');
+export const openPosSession = (data: { register_name?: string; opening_float: number }) => api.post('/pos/session/open', data);
+export const completePosSale = (sessionId: string, data: {
+  customer_id?: string; tender: 'cash' | 'mpesa' | 'card'; amount_tendered?: number;
+  mpesa_reference?: string; mpesa_phone?: string;
+  lines: { product_id: string; quantity: number; unit_price?: number }[];
+}) => api.post(`/pos/session/${sessionId}/sale`, data);
+export const getZReport = (sessionId: string) => api.get(`/pos/session/${sessionId}/z-report`);
+export const closePosSession = (sessionId: string, data: { counted_cash: number; notes?: string }) =>
+  api.post(`/pos/session/${sessionId}/close`, data);
+export const getPosReceipt = (invoiceId: string, tendered?: number) =>
+  api.get(`/pos/receipt/${invoiceId}`, { params: tendered != null ? { tendered } : {}, responseType: 'text' });
 
 // === Assets ===
 export const getAssets = () => api.get('/assets');
@@ -369,6 +408,7 @@ export const transmitInvoiceEtims = (id: string, data: { etims_invoice_number?: 
 export const getEmployees = () => api.get('/employees');
 export const getEmployee = (id: string) => api.get(`/employees/${id}`);
 export const createEmployeeApi = (data: any) => api.post('/employees', data);
+export const updateEmployee = (id: string, data: any) => api.put(`/employees/${id}`, data);
 
 // === Customers (additional) ===
 export const getCustomer = (id: string) => api.get(`/customers/${id}`);
@@ -436,16 +476,28 @@ export const getLeaveTypes = () => api.get('/leave-types');
 export const createLeaveType = (data: any) => api.post('/leave-types', data);
 export const setLeaveTypeActive = (id: string, active: boolean) => api.put(`/leave-types/${id}/active`, { active });
 export const getHolidays = () => api.get('/holidays');
+export const getLeaveCalendar = (from?: string, to?: string) =>
+  api.get('/leave-calendar', { params: { ...(from ? { from } : {}), ...(to ? { to } : {}) } });
+export const getPayslipPdf = (runId: string, employeeId: string) =>
+  api.get(`/payroll/${runId}/payslips/${employeeId}/pdf`, { responseType: 'blob' });
 export const createHoliday = (data: { date: string; name: string; recurring?: boolean }) => api.post('/holidays', data);
 export const deleteHoliday = (id: string) => api.delete(`/holidays/${id}`);
 export const getLeaveBalances = (employeeId: string, year?: number) =>
   api.get('/leave-balances', { params: { employee_id: employeeId, ...(year ? { year } : {}) } });
-export const getLeaveRequests = (params?: { employee_id?: string; status?: string }) =>
+export const getLeaveRequests = (params?: { employee_id?: string; status?: string; mine?: boolean }) =>
   api.get('/leave-requests', { params: params || {} });
 export const createLeaveRequest = (data: any) => api.post('/leave-requests', data);
 export const approveLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/approve`, { note });
 export const declineLeave = (id: string, note?: string) => api.post(`/leave-requests/${id}/decline`, { note });
-export const inviteEss = (employeeId: string, email: string) => api.post(`/employees/${employeeId}/invite-ess`, { email });
+export const inviteEss = (employeeId: string, email: string, password?: string) =>
+  api.post(`/employees/${employeeId}/invite-ess`, { email, ...(password ? { password } : {}) });
+
+// === HR — Onboarding ===
+export const getOnboardingCases = () => api.get('/onboarding');
+export const createOnboarding = (data: any) => api.post('/onboarding', data);
+export const getOnboardingCase = (id: string) => api.get(`/onboarding/${id}`);
+export const setOnboardingTask = (caseId: string, taskId: string, done: boolean) => api.put(`/onboarding/${caseId}/tasks/${taskId}`, { done });
+export const completeOnboarding = (id: string) => api.post(`/onboarding/${id}/complete`, {});
 
 // === Procurement (P2P) — staff/buyer side ===
 export const getVendorApplications = () => api.get('/vendor-applications');
@@ -464,4 +516,110 @@ export const awardTender = (id: string, data: { bid_id: string; delivery_date?: 
   api.post(`/tenders/${id}/award`, data);
 export const getPurchaseOrders = () => api.get('/purchase-orders');
 export const getPurchaseOrder = (id: string) => api.get(`/purchase-orders/${id}`);
+/** Direct procurement — raise an LPO straight against a vendor master. */
+export const createPurchaseOrder = (data: {
+  vendor_id: string; currency?: string; delivery_date?: string; notes?: string;
+  lines: { description: string; quantity: number; uom: string; unit_price: number; account_code?: string }[];
+}) => api.post('/purchase-orders', data);
 
+// ── Purchase requisitions ────────────────────────────────────────────────────
+export const getRequisitions = () => api.get('/requisitions');
+export const getRequisition = (id: string) => api.get(`/requisitions/${id}`);
+export const createRequisition = (data: {
+  title: string; justification?: string; department?: string; cost_center?: string;
+  currency?: string; needed_by?: string; notes?: string;
+  lines: { description: string; quantity: number; uom: string; estimated_unit_price: number; account_code?: string }[];
+}) => api.post('/requisitions', data);
+export const submitRequisition = (id: string) => api.post(`/requisitions/${id}/submit`, {});
+export const approveRequisition = (id: string) => api.post(`/requisitions/${id}/approve`, {});
+export const rejectRequisition = (id: string, reason?: string) => api.post(`/requisitions/${id}/reject`, { reason });
+export const convertRequisition = (id: string, data: {
+  target: 'tender' | 'purchase_order'; vendor_id?: string; delivery_date?: string; closing_date?: string;
+}) => api.post(`/requisitions/${id}/convert`, data);
+/** The legal LPO document as a PDF blob (bank-ready). */
+export const getPurchaseOrderPdf = (id: string) =>
+  api.get(`/purchase-orders/${id}/document`, { params: { format: 'pdf' }, responseType: 'blob' });
+/** Goods receipts + 3-way match for a PO. */
+export const getGoodsReceipts = (poId: string) => api.get(`/purchase-orders/${poId}/receipts`);
+export const createGoodsReceipt = (poId: string, data: {
+  receipt_date?: string; notes?: string;
+  lines: { po_line_id?: string; description: string; quantity_received: number }[];
+}) => api.post(`/purchase-orders/${poId}/receipts`, data);
+export const getPoMatch = (poId: string) => api.get(`/purchase-orders/${poId}/match`);
+export const getProcurementAnalytics = () => api.get('/procurement/analytics');
+export const getBudgetControl = () => api.get('/procurement/budget-control');
+/** Email the LPO PDF to the vendor. */
+export const sendPurchaseOrder = (id: string, data: { recipient_email?: string; message?: string }) =>
+  api.post(`/purchase-orders/${id}/send`, data);
+
+// ── Approval spend-limits (DoA) ──────────────────────────────────────────────
+export const getApprovalLimits = () => api.get('/approval-limits');
+export const setApprovalLimit = (role: string, max_amount: number | null) =>
+  api.put('/approval-limits', { role, max_amount });
+
+// ── Purchase debit notes ─────────────────────────────────────────────────────
+export const getDebitNotes = () => api.get('/debit-notes');
+export const getDebitNote = (id: string) => api.get(`/debit-notes/${id}`);
+export const createDebitNote = (data: {
+  vendor_id: string; applies_to_bill?: string; po_id?: string; reason?: string; currency?: string;
+  lines: { description: string; quantity: number; unit_price: number; account_code?: string }[];
+}) => api.post('/debit-notes', data);
+
+// ── Expense claims ───────────────────────────────────────────────────────────
+export const getExpenseClaims = () => api.get('/expense-claims');
+export const getExpenseClaim = (id: string) => api.get(`/expense-claims/${id}`);
+export const createExpenseClaim = (data: {
+  title: string; currency?: string; notes?: string;
+  lines: { expense_date?: string; description: string; account_code?: string; amount: number }[];
+}) => api.post('/expense-claims', data);
+export const submitExpenseClaim = (id: string) => api.post(`/expense-claims/${id}/submit`, {});
+export const approveExpenseClaim = (id: string) => api.post(`/expense-claims/${id}/approve`, {});
+export const rejectExpenseClaim = (id: string, reason?: string) => api.post(`/expense-claims/${id}/reject`, { reason });
+
+
+// === CRM (optional, feature-flagged add-in) ===
+// Settings (reachable even when disabled, so an admin can turn it on).
+export const getCrmSettings = () => api.get('/crm/settings');
+export const setCrmEnabled = (enabled: boolean) => api.put('/crm/settings', { enabled });
+// Pipelines & stages
+export const getCrmPipelines = () => api.get('/crm/pipelines');
+export const getCrmStages = (pipelineId: string) => api.get(`/crm/pipelines/${pipelineId}/stages`);
+// Leads
+export const getCrmLeads = (status?: string) => api.get('/crm/leads', { params: status ? { status } : {} });
+export const createCrmLead = (data: {
+  name: string; company?: string; email?: string; phone?: string; source?: string;
+  estimated_value?: number; notes?: string;
+}) => api.post('/crm/leads', data);
+export const updateCrmLead = (id: string, data: any) => api.put(`/crm/leads/${id}`, data);
+export const convertCrmLead = (id: string, data?: { customer_id?: string; amount?: number }) =>
+  api.post(`/crm/leads/${id}/convert`, data || {});
+// Opportunities
+export const getCrmOpportunities = (status?: string) =>
+  api.get('/crm/opportunities', { params: status ? { status } : {} });
+export const createCrmOpportunity = (data: {
+  name: string; amount?: number; customer_id?: string; pipeline_id?: string; stage_id?: string;
+  expected_close?: string; notes?: string;
+}) => api.post('/crm/opportunities', data);
+export const moveCrmOpportunity = (id: string, stage_id: string) =>
+  api.post(`/crm/opportunities/${id}/move`, { stage_id });
+export const winCrmOpportunity = (id: string, data?: { amount?: number }) =>
+  api.post(`/crm/opportunities/${id}/win`, data || {});
+export const loseCrmOpportunity = (id: string, reason?: string) =>
+  api.post(`/crm/opportunities/${id}/lose`, { reason });
+// Activities
+export const getCrmActivities = (params?: { related_type?: string; related_id?: string }) =>
+  api.get('/crm/activities', { params: params || {} });
+export const createCrmActivity = (data: {
+  kind: string; subject: string; due_at?: string; related_type?: string; related_id?: string; notes?: string;
+}) => api.post('/crm/activities', data);
+export const completeCrmActivity = (id: string) => api.post(`/crm/activities/${id}/done`, {});
+// Tickets (back-office side)
+export const getCrmTickets = (status?: string) => api.get('/crm/tickets', { params: status ? { status } : {} });
+export const getCrmTicket = (id: string) => api.get(`/crm/tickets/${id}`);
+export const replyCrmTicket = (id: string, body: string) => api.post(`/crm/tickets/${id}/reply`, { body });
+export const setCrmTicketStatus = (id: string, status: string) => api.post(`/crm/tickets/${id}/status`, { status });
+// Analytics
+export const getCrmAnalytics = () => api.get('/crm/analytics');
+// Assisted portal invite
+export const inviteCustomerPortal = (data: { email: string; display_name?: string; customer_id?: string; password?: string }) =>
+  api.post('/crm/customers/invite-portal', data);
