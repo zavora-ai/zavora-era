@@ -342,6 +342,21 @@ export const createInventoryItem = (data: any) => api.post('/inventory', data);
 export const receiveInventory = (data: any) => api.post('/inventory/receive', data);
 export const issueInventory = (data: any) => api.post('/inventory/issue', data);
 
+// ── Point of Sale ────────────────────────────────────────────────────────────
+export const getPosSession = () => api.get('/pos/session');
+export const getPosSessions = () => api.get('/pos/sessions');
+export const openPosSession = (data: { register_name?: string; opening_float: number }) => api.post('/pos/session/open', data);
+export const completePosSale = (sessionId: string, data: {
+  customer_id?: string; tender: 'cash' | 'mpesa' | 'card'; amount_tendered?: number;
+  mpesa_reference?: string; mpesa_phone?: string;
+  lines: { product_id: string; quantity: number; unit_price?: number }[];
+}) => api.post(`/pos/session/${sessionId}/sale`, data);
+export const getZReport = (sessionId: string) => api.get(`/pos/session/${sessionId}/z-report`);
+export const closePosSession = (sessionId: string, data: { counted_cash: number; notes?: string }) =>
+  api.post(`/pos/session/${sessionId}/close`, data);
+export const getPosReceipt = (invoiceId: string, tendered?: number) =>
+  api.get(`/pos/receipt/${invoiceId}`, { params: tendered != null ? { tendered } : {}, responseType: 'text' });
+
 // === Assets ===
 export const getAssets = () => api.get('/assets');
 export const createAsset = (data: any) => api.post('/assets', data);
@@ -561,3 +576,50 @@ export const submitExpenseClaim = (id: string) => api.post(`/expense-claims/${id
 export const approveExpenseClaim = (id: string) => api.post(`/expense-claims/${id}/approve`, {});
 export const rejectExpenseClaim = (id: string, reason?: string) => api.post(`/expense-claims/${id}/reject`, { reason });
 
+
+// === CRM (optional, feature-flagged add-in) ===
+// Settings (reachable even when disabled, so an admin can turn it on).
+export const getCrmSettings = () => api.get('/crm/settings');
+export const setCrmEnabled = (enabled: boolean) => api.put('/crm/settings', { enabled });
+// Pipelines & stages
+export const getCrmPipelines = () => api.get('/crm/pipelines');
+export const getCrmStages = (pipelineId: string) => api.get(`/crm/pipelines/${pipelineId}/stages`);
+// Leads
+export const getCrmLeads = (status?: string) => api.get('/crm/leads', { params: status ? { status } : {} });
+export const createCrmLead = (data: {
+  name: string; company?: string; email?: string; phone?: string; source?: string;
+  estimated_value?: number; notes?: string;
+}) => api.post('/crm/leads', data);
+export const updateCrmLead = (id: string, data: any) => api.put(`/crm/leads/${id}`, data);
+export const convertCrmLead = (id: string, data?: { customer_id?: string; amount?: number }) =>
+  api.post(`/crm/leads/${id}/convert`, data || {});
+// Opportunities
+export const getCrmOpportunities = (status?: string) =>
+  api.get('/crm/opportunities', { params: status ? { status } : {} });
+export const createCrmOpportunity = (data: {
+  name: string; amount?: number; customer_id?: string; pipeline_id?: string; stage_id?: string;
+  expected_close?: string; notes?: string;
+}) => api.post('/crm/opportunities', data);
+export const moveCrmOpportunity = (id: string, stage_id: string) =>
+  api.post(`/crm/opportunities/${id}/move`, { stage_id });
+export const winCrmOpportunity = (id: string, data?: { amount?: number }) =>
+  api.post(`/crm/opportunities/${id}/win`, data || {});
+export const loseCrmOpportunity = (id: string, reason?: string) =>
+  api.post(`/crm/opportunities/${id}/lose`, { reason });
+// Activities
+export const getCrmActivities = (params?: { related_type?: string; related_id?: string }) =>
+  api.get('/crm/activities', { params: params || {} });
+export const createCrmActivity = (data: {
+  kind: string; subject: string; due_at?: string; related_type?: string; related_id?: string; notes?: string;
+}) => api.post('/crm/activities', data);
+export const completeCrmActivity = (id: string) => api.post(`/crm/activities/${id}/done`, {});
+// Tickets (back-office side)
+export const getCrmTickets = (status?: string) => api.get('/crm/tickets', { params: status ? { status } : {} });
+export const getCrmTicket = (id: string) => api.get(`/crm/tickets/${id}`);
+export const replyCrmTicket = (id: string, body: string) => api.post(`/crm/tickets/${id}/reply`, { body });
+export const setCrmTicketStatus = (id: string, status: string) => api.post(`/crm/tickets/${id}/status`, { status });
+// Analytics
+export const getCrmAnalytics = () => api.get('/crm/analytics');
+// Assisted portal invite
+export const inviteCustomerPortal = (data: { email: string; display_name?: string; customer_id?: string; password?: string }) =>
+  api.post('/crm/customers/invite-portal', data);

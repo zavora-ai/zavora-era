@@ -32,6 +32,9 @@ const navigation = [
   { name: 'Analytics', href: '/procurement-analytics', icon: BarChart3 },
   { name: 'Vendor Applications', href: '/vendor-applications', icon: UserPlus },
 
+  { divider: true, label: 'CRM' },
+  { name: 'CRM', href: '/crm', icon: Target },
+
   { divider: true, label: 'BANKING' },
   { name: 'Payments', href: '/payments', icon: CreditCard },
   { name: 'Banking', href: '/banking', icon: Landmark },
@@ -41,6 +44,9 @@ const navigation = [
   { divider: true, label: 'PRODUCTS & INVENTORY' },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Boxes },
+  { name: 'Point of Sale', href: '/pos', icon: ShoppingCart },
+  { name: 'Till Sessions', href: '/pos/sessions', icon: Landmark },
+  { name: 'Stock (Mobile)', href: '/pos/stock', icon: Camera },
 
   { divider: true, label: 'PAYROLL & HR' },
   { name: 'Employees', href: '/employees', icon: UserCheck },

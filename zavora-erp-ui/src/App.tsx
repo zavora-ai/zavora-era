@@ -19,6 +19,7 @@ import ProcurementAnalyticsPage from './pages/procurement/ProcurementAnalyticsPa
 import DebitNotesPage from './pages/procurement/DebitNotesPage';
 import ExpenseClaimsPage from './pages/procurement/ExpenseClaimsPage';
 import ApprovalLimitsPage from './pages/settings/ApprovalLimitsPage';
+import CrmPage from './pages/crm/CrmPage';
 import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
 import PortalShell from './pages/portal/PortalShell';
 import VendorLoginPage from './pages/portal/VendorLoginPage';
@@ -42,6 +43,9 @@ import LeavePage from './pages/leave/LeavePage';
 import OnboardingPage from './pages/hr/OnboardingPage';
 import StaffLoginPage from './pages/staff/StaffLoginPage';
 import StaffSetPasswordPage from './pages/staff/StaffSetPasswordPage';
+import CustomerLoginPage from './pages/customerportal/CustomerLoginPage';
+import CustomerSetPasswordPage from './pages/customerportal/CustomerSetPasswordPage';
+import CustomerPortal from './pages/customerportal/CustomerPortal';
 import StaffPortal from './pages/staff/StaffPortal';
 import EmployeesPage from './pages/payroll/EmployeesPage';
 import AccountsPage from './pages/accounts/AccountsPage';
@@ -64,6 +68,9 @@ import ReportPage from './pages/reports/ReportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
+import PosSellPage from './pages/pos/PosSellPage';
+import PosSessionsPage from './pages/pos/PosSessionsPage';
+import MobileStockPage from './pages/pos/MobileStockPage';
 import AssetsPage from './pages/assets/AssetsPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
@@ -126,6 +133,10 @@ export default function App() {
           <Route path="/staff/login" element={<StaffLoginPage />} />
           <Route path="/staff/set-password" element={<StaffSetPasswordPage />} />
           <Route path="/staff" element={<StaffPortal />} />
+          <Route path="/customerportal/login" element={<CustomerLoginPage />} />
+          <Route path="/customerportal/register" element={<CustomerLoginPage />} />
+          <Route path="/customerportal/set-password" element={<CustomerSetPasswordPage />} />
+          <Route path="/customerportal" element={<CustomerPortal />} />
           <Route
             element={
               <RequireAuth>
@@ -149,6 +160,7 @@ export default function App() {
             <Route path="debit-notes" element={<DebitNotesPage />} />
             <Route path="expense-claims" element={<ExpenseClaimsPage />} />
             <Route path="approval-limits" element={<ApprovalLimitsPage />} />
+            <Route path="crm" element={<CrmPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
@@ -184,6 +196,9 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="pos" element={<PosSellPage />} />
+            <Route path="pos/sessions" element={<PosSessionsPage />} />
+            <Route path="pos/stock" element={<MobileStockPage />} />
             <Route path="assets" element={<AssetsPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />
             <Route path="audit" element={<AuditPage />} />

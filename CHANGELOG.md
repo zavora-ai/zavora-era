@@ -8,6 +8,38 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-06 — Optional CRM module + customer portal + Amos CRM skill
+
+Added an **optional, per-tenant CRM** (off by default, additive, never touches the
+accounting ledger) — see [`docs/CRM_MODULE_SPEC.md`](docs/CRM_MODULE_SPEC.md).
+
+#### Added
+- **Feature flag** (`crm_settings.enabled`, default off): every CRM data route is
+  gated by `is_enabled`; enabling seeds a default "Sales Pipeline" (Lead In →
+  Qualified → Proposal → Negotiation → Won → Lost). Core ERP is unaffected.
+- **Sales pipeline:** leads (CRUD + convert), opportunities (create, stage-move
+  with event log + probability, win/lose), activities (task/call/meeting/email/
+  note), and support tickets — all under `/api/v1/crm/*` (migration `046_crm.sql`).
+- **Analytics:** open pipeline value/count, weighted forecast (Σ amount×probability),
+  win rate, average won deal, pipeline-by-stage, and lead conversion.
+- **Customer portal** (`/customerportal`): a separate `customer_users` principal
+  (JWT role `Customer`, isolated from back-office/staff/vendor sessions).
+  Self-onboarding (sign-up creates a portal login + a CRM lead), sales-assisted
+  invite (`POST /crm/customers/invite-portal`), and per-customer self-service
+  (profile, invoices, statement, support tickets with a message thread).
+- **UI:** a flag-gated back-office CRM shell (`/crm`) with Overview analytics,
+  a pipeline **kanban**, leads and activities; plus the customer-portal surface
+  (login/self-register/set-password + invoices/statement/support/profile).
+- **Amos:** a `crm` skill playbook (`amos/skills/crm/SKILL.md`) — checks the flag,
+  reads pipeline analytics off-screen, and manages leads/deals/activities/portal
+  invites through the UI, confirming win/lose/convert/disable first.
+
+#### Verified
+- Workspace tests green (152 passed, 0 failed); migration 046 applies on startup;
+  UI `tsc --noEmit` clean; Playwright: CRM overview/kanban and the customer portal
+  (login → statement → ticket thread + reply) exercised end to end; a `Customer`
+  token is rejected (401) by every back-office endpoint.
+
 ### 2026-07-05 — Enterprise HR & Payroll + Amos payroll skill
 
 Rebuilt payroll from a single-shot calculator into an enterprise module (see

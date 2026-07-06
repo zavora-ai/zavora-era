@@ -129,5 +129,33 @@ activities logged, leads-by-source and conversion rate. Computed from
 
 ## 9. Progress
 Legend: ⬜ todo · 🟡 in progress · ✅ done
-- 🟡 Phase 1 — this doc + `046_crm.sql` + core models + flag service.
-- ⬜ Phase 2 · ⬜ Phase 3 · ⬜ Phase 4 · ⬜ Phase 5.
+- ✅ Phase 1 — this doc; `046_crm.sql` (validated); core models (`crm/mod.rs`);
+  feature-flag + pipeline-seed service (`services/crm.rs`, default off). Core compiles.
+- ✅ Phase 2 — services (leads CRUD+convert, pipelines/stages, opportunities
+  move/win/lose + events, activities, tickets, weighted analytics) +
+  `/api/v1/crm` routes (all flag-gated). **Live-verified**: enable → seed pipeline;
+  lead→convert→opportunity; move→Proposal; win; analytics (forecast 40k = 80k×50%,
+  win-rate 100%, conversion 100%).
+- ✅ Phase 3 — customer portal: `CustomerContext` middleware (role `Customer`);
+  `/api/v1/customerportal` login/register(self-onboard → active login + CRM lead)/
+  set-password/forgot/refresh/logout/me + self-service (profile, invoices,
+  statement, tickets, all row-scoped); staff assisted invite
+  (`POST /crm/customers/invite-portal`). **Live-verified**: self-register → lead
+  created; ticket create/list; back-office endpoints 401 for a Customer token;
+  assisted invite → login OK.
+- ✅ Phase 4 — UI. **Back-office CRM shell** (`/crm`, nav group): flag-gated
+  (opt-in CTA when disabled) with Overview analytics, Pipeline **kanban**
+  (stage-move + win/lose), Leads (create/convert) and Activities tabs, plus a
+  Disable control. **Customer portal** (`/customerportal`, separate surface +
+  `customerClient.ts`): login/self-register/set-password + shell with
+  Invoices & Statement, Support tickets (create/open/reply), and Profile.
+  **Playwright-verified**: analytics tie out (open 80k, forecast 40k, win 100%,
+  conversion 1/2); kanban shows Beta pilot in Proposal; customer login →
+  unlinked notice, ticket thread + reply round-trip.
+- ✅ Phase 5 — Amos `crm` skill (`amos/skills/crm/SKILL.md`, UI-first: flag check,
+  read analytics off-screen, manage leads/deals/activities/portal invites, confirm
+  win/lose/convert/disable) + full verification: `cargo test --workspace` green
+  (152 passed / 0 failed), migration 046 applied on startup, `tsc --noEmit` clean,
+  Playwright end-to-end on both surfaces. CHANGELOG updated.
+
+**CRM module complete.** Optional, per-tenant, additive; core ERP unaffected.

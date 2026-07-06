@@ -27,6 +27,9 @@ pub mod transactions;
 pub mod bank;
 pub mod payroll;
 pub mod payroll_masters;
+pub mod crm;
+pub mod customerportal_auth;
+pub mod customerportal;
 pub mod leave;
 pub mod staff_auth;
 pub mod hr_onboarding;
@@ -46,6 +49,7 @@ pub mod auth_signup;
 pub mod auth_tenants;
 pub mod procurement;
 pub mod approval;
+pub mod pos;
 pub mod portal;
 pub mod portal_auth;
 

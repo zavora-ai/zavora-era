@@ -190,7 +190,23 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/staff/leave-requests", get(routes::leave::my_leave_requests).post(routes::leave::my_create_request))
         .route("/api/v1/staff/leave-requests/{id}/cancel", post(routes::leave::my_cancel_request))
         .route("/api/v1/staff/payslips", get(routes::leave::my_payslips))
-        .route("/api/v1/staff/payslips/{run_id}/pdf", get(routes::leave::my_payslip_pdf));
+        .route("/api/v1/staff/payslips/{run_id}/pdf", get(routes::leave::my_payslip_pdf))
+        // ── Customer portal (CRM add-in): external `customer_users` principal,
+        // role="Customer"; verified per-request via CustomerContext (public
+        // router, like the vendor/staff portals). ──
+        .route("/api/v1/customerportal/login", post(routes::customerportal_auth::login))
+        .route("/api/v1/customerportal/register", post(routes::customerportal_auth::register))
+        .route("/api/v1/customerportal/set-password", post(routes::customerportal_auth::set_password))
+        .route("/api/v1/customerportal/forgot-password", post(routes::customerportal_auth::forgot_password))
+        .route("/api/v1/customerportal/refresh", post(routes::customerportal_auth::refresh))
+        .route("/api/v1/customerportal/logout", post(routes::customerportal_auth::logout))
+        .route("/api/v1/customerportal/me", get(routes::customerportal_auth::me))
+        .route("/api/v1/customerportal/profile", get(routes::customerportal::profile).put(routes::customerportal::update_profile))
+        .route("/api/v1/customerportal/invoices", get(routes::customerportal::invoices))
+        .route("/api/v1/customerportal/statement", get(routes::customerportal::statement))
+        .route("/api/v1/customerportal/tickets", get(routes::customerportal::list_tickets).post(routes::customerportal::create_ticket))
+        .route("/api/v1/customerportal/tickets/{id}", get(routes::customerportal::get_ticket))
+        .route("/api/v1/customerportal/tickets/{id}/reply", post(routes::customerportal::reply_ticket));
 
     // Protected routes — gated by the auth middleware applied below.
     let protected = Router::new()
@@ -274,6 +290,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/tenders/{id}/bids", get(routes::procurement::list_bids))
         .route("/api/v1/tenders/{id}/award", post(routes::procurement::award_tender))
         .route("/api/v1/approval-limits", get(routes::approval::list).put(routes::approval::set))
+        .route("/api/v1/pos/session", get(routes::pos::current_session))
+        .route("/api/v1/pos/sessions", get(routes::pos::list_sessions))
+        .route("/api/v1/pos/session/open", post(routes::pos::open_session))
+        .route("/api/v1/pos/session/{id}/sale", post(routes::pos::complete_sale))
+        .route("/api/v1/pos/session/{id}/z-report", get(routes::pos::z_report))
+        .route("/api/v1/pos/session/{id}/close", post(routes::pos::close_session))
+        .route("/api/v1/pos/receipt/{id}", get(routes::pos::receipt))
         .route("/api/v1/procurement/analytics", get(routes::procurement::analytics))
         .route("/api/v1/procurement/budget-control", get(routes::procurement::budget_control))
         .route("/api/v1/debit-notes", get(routes::procurement::list_debit_notes).post(routes::procurement::create_debit_note))
@@ -356,6 +379,26 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/onboarding/{id}", get(routes::hr_onboarding::get_one))
         .route("/api/v1/onboarding/{id}/complete", post(routes::hr_onboarding::complete))
         .route("/api/v1/onboarding/{case}/tasks/{task}", axum::routing::put(routes::hr_onboarding::set_task))
+
+        // ── CRM (optional add-in; data routes gated by crm_settings.enabled) ──
+        .route("/api/v1/crm/settings", get(routes::crm::get_settings).put(routes::crm::set_enabled))
+        .route("/api/v1/crm/pipelines", get(routes::crm::list_pipelines))
+        .route("/api/v1/crm/pipelines/{id}/stages", get(routes::crm::list_stages))
+        .route("/api/v1/crm/leads", get(routes::crm::list_leads).post(routes::crm::create_lead))
+        .route("/api/v1/crm/leads/{id}", axum::routing::put(routes::crm::update_lead))
+        .route("/api/v1/crm/leads/{id}/convert", post(routes::crm::convert_lead))
+        .route("/api/v1/crm/opportunities", get(routes::crm::list_opportunities).post(routes::crm::create_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/move", post(routes::crm::move_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/win", post(routes::crm::win_opportunity))
+        .route("/api/v1/crm/opportunities/{id}/lose", post(routes::crm::lose_opportunity))
+        .route("/api/v1/crm/activities", get(routes::crm::list_activities).post(routes::crm::create_activity))
+        .route("/api/v1/crm/activities/{id}/done", post(routes::crm::complete_activity))
+        .route("/api/v1/crm/tickets", get(routes::crm::list_tickets))
+        .route("/api/v1/crm/tickets/{id}", get(routes::crm::get_ticket))
+        .route("/api/v1/crm/tickets/{id}/reply", post(routes::crm::reply_ticket))
+        .route("/api/v1/crm/tickets/{id}/status", axum::routing::put(routes::crm::set_ticket_status))
+        .route("/api/v1/crm/analytics", get(routes::crm::analytics))
+        .route("/api/v1/crm/customers/invite-portal", post(routes::crm::invite_customer))
         // Inventory
         .route("/api/v1/inventory", get(routes::inventory::list).post(routes::inventory::create))
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))
