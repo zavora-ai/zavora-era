@@ -109,6 +109,25 @@ export const createUser = (data: {
   role: string;
   password?: string;
 }) => api.post('/users', data);
+export const updateUser = (id: string, data: { display_name?: string; role?: string; is_active?: boolean }) =>
+  api.put(`/users/${id}`, data);
+export const resendInvite = (id: string) => api.post(`/users/${id}/resend-invite`, {});
+// Assignable roles (system + tenant custom) for user dropdowns.
+export const getRoles = () => api.get('/roles');
+// Roles administration (Phase 3).
+export const getPermissionsCatalog = () => api.get('/permissions');
+export const getRole = (id: string) => api.get(`/roles/${id}`);
+export const createRole = (data: { name: string; description?: string; permissions: string[] }) =>
+  api.post('/roles', data);
+export const updateRole = (id: string, data: { name?: string; description?: string; permissions?: string[] }) =>
+  api.put(`/roles/${id}`, data);
+export const deleteRole = (id: string) => api.delete(`/roles/${id}`);
+// The current user's effective permissions (single source of truth for UI gating).
+export const getMyPermissions = () => api.get('/auth/permissions');
+// Internal-user activation + recovery (public; token-gated on the server).
+export const setPassword = (token: string, password: string) =>
+  api.post('/auth/set-password', { token, password });
+export const forgotPassword = (email: string) => api.post('/auth/forgot-password', { email });
 
 // === Dashboard ===
 export const getDashboard = (asAt?: string) => api.get('/dashboard', { params: asAt ? { as_at: asAt } : {} });
@@ -356,6 +375,16 @@ export const closePosSession = (sessionId: string, data: { counted_cash: number;
   api.post(`/pos/session/${sessionId}/close`, data);
 export const getPosReceipt = (invoiceId: string, tendered?: number) =>
   api.get(`/pos/receipt/${invoiceId}`, { params: tendered != null ? { tendered } : {}, responseType: 'text' });
+
+// ── KRA eTIMS OSCU/VSCU ──
+export const getEtimsConfig = () => api.get('/etims/config');
+export const saveEtimsConfig = (data: {
+  enabled?: boolean; environment?: string; pin?: string; bhf_id?: string; dvc_srl_no?: string;
+}) => api.put('/etims/config', data);
+export const initializeEtims = () => api.post('/etims/initialize', {});
+// Real OSCU/VSCU transmission (distinct from the legacy manual mark below).
+export const transmitInvoiceKra = (invoiceId: string) => api.post(`/etims/invoices/${invoiceId}/transmit`, {});
+export const registerEtimsProduct = (productId: string) => api.post(`/etims/products/${productId}/register`, {});
 
 // === Assets ===
 export const getAssets = () => api.get('/assets');

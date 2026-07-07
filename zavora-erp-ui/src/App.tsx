@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { bootstrapAuth, getAccessToken } from './api/client';
 import AppShell from './components/layout/AppShell';
 import LoginPage from './pages/auth/LoginPage';
+import SetPasswordPage from './pages/auth/SetPasswordPage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
+import LandingPage from './pages/marketing/LandingPage';
+import InfoPage from './pages/marketing/InfoPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import AmosPage from './pages/amos/AmosPage';
 import InvoicesPage from './pages/invoicing/InvoicesPage';
@@ -19,6 +23,7 @@ import ProcurementAnalyticsPage from './pages/procurement/ProcurementAnalyticsPa
 import DebitNotesPage from './pages/procurement/DebitNotesPage';
 import ExpenseClaimsPage from './pages/procurement/ExpenseClaimsPage';
 import ApprovalLimitsPage from './pages/settings/ApprovalLimitsPage';
+import RolesPage from './pages/settings/RolesPage';
 import CrmPage from './pages/crm/CrmPage';
 import VendorApplicationsPage from './pages/procurement/VendorApplicationsPage';
 import PortalShell from './pages/portal/PortalShell';
@@ -58,6 +63,7 @@ import CustomReportsPage from './pages/reports/CustomReportsPage';
 import ReportSchedulesPage from './pages/reports/ReportSchedulesPage';
 import ConsolidationPage from './pages/consolidation/ConsolidationPage';
 import WhtRatesPage from './pages/settings/WhtRatesPage';
+import EtimsPage from './pages/settings/EtimsPage';
 import TaxFilingsPage from './pages/settings/TaxFilingsPage';
 import OpeningBalancesPage from './pages/settings/OpeningBalancesPage';
 import ImportPage from './pages/settings/ImportPage';
@@ -93,8 +99,10 @@ const queryClient = new QueryClient({
 });
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
+  // Unauthenticated visitors get the public marketing site (not a bare login
+  // form). The landing page's CTAs route to /login for sign-in / sign-up.
   if (!getAccessToken()) {
-    return <Navigate to="/login" replace />;
+    return <LandingPage />;
   }
   return <>{children}</>;
 }
@@ -120,6 +128,16 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/set-password" element={<SetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          {/* Public marketing sub-pages (footer links). */}
+          <Route path="/about" element={<InfoPage />} />
+          <Route path="/careers" element={<InfoPage />} />
+          <Route path="/contact" element={<InfoPage />} />
+          <Route path="/privacy" element={<InfoPage />} />
+          <Route path="/terms" element={<InfoPage />} />
+          <Route path="/security" element={<InfoPage />} />
+          <Route path="/data-protection" element={<InfoPage />} />
           {/* Vendor portal — a fully separate surface with its own auth (see
               portalClient.ts + PortalShell). Public auth pages, then the gated shell. */}
           <Route path="/vendorportal/login" element={<VendorLoginPage />} />
@@ -161,6 +179,7 @@ export default function App() {
             <Route path="expense-claims" element={<ExpenseClaimsPage />} />
             <Route path="approval-limits" element={<ApprovalLimitsPage />} />
             <Route path="crm" element={<CrmPage />} />
+            <Route path="roles-admin" element={<RolesPage />} />
             <Route path="receipts/capture" element={<ReceiptCapturePage />} />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
@@ -186,6 +205,7 @@ export default function App() {
             <Route path="dimensions" element={<DimensionsPage />} />
             <Route path="wht-rates" element={<WhtRatesPage />} />
             <Route path="tax-filings" element={<TaxFilingsPage />} />
+            <Route path="etims" element={<EtimsPage />} />
             <Route path="opening-balances" element={<OpeningBalancesPage />} />
             <Route path="import" element={<ImportPage />} />
             <Route path="consolidation" element={<ConsolidationPage />} />
