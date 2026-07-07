@@ -18,15 +18,23 @@ use tracing::{info, warn};
 pub async fn build_runner(
     state: &Arc<AppState>,
     principal: Arc<crate::auth::Principal>,
+    attachments: crate::subagents::AttachmentStore,
+    clock: crate::clock::SharedClock,
+    entitlements: crate::plan::Entitlements,
 ) -> Result<RealtimeRunner> {
     let instruction = persona::system_instruction(state)
-        .replace("{memories}", &state.memory.profile_block(6).await);
-    let voice = std::env::var("AMOS_VOICE").unwrap_or_else(|_| "Charon".to_string());
+        .replace("{memories}", &state.memory.profile_block(6).await)
+        .replace("{now}", &clock.read().await.instruction_block());
 
-    let config = RealtimeConfig::default()
-        .with_instruction(&instruction)
-        .with_voice(voice)
-        .with_transcription();
+    // Voice is the expensive path (audio output ~$12/1M tokens). On a plan
+    // without voice, force text-only output modality so the model never
+    // generates (billable) audio — the single biggest cost control.
+    let config = if entitlements.voice {
+        let voice = std::env::var("AMOS_VOICE").unwrap_or_else(|_| "Charon".to_string());
+        RealtimeConfig::default().with_instruction(&instruction).with_voice(voice).with_transcription()
+    } else {
+        RealtimeConfig::default().with_instruction(&instruction).with_modalities(vec!["text".to_string()])
+    };
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let factory: Arc<dyn ToolContextFactory> = Arc::new(DefaultToolContextFactory {
@@ -81,7 +89,19 @@ pub async fn build_runner(
         .tool_arc(remember_def(), Arc::new(Remember { state: state.clone() }))
         .tool_arc(recall_def(), Arc::new(Recall { state: state.clone() }))
         .tool_arc(erp_login_def(), Arc::new(ErpLoginTool { state: state.clone(), factory: factory.clone() }))
-        .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), factory: factory.clone() }));
+        .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), factory: factory.clone() }))
+        // Specialist sub-agents: read attached PDFs/images (every plan).
+        .tool_arc(
+            crate::subagents::analyze_attachment_def(),
+            Arc::new(crate::subagents::AnalyzeAttachment { attachments, cache: crate::subagents::new_doc_cache() }),
+        )
+        // Real date/time in the user's timezone + their work-as-of posting date.
+        .tool_arc(crate::clock::current_datetime_def(), Arc::new(crate::clock::CurrentDateTime { clock }));
+
+    // web_search (per-query Google grounding cost) is a paid-plan capability.
+    if entitlements.web_search {
+        builder = builder.tool_arc(crate::subagents::web_search_def(), Arc::new(crate::subagents::WebSearch));
+    }
 
     Ok(builder.build()?)
 }

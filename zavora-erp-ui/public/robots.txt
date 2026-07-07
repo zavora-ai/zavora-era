@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /$
+Allow: /about
+Allow: /careers
+Allow: /contact
+Allow: /privacy
+Allow: /terms
+Allow: /security
+Allow: /data-protection
+# Application surfaces are private; keep them out of the index.
+Disallow: /login
+Disallow: /amos
+Disallow: /vendorportal
+Disallow: /customerportal
+Disallow: /staff
+
+Sitemap: https://zavora.ai/sitemap.xml

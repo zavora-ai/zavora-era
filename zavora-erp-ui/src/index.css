@@ -340,3 +340,9 @@ hr {
     break-inside: avoid;
   }
 }
+
+/* Marketing landing: message fade-in for the animated Amos demo */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

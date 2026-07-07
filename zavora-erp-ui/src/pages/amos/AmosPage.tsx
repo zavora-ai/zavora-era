@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getAccessToken } from '../../api/client';
+import { getTimezone, getWorkDate } from '../../utils/workDate';
 
 // Dev: the standalone Amos service. Prod: same-origin path proxied by Caddy
 // (keeps the CDN/TLS story simple and lets the iframe inherit mic permission).
@@ -25,7 +26,13 @@ export default function AmosPage() {
     const post = () => {
       const token = getAccessToken();
       if (token && frameRef.current?.contentWindow) {
-        frameRef.current.contentWindow.postMessage({ type: 'amos-auth', token }, AMOS_ORIGIN);
+        // Forward the user's timezone + work-as-of (posting) date so Amos
+        // grounds "today" and default posting dates on the same preferences the
+        // ERP forms use (see utils/workDate.ts).
+        frameRef.current.contentWindow.postMessage(
+          { type: 'amos-auth', token, timezone: getTimezone(), work_date: getWorkDate() },
+          AMOS_ORIGIN,
+        );
       }
     };
     // Post on iframe load and every 60s (tokens live ~15 min; keeps Amos fresh).
@@ -37,10 +44,14 @@ export default function AmosPage() {
       if (e.origin === AMOS_ORIGIN && e.data?.type === 'amos-auth-request') post();
     };
     window.addEventListener('message', onMsg);
+    // Re-post when the user changes their work-date / timezone so Amos updates
+    // mid-session.
+    window.addEventListener('zavora:workdate-changed', post);
     return () => {
       frame?.removeEventListener('load', post);
       window.clearInterval(id);
       window.removeEventListener('message', onMsg);
+      window.removeEventListener('zavora:workdate-changed', post);
     };
   }, []);
 

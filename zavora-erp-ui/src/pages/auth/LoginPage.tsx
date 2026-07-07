@@ -1,16 +1,22 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Check } from 'lucide-react';
 import { login, signup, storeSession } from '../../api/client';
+import Logo from '../../components/brand/Logo';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [orgName, setOrgName] = useState('');
   const [orgType, setOrgType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  // "Start free" CTAs deep-link here with ?signup=1 to open create-organization.
+  const [mode, setMode] = useState<'signin' | 'signup'>(
+    params.get('signup') === '1' || params.get('mode') === 'signup' ? 'signup' : 'signin',
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -61,12 +67,35 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+    <div className="min-h-screen flex">
+      {/* Brand panel (hidden on small screens) */}
+      <aside className="hidden lg:flex flex-col justify-between w-[44%] bg-slate-950 text-white p-12 relative overflow-hidden">
+        <div className="pointer-events-none absolute -top-32 -left-24 h-[420px] w-[420px] rounded-full bg-gradient-to-r from-indigo-600/40 to-fuchsia-600/30 blur-[110px]" />
+        <Link to="/" className="relative"><Logo variant="light" /></Link>
+        <div className="relative">
+          <h2 className="text-3xl font-bold tracking-tight leading-tight">Your books, on autopilot.</h2>
+          <p className="mt-4 text-slate-300">One platform for sales, stock, payroll and tax — with Amos, your AI accountant, doing the heavy lifting.</p>
+          <ul className="mt-8 space-y-3">
+            {['Amos posts, reconciles & prepares taxes', 'KRA eTIMS, M-Pesa & Kenyan payroll built in', 'Books that are always closed'].map((b) => (
+              <li key={b} className="flex items-start gap-3 text-slate-200">
+                <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-300"><Check className="w-3.5 h-3.5" /></span>{b}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative text-xs text-slate-500">© {new Date().getFullYear()} Zavora Technologies Ltd · Made in Kenya 🇰🇪</p>
+      </aside>
+
+      {/* Form */}
+      <div className="flex-1 flex items-center justify-center bg-gray-50 p-6">
       <div className="card p-8 w-full max-w-md">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Zavora ERP</h1>
+        <div className="mb-6">
+          <div className="lg:hidden mb-5"><Logo /></div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {mode === 'signin' ? 'Welcome back' : 'Create your organization'}
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {mode === 'signin' ? 'Sign in to your workspace' : 'Create your organization'}
+            {mode === 'signin' ? 'Sign in to your Zavora ERP workspace.' : 'Set up your business on Zavora ERP — free to start.'}
           </p>
         </div>
 
@@ -104,6 +133,9 @@ export default function LoginPage() {
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
+            <p className="text-center">
+              <a href="/forgot-password" className="text-xs text-gray-500 hover:text-indigo-600 hover:underline">Forgot password?</a>
+            </p>
             <p className="text-center text-sm text-gray-500">
               First time here?{' '}
               <button type="button" className="text-indigo-600 font-medium" onClick={() => { setMode('signup'); setError(null); }}>
@@ -192,6 +224,7 @@ export default function LoginPage() {
             </p>
           </form>
         )}
+      </div>
       </div>
     </div>
   );
