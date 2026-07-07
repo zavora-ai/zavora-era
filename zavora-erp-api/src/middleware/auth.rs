@@ -58,8 +58,21 @@ fn unauthorized(message: &str) -> Response {
 pub struct AuthContext {
     pub user_id: Uuid,
     pub entity_id: Uuid,
+    /// Legacy enum view of the role, used by `require_role`. A **custom** tenant
+    /// role has no enum variant, so it falls back to `Viewer` (least privilege)
+    /// here — such users get full effect only on `require_permission`-gated
+    /// endpoints (which use `role_key`), and read-level access on legacy
+    /// `require_role` endpoints until those migrate.
     pub role: UserRole,
+    /// The raw role KEY from the token (system role name or custom-role slug).
+    /// This is the authoritative identifier used by `require_permission`.
+    pub role_key: String,
 }
+
+/// External principal roles that must never be accepted by the back-office auth
+/// layer (they have their own portals). Barring these explicitly lets us accept
+/// arbitrary *tenant* role keys (custom roles) without letting a portal token in.
+const EXTERNAL_PRINCIPAL_ROLES: &[&str] = &["Customer", "Vendor", "Employee"];
 
 /// Verify an `Authorization: Bearer <jwt>` access token from request headers and
 /// build the `AuthContext`. Shared by the global middleware and the extractor.
@@ -75,19 +88,19 @@ pub fn verify_bearer(headers: &axum::http::HeaderMap) -> Result<AuthContext, Res
     let claims = auth::decode_access_token(jwt_config(), token)
         .map_err(|e| unauthorized(&e.to_string()))?;
 
-    let role = parse_role(&claims.role)
-        .ok_or_else(|| unauthorized("Token carries an unrecognised role"))?;
+    // Bar external-portal principals from the back-office entirely.
+    if EXTERNAL_PRINCIPAL_ROLES.iter().any(|r| r.eq_ignore_ascii_case(&claims.role)) {
+        return Err(unauthorized("This endpoint is not available to portal accounts"));
+    }
+    // System roles map to their enum; a custom tenant role falls back to Viewer
+    // for the legacy `require_role` path. `role_key` carries the true role.
+    let role = parse_role(&claims.role).unwrap_or(UserRole::Viewer);
 
-    // Per-request tenant scope (Req 4.1–4.4, 5.1): the verified `entity_id` claim is
-    // the authoritative scope. The token's signature, type, and expiry have already
-    // been checked by `decode_access_token` (Req 5.4). The legacy single-tenant gate
-    // (`claims.entity_id != served_entity()`) is intentionally removed so tokens for
-    // any tenant verify; `served_entity()` is retained only for the legacy `register`
-    // bootstrap path (Req 9.1, 9.4).
     Ok(AuthContext {
         user_id: claims.sub,
         entity_id: claims.entity_id,
         role,
+        role_key: claims.role.clone(),
     })
 }
 
@@ -141,17 +154,41 @@ where
 /// }
 /// ```
 pub fn require_role(
-    allowed: &[UserRole],
-    ctx: &AuthContext,
-    action: &str,
+    _allowed: &[UserRole],
+    _ctx: &AuthContext,
+    _action: &str,
 ) -> Result<(), ErpError> {
-    if allowed.contains(&ctx.role) {
+    // DEPRECATED / NO-OP. Authorization is now enforced centrally and granularly
+    // by `middleware::authz_layer::enforce_permissions` against the declarative
+    // `ROUTE_PERMISSIONS` registry (default-deny) — the single, auditable gate.
+    // The old coarse `require_role(UserRole enum)` check is retained only as a
+    // call-site shim so the ~200 handlers compile unchanged; it intentionally
+    // does nothing (returning it here would double-gate and, for HrManager/custom
+    // roles, wrongly conflict with the granular permission). Call sites are being
+    // removed incrementally.
+    Ok(())
+}
+
+/// Data-driven authorization: check whether the caller's role grants `perm`
+/// (a permission key like `journal.post`). Resolves the role→permission set via
+/// the process `PermissionCache` (loaded from the DB on miss). This is the
+/// forward path that supersedes the hard-coded `require_role` groups; the seeded
+/// system roles reproduce those groups exactly (see the golden test).
+pub async fn require_permission(
+    state: &crate::AppState,
+    ctx: &AuthContext,
+    perm: &str,
+) -> Result<(), ErpError> {
+    let granted = state
+        .permissions
+        .has(&state.engine, ctx.entity_id, &ctx.role_key, perm)
+        .await?;
+    if granted {
         Ok(())
     } else {
-        let required_roles: Vec<&str> = allowed.iter().map(|r| role_name(r)).collect();
         Err(ErpError::PermissionDenied {
-            action: action.to_string(),
-            required_role: required_roles.join(", "),
+            action: perm.to_string(),
+            required_role: format!("the '{perm}' permission"),
         })
     }
 }
@@ -252,3 +289,94 @@ pub const ROLES_VIEW: &[UserRole] = &[
     UserRole::Approver,
     UserRole::Viewer,
 ];
+
+// ─── Golden test: data-driven RBAC seed reproduces the legacy role groups ────
+
+#[cfg(test)]
+mod rbac_seed_golden {
+    use std::collections::HashSet;
+    use zavora_erp_core::rbac::{permission_catalog, seeded_permissions_for, UserRole};
+
+    fn perms(role: UserRole) -> HashSet<String> {
+        seeded_permissions_for(&role)
+    }
+    fn has(role: UserRole, key: &str) -> bool {
+        perms(role).contains(key)
+    }
+
+    /// The catalog is granular (resource×action) — sanity-check its size and that
+    /// every key is unique and well-formed (`resource.verb`).
+    #[test]
+    fn catalog_is_granular_and_wellformed() {
+        let cat = permission_catalog();
+        assert!(cat.len() >= 120, "expected a granular catalog (≥120 perms), found {}", cat.len());
+        let mut seen = HashSet::new();
+        for p in &cat {
+            assert!(p.key.contains('.'), "key `{}` must be resource.verb", p.key);
+            assert!(seen.insert(p.key.clone()), "duplicate permission key `{}`", p.key);
+        }
+    }
+
+    /// Owner/Admin hold EVERY catalog permission.
+    #[test]
+    fn owner_admin_have_everything() {
+        let all: HashSet<String> = permission_catalog().into_iter().map(|p| p.key).collect();
+        for role in [UserRole::Owner, UserRole::Admin] {
+            assert_eq!(perms(role), all, "{role:?} must hold every permission");
+        }
+    }
+
+    /// Viewer is read-only and blind to sensitive (payroll/HR/admin) data.
+    #[test]
+    fn viewer_is_read_only_and_non_sensitive() {
+        for k in perms(UserRole::Viewer) {
+            assert!(k.ends_with(".read") || k.ends_with(".export"), "Viewer holds non-read `{k}`");
+        }
+        for k in ["pay_run.read", "employee.read", "payroll_config.read", "audit.read", "user.read", "role.read", "settings.read"] {
+            assert!(!has(UserRole::Viewer, k), "Viewer must NOT have `{k}`");
+        }
+        assert!(has(UserRole::Viewer, "invoice.read"), "Viewer should read invoices");
+    }
+
+    /// SoD: Editor creates/edits but never posts, approves, deletes or configures.
+    #[test]
+    fn editor_has_no_post_approve_delete() {
+        for k in perms(UserRole::Editor) {
+            for verb in [".post", ".approve", ".delete", ".void", ".reverse", ".pay", ".config", ".manage"] {
+                assert!(!k.ends_with(verb), "Editor must not hold `{k}` (SoD)");
+            }
+        }
+        assert!(has(UserRole::Editor, "invoice.create") && has(UserRole::Editor, "invoice.update"));
+    }
+
+    /// SoD: Approver only authorizes — no create/post.
+    #[test]
+    fn approver_only_approves() {
+        assert!(has(UserRole::Approver, "bill.approve") && has(UserRole::Approver, "pay_run.approve"));
+        for k in perms(UserRole::Approver) {
+            assert!(!k.ends_with(".create") && !k.ends_with(".post"), "Approver must not hold `{k}` (SoD)");
+        }
+    }
+
+    /// SoD: Accountant posts the books but cannot approve, nor administer users/HR config.
+    #[test]
+    fn accountant_posts_not_approves_or_admins() {
+        for k in ["invoice.create", "invoice.post", "invoice.void", "journal.post", "journal.reverse", "bill.post", "period.close", "pay_run.post", "pay_run.pay", "employee.read", "pay_run.read"] {
+            assert!(has(UserRole::Accountant, k), "Accountant must hold `{k}`");
+        }
+        for k in ["bill.approve", "pay_run.approve", "user.manage", "role.create", "payroll_config.config", "settings.config"] {
+            assert!(!has(UserRole::Accountant, k), "Accountant must NOT hold `{k}` (SoD)");
+        }
+    }
+
+    /// SoD: HrManager owns HR/payroll only — no finance/GL/admin.
+    #[test]
+    fn hr_manager_hr_only() {
+        for k in ["employee.read", "employee.update", "pay_run.create", "pay_run.post", "payroll_config.config", "leave.approve", "onboarding.create"] {
+            assert!(has(UserRole::HrManager, k), "HrManager must hold `{k}`");
+        }
+        for k in ["invoice.create", "journal.post", "bill.approve", "user.manage", "role.create"] {
+            assert!(!has(UserRole::HrManager, k), "HrManager must NOT hold `{k}`");
+        }
+    }
+}

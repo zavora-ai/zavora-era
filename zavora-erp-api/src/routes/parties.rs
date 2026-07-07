@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE, ROLES_SEND};
+use crate::middleware::auth::{require_permission, require_role, AuthContext, ROLES_CREATE, ROLES_SEND};
 use zavora_erp_core::parties::*;
 use zavora_erp_core::services::parties as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -439,6 +439,7 @@ pub async fn list_employees(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_permission(&state, &ctx, "employee.read").await.map_err(err_response)?;
     let rows = sqlx::query_as::<_, EmployeeRow>(
         "SELECT * FROM employees WHERE entity_id = $1 AND is_active = true ORDER BY full_name",
     )
@@ -456,6 +457,7 @@ pub async fn get_employee(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_permission(&state, &ctx, "employee.read").await.map_err(err_response)?;
     let row = sqlx::query_as::<_, EmployeeRow>(
         "SELECT * FROM employees WHERE id = $1 AND entity_id = $2",
     )

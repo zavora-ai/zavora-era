@@ -5,7 +5,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{jwt_config, require_role, served_entity, AuthContext, ROLES_MANAGE};
+use crate::middleware::auth::{jwt_config, require_permission, served_entity, AuthContext};
 use zavora_erp_core::auth::{self, TokenPair};
 use zavora_erp_core::rbac::{CreateUserRequest, EraUserRow, UpdateUserRequest};
 use zavora_erp_core::ErpError;
@@ -112,6 +112,18 @@ async fn store_refresh_token(
     .map_err(ErpError::Database)?;
     Ok(())
 }
+/// Whether `key` is a valid role for the tenant (system role or tenant custom).
+async fn role_exists(pool: &sqlx::PgPool, entity_id: Uuid, key: &str) -> Result<bool, ErpError> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM roles WHERE key = $1 AND (entity_id = $2 OR entity_id IS NULL))",
+    )
+    .bind(key)
+    .bind(entity_id)
+    .fetch_one(pool)
+    .await
+    .map_err(ErpError::Database)
+}
+
 
 async fn fetch_auth_user(
     pool: &sqlx::PgPool,
@@ -345,7 +357,7 @@ pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, Response> {
-    require_role(ROLES_MANAGE, &ctx, "list users").map_err(er)?;
+    require_permission(&state, &ctx, "user.manage").await.map_err(er)?;
 
     let rows = sqlx::query_as::<_, EraUserRow>(
         "SELECT * FROM era_users WHERE entity_id = $1 ORDER BY created_at",
@@ -366,30 +378,31 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<Json<serde_json::Value>, Response> {
-    require_role(ROLES_MANAGE, &ctx, "create user").map_err(er)?;
+    require_permission(&state, &ctx, "user.manage").await.map_err(er)?;
 
-    let role_str = serde_json::to_value(&req.role)
-        .ok()
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_else(|| "Viewer".to_string());
+    let role_str = req.role.trim().to_string();
+    if !role_exists(state.engine.pool(), ctx.entity_id, &role_str).await.map_err(er)? {
+        return Err(er(ErpError::ValidationFailed { message: format!("Unknown role '{role_str}'") }));
+    }
 
-    // Optional initial password → active account; otherwise an invited stub.
-    let (password_hash, status) = match req.password.as_deref() {
+    // Optional initial password → active account; otherwise an invited stub with
+    // a single-use activation token (emailed as a set-password link).
+    let (password_hash, status, set_token) = match req.password.as_deref() {
         Some(pw) => {
             if pw.len() < 8 {
                 return Err(er(ErpError::ValidationFailed {
                     message: "Password must be at least 8 characters".to_string(),
                 }));
             }
-            (Some(auth::hash_password(pw).map_err(er)?), "active")
+            (Some(auth::hash_password(pw).map_err(er)?), "active", None)
         }
-        None => (None, "invited"),
+        None => (None, "invited", Some(Uuid::new_v4().to_string())),
     };
 
     let id = Uuid::new_v4();
     let result = sqlx::query(
-        "INSERT INTO era_users (id, entity_id, email, display_name, role, password_hash, invited_by, invited_at, status) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)",
+        "INSERT INTO era_users (id, entity_id, email, display_name, role, password_hash, invited_by, invited_at, status, set_token, set_token_expires) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, CASE WHEN $9 IS NULL THEN NULL ELSE NOW() + INTERVAL '7 days' END)",
     )
     .bind(id)
     .bind(ctx.entity_id)
@@ -399,19 +412,183 @@ pub async fn create(
     .bind(&password_hash)
     .bind(ctx.user_id)
     .bind(status)
+    .bind(&set_token)
     .execute(state.engine.pool())
     .await;
 
     match result {
-        Ok(_) => Ok(Json(serde_json::json!({
-            "id": id,
-            "email": req.email,
-            "display_name": req.display_name,
-            "role": role_str,
-            "status": status,
-        }))),
+        Ok(_) => {
+            // Invited (no password): email the activation link.
+            if let Some(token) = &set_token {
+                send_activation_email(&state, ctx.entity_id, &req.email, id, token, true).await;
+            }
+            Ok(Json(serde_json::json!({
+                "id": id,
+                "email": req.email,
+                "display_name": req.display_name,
+                "role": role_str,
+                "status": status,
+            })))
+        }
         Err(e) => Err(er(ErpError::Database(e))),
     }
+}
+
+/// Base URL for building set-password links in emails. Falls back to dev.
+fn app_base_url() -> String {
+    std::env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
+}
+
+/// Email an internal user a single-use set-password link (invite or reset).
+async fn send_activation_email(
+    state: &AppState,
+    entity_id: Uuid,
+    email: &str,
+    user_id: Uuid,
+    token: &str,
+    is_invite: bool,
+) {
+    let link = format!("{}/set-password?token={}", app_base_url(), token);
+    let (subject, body) = if is_invite {
+        (
+            "You've been invited to Zavora ERP".to_string(),
+            format!("You've been invited to a Zavora ERP workspace. Set your password to sign in: {link}\n\nThis link expires in 7 days."),
+        )
+    } else {
+        (
+            "Reset your Zavora ERP password".to_string(),
+            format!("Reset your password here: {link}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email."),
+        )
+    };
+    let req = zavora_erp_core::notifications::SendNotificationRequest {
+        event_type: zavora_erp_core::notifications::NotificationEventType::LeaveRequestDecided,
+        channels: vec![zavora_erp_core::types::Channel::Email],
+        recipients: vec![email.to_string()],
+        subject: Some(subject),
+        body,
+        related_type: Some("era_user".into()),
+        related_id: Some(user_id),
+        schedule_at: None,
+        attachments: Vec::new(),
+    };
+    let _ = zavora_erp_core::services::notifications::send_notification(&state.engine, entity_id, req).await;
+}
+
+#[derive(serde::Deserialize)]
+pub struct SetPasswordRequest {
+    pub token: String,
+    pub password: String,
+}
+
+/// POST /auth/set-password — consume a single-use token (invite accept or reset),
+/// set the password, and activate the internal user. Public (no auth).
+pub async fn set_password(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SetPasswordRequest>,
+) -> Result<Response, Response> {
+    if req.password.len() < 8 {
+        return Err(er(ErpError::ValidationFailed {
+            message: "Password must be at least 8 characters".to_string(),
+        }));
+    }
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM era_users WHERE set_token = $1 AND set_token_expires > NOW()",
+    )
+    .bind(req.token.trim())
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+    let (id,) = row.ok_or_else(|| er(ErpError::ValidationFailed {
+        message: "This link is invalid or has expired. Ask an administrator to resend your invite.".to_string(),
+    }))?;
+
+    let hash = auth::hash_password(&req.password).map_err(er)?;
+    sqlx::query(
+        "UPDATE era_users SET password_hash = $1, status = 'active', is_active = true, \
+             set_token = NULL, set_token_expires = NULL WHERE id = $2",
+    )
+    .bind(&hash)
+    .bind(id)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    Ok(Json(serde_json::json!({ "ok": true, "message": "Password set. You can now sign in." })).into_response())
+}
+
+#[derive(serde::Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+/// POST /auth/forgot-password — issue a reset token + email a link. Always returns
+/// ok (no account enumeration). Public (no auth).
+pub async fn forgot_password(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ForgotPasswordRequest>,
+) -> Response {
+    // Match a single active account by email (globally; the token is single-use).
+    let row: Option<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT id, entity_id, email FROM era_users \
+         WHERE lower(email) = lower($1) AND is_active = true ORDER BY id LIMIT 1",
+    )
+    .bind(req.email.trim())
+    .fetch_optional(state.engine.pool())
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((id, entity_id, email)) = row {
+        let token = Uuid::new_v4().to_string();
+        let _ = sqlx::query(
+            "UPDATE era_users SET set_token = $1, set_token_expires = NOW() + INTERVAL '1 hour' WHERE id = $2",
+        )
+        .bind(&token)
+        .bind(id)
+        .execute(state.engine.pool())
+        .await;
+        send_activation_email(&state, entity_id, &email, id, &token, false).await;
+    }
+    Json(serde_json::json!({ "ok": true, "message": "If that account exists, a reset link has been sent." })).into_response()
+}
+
+/// POST /users/{id}/resend-invite — regenerate the activation token and re-email
+/// the set-password link (Owner/Admin only). Only for accounts without a password.
+pub async fn resend_invite(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, Response> {
+    require_permission(&state, &ctx, "user.manage").await.map_err(er)?;
+
+    let target = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT email, password_hash FROM era_users WHERE entity_id = $1 AND id = $2",
+    )
+    .bind(ctx.entity_id)
+    .bind(id)
+    .fetch_optional(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?
+    .ok_or_else(|| er(ErpError::NotFound { entity_type: "user".to_string(), id }))?;
+
+    if target.1.is_some() {
+        return Err(er(ErpError::ValidationFailed {
+            message: "This user already has a password set; use forgot-password instead.".to_string(),
+        }));
+    }
+
+    let token = Uuid::new_v4().to_string();
+    sqlx::query(
+        "UPDATE era_users SET set_token = $1, set_token_expires = NOW() + INTERVAL '7 days', status = 'invited' WHERE id = $2",
+    )
+    .bind(&token)
+    .bind(id)
+    .execute(state.engine.pool())
+    .await
+    .map_err(|e| er(ErpError::Database(e)))?;
+
+    send_activation_email(&state, ctx.entity_id, &target.0, id, &token, true).await;
+    Ok(Json(serde_json::json!({ "ok": true, "message": "Invitation re-sent." })))
 }
 
 /// PUT /users/{id} — update a user within the caller's tenant (Owner/Admin only).
@@ -427,7 +604,7 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<serde_json::Value>, Response> {
-    require_role(ROLES_MANAGE, &ctx, "update user").map_err(er)?;
+    require_permission(&state, &ctx, "user.manage").await.map_err(er)?;
 
     // Load the target user scoped to the caller's tenant (cross-tenant isolation).
     let target = sqlx::query_as::<_, EraUserRow>(
@@ -445,13 +622,28 @@ pub async fn update(
         })
     })?;
 
-    // Resolve the requested role (if any) to its stored string form.
-    let new_role: Option<String> = req.role.as_ref().map(|r| {
-        serde_json::to_value(r)
-            .ok()
-            .and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_else(|| "Viewer".to_string())
-    });
+    // Resolve the requested role key (if any) and validate it exists.
+    let new_role: Option<String> = req.role.as_ref().map(|r| r.trim().to_string());
+    if let Some(r) = &new_role {
+        if !role_exists(state.engine.pool(), ctx.entity_id, r).await.map_err(er)? {
+            return Err(er(ErpError::ValidationFailed { message: format!("Unknown role '{r}'") }));
+        }
+    }
+
+    // Self-lockout guard: you cannot deactivate your own account or change your
+    // own role (prevents an admin from accidentally locking themselves out).
+    if id == ctx.user_id {
+        if matches!(req.is_active, Some(false)) {
+            return Err(er(ErpError::ValidationFailed {
+                message: "You cannot deactivate your own account.".to_string(),
+            }));
+        }
+        if new_role.as_deref().is_some_and(|r| r != target.role) {
+            return Err(er(ErpError::ValidationFailed {
+                message: "You cannot change your own role.".to_string(),
+            }));
+        }
+    }
 
     // First-Owner protection (Req 13.1, 13.2): if this change would deactivate the
     // target Owner, or move the target Owner off the Owner role, the tenant must
@@ -507,5 +699,25 @@ pub async fn update(
         "display_name": req.display_name.unwrap_or(target.display_name),
         "role": new_role.unwrap_or(target.role),
         "is_active": req.is_active.unwrap_or(target.is_active),
+    })))
+}
+
+/// GET /api/v1/auth/permissions — the current user's role + effective permission
+/// keys. The frontend gates UI actions on this (single source of truth), so its
+/// role/permission arrays can never drift from the backend.
+pub async fn my_permissions(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, Response> {
+    let perms = state
+        .permissions
+        .effective(&state.engine, ctx.entity_id, &ctx.role_key)
+        .await
+        .map_err(er)?;
+    let mut keys: Vec<String> = perms.iter().cloned().collect();
+    keys.sort();
+    Ok(Json(serde_json::json!({
+        "role": ctx.role_key,
+        "permissions": keys,
     })))
 }
