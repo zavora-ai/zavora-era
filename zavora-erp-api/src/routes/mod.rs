@@ -45,11 +45,13 @@ pub mod ocr_provider;
 pub mod pdf_text;
 pub mod settings;
 pub mod users;
+pub mod roles;
 pub mod auth_signup;
 pub mod auth_tenants;
 pub mod procurement;
 pub mod approval;
 pub mod pos;
+pub mod etims;
 pub mod portal;
 pub mod portal_auth;
 

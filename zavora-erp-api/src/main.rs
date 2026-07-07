@@ -21,6 +21,9 @@ pub struct AppState {
     /// Configured receipt-OCR provider (manual review by default; xberg sidecar
     /// when `OCR_PROVIDER=xberg`). Shared, cheap to clone behind the `Arc`.
     pub ocr: std::sync::Arc<dyn zavora_erp_core::services::ocr_provider::OcrProvider>,
+    /// Data-driven RBAC: memoised role→permission resolution (Phase 0). Consulted
+    /// by permission checks; invalidated when a role's permissions change.
+    pub permissions: std::sync::Arc<zavora_erp_core::services::rbac::PermissionCache>,
 }
 
 #[tokio::main]
@@ -87,9 +90,23 @@ async fn main() -> anyhow::Result<()> {
     // Create engine
     let engine = ErpEngine::new(pool, redis_conn, config).await?;
 
+    // Sync the RBAC permission catalog + seed the built-in system roles from code
+    // (idempotent; code is the source of truth for system roles; custom per-tenant
+    // roles are untouched). Non-fatal: a failure must not take the API down.
+    if let Err(e) = zavora_erp_core::services::rbac::sync_catalog(&engine).await {
+        tracing::error!("RBAC catalog sync failed: {e}");
+    } else if let Err(e) = zavora_erp_core::services::rbac::seed_system_roles(&engine).await {
+        tracing::error!("RBAC system-role seed failed: {e}");
+    } else {
+        tracing::info!("RBAC catalog synced and system roles seeded");
+    }
+
     let state = Arc::new(AppState {
         engine,
         ocr: routes::ocr_provider::provider_from_env(),
+        permissions: std::sync::Arc::new(
+            zavora_erp_core::services::rbac::PermissionCache::new(),
+        ),
     });
 
     // Spawn background scheduler
@@ -144,6 +161,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(routes::users::login))
         .route("/api/v1/auth/refresh", post(routes::users::refresh))
+        // Internal-user activation + recovery (public; token-gated).
+        .route("/api/v1/auth/set-password", post(routes::users::set_password))
+        .route("/api/v1/auth/forgot-password", post(routes::users::forgot_password))
         // DEPRECATED: legacy single-tenant Owner bootstrap. Use
         // `/api/v1/auth/signup` to create new tenants. Retained unchanged for
         // backward compatibility (Requirement 9.2, 9.3).
@@ -297,6 +317,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/pos/session/{id}/z-report", get(routes::pos::z_report))
         .route("/api/v1/pos/session/{id}/close", post(routes::pos::close_session))
         .route("/api/v1/pos/receipt/{id}", get(routes::pos::receipt))
+        // KRA eTIMS OSCU/VSCU
+        .route("/api/v1/etims/config", get(routes::etims::get_config).put(routes::etims::save_config))
+        .route("/api/v1/etims/initialize", post(routes::etims::initialize))
+        .route("/api/v1/etims/invoices/{id}/transmit", post(routes::etims::transmit))
+        .route("/api/v1/etims/products/{id}/register", post(routes::etims::register_product))
         .route("/api/v1/procurement/analytics", get(routes::procurement::analytics))
         .route("/api/v1/procurement/budget-control", get(routes::procurement::budget_control))
         .route("/api/v1/debit-notes", get(routes::procurement::list_debit_notes).post(routes::procurement::create_debit_note))
@@ -456,12 +481,25 @@ async fn main() -> anyhow::Result<()> {
         // Users (auth/* live on the public router)
         .route("/api/v1/users", get(routes::users::list).post(routes::users::create))
         .route("/api/v1/users/{id}", put(routes::users::update))
+        .route("/api/v1/users/{id}/resend-invite", post(routes::users::resend_invite))
+        .route("/api/v1/roles", get(routes::roles::list).post(routes::roles::create))
+        .route("/api/v1/roles/{id}", get(routes::roles::detail).put(routes::roles::update).delete(routes::roles::delete))
+        .route("/api/v1/permissions", get(routes::roles::list_permissions))
+        .route("/api/v1/auth/permissions", get(routes::users::my_permissions))
         // Tenant management for the authenticated user (list / switch / create).
         .route("/api/v1/auth/tenants", get(routes::auth_tenants::list_tenants).post(routes::auth_tenants::create_tenant))
         .route("/api/v1/auth/switch-tenant", post(routes::auth_tenants::switch_tenant))
         .route("/api/v1/auth/tenants/{id}/archive", post(routes::auth_tenants::archive_tenant))
         .route("/api/v1/auth/tenants/{id}/unarchive", post(routes::auth_tenants::unarchive_tenant))
         .route("/api/v1/auth/tenants/{id}/leave", post(routes::auth_tenants::leave_tenant))
+        // Central default-deny authorization: every protected route must map to a
+        // permission in ROUTE_PERMISSIONS (enforced here). Applied FIRST so it runs
+        // INNER — after `require_authenticated` has verified the token + set the
+        // AuthContext, before the handler.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::authz_layer::enforce_permissions,
+        ))
         // Every route above requires a valid access token.
         .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
 

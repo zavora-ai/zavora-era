@@ -2,9 +2,24 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::middleware::auth::AuthContext;
+use crate::middleware::auth::{require_permission, AuthContext};
 use super::err_response;
 use zavora_erp_core::reporting::*;
+
+/// Payroll/salary report types are gated behind `payroll.read` (they expose pay
+/// and statutory figures). All other report types are readable by any
+/// authenticated user.
+fn is_payroll_report(rt: &ReportType) -> bool {
+    matches!(
+        rt,
+        ReportType::PayrollSummary
+            | ReportType::PayeP10
+            | ReportType::PayeP9
+            | ReportType::PayrollRegister
+            | ReportType::StatutorySchedule
+            | ReportType::PayrollBankFile
+    )
+}
 
 pub async fn generate(
     ctx: AuthContext,
@@ -14,6 +29,10 @@ pub async fn generate(
     // Force the report to the caller's tenant — never trust a client-supplied
     // entity_id (prevents cross-tenant report disclosure).
     req.entity_id = ctx.entity_id;
+    // Content-level gate: payroll/salary reports need pay_run.read; everything
+    // else needs report.read. (The route itself is SelfScoped in the registry.)
+    let perm = if is_payroll_report(&req.report_type) { "pay_run.read" } else { "report.read" };
+    require_permission(&state, &ctx, perm).await.map_err(err_response)?;
     match state.engine.run_report(req).await {
         Ok(data) => Ok(Json(serde_json::to_value(data).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -27,6 +46,8 @@ pub async fn export(
 ) -> Result<axum::response::Response, axum::response::Response> {
     use axum::response::IntoResponse;
     req.entity_id = ctx.entity_id;
+    let perm = if is_payroll_report(&req.report_type) { "pay_run.read" } else { "report.read" };
+    require_permission(&state, &ctx, perm).await.map_err(|e| err_response(e).into_response())?;
     let report_type = req.report_type.clone();
     let data = state
         .engine

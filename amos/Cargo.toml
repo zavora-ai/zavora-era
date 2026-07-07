@@ -13,6 +13,7 @@ description = "Amos AI — your personal AI accountant for Zavora ERA (realtime 
 # ADK (local path references, like the mia example)
 adk-core = { path = "../../adk-rust/adk-core" }
 adk-realtime = { path = "../../adk-rust/adk-realtime", features = ["gemini", "integration"] }
+adk-gemini = { path = "../../adk-rust/adk-gemini" }
 adk-tool = { path = "../../adk-rust/adk-tool", features = ["mcp"] }
 adk-skill = { path = "../../adk-rust/adk-skill" }
 adk-memory = { path = "../../adk-rust/adk-memory", features = ["database-memory"] }
@@ -37,6 +38,7 @@ serde_json = "1"
 
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"

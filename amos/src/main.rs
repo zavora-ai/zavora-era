@@ -12,6 +12,7 @@
 mod agent;
 mod audit;
 mod auth;
+mod clock;
 mod config;
 mod erp;
 mod guard;
@@ -19,9 +20,11 @@ mod mcp;
 mod memory;
 mod scope;
 mod persona;
+mod plan;
 mod routes;
 mod skills;
 mod state;
+mod subagents;
 mod summarizer;
 
 use crate::state::AppState;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_APPROVE, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext, require_permission, require_role, ROLES_CREATE, ROLES_APPROVE, ROLES_POST_JOURNAL};
 use super::err_response;
 use zavora_erp_core::payroll::*;
 use zavora_erp_core::services::payroll as svc;
@@ -71,7 +71,7 @@ pub async fn payslip_pdf(
     Path((run_id, employee_id)): Path<(Uuid, Uuid)>,
 ) -> Result<axum::response::Response, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_CREATE, &ctx, "view payslip").map_err(|e| err_response(e).into_response())?;
+    require_permission(&state, &ctx, "pay_run.read").await.map_err(|e| err_response(e).into_response())?;
     match svc::payslip_pdf(&state.engine, ctx.entity_id, run_id, employee_id).await {
         Ok(bytes) => Ok(pdf_response(bytes, "payslip.pdf")),
         Err(e) => Err(err_response(e).into_response()),
@@ -94,6 +94,7 @@ pub async fn list(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_permission(&state, &ctx, "pay_run.read").await.map_err(err_response)?;
     match svc::list_pay_runs(&state.engine, ctx.entity_id).await {
         Ok(rows) => Ok(Json(serde_json::to_value(rows).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -106,6 +107,7 @@ pub async fn detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_permission(&state, &ctx, "pay_run.read").await.map_err(err_response)?;
     match svc::load_pay_run(&state.engine, ctx.entity_id, id).await {
         Ok(run) => Ok(Json(serde_json::to_value(run).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -144,6 +146,7 @@ pub async fn list_inputs(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    require_permission(&state, &ctx, "pay_run.read").await.map_err(err_response)?;
     match masters::list_run_inputs(&state.engine, ctx.entity_id, id).await {
         Ok(rows) => Ok(Json(serde_json::to_value(rows).unwrap_or_default())),
         Err(e) => Err(err_response(e)),

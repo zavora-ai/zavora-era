@@ -72,44 +72,59 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
-/// Await the client's first `{type:"auth", token}` frame and verify it against
-/// the served entity. Returns the verified principal, or a refusal reason.
+/// The verified identity plus the client's session context (timezone +
+/// work-as-of date) carried on the handshake frame.
+struct Handshake {
+    principal: crate::auth::Principal,
+    timezone: Option<String>,
+    work_date: Option<String>,
+    plan: Option<String>,
+}
+
+/// Await the client's first `{type:"auth", token, timezone?, work_date?}` frame,
+/// verify the token against the served entity, and capture the user's timezone +
+/// work-as-of (posting) date preferences. Returns the handshake, or a refusal.
 ///
 /// Dev escape hatch: with `AMOS_DEV_ALLOW_UNAUTH=1` (never set in prod) an
 /// absent/blank token yields a synthetic owner principal for the served entity,
 /// so standalone `:8090` testing works without the parent ERP page.
-async fn authenticate<S>(ws_receiver: &mut S, state: &Arc<AppState>) -> Result<crate::auth::Principal, String>
+async fn authenticate<S>(ws_receiver: &mut S, state: &Arc<AppState>) -> Result<Handshake, String>
 where
     S: futures::Stream<Item = Result<ws::Message, axum::Error>> + Unpin,
 {
     use futures::StreamExt;
     let dev_allow = std::env::var("AMOS_DEV_ALLOW_UNAUTH").is_ok_and(|v| v == "1" || v == "true");
 
-    let token = match tokio::time::timeout(std::time::Duration::from_secs(10), ws_receiver.next()).await {
+    // Parse the first frame once so we can read the token *and* the session
+    // context (timezone / work-date) it carries.
+    let frame = match tokio::time::timeout(std::time::Duration::from_secs(10), ws_receiver.next()).await {
         Ok(Some(Ok(ws::Message::Text(text)))) => serde_json::from_str::<serde_json::Value>(&text)
             .ok()
-            .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("auth"))
-            .and_then(|m| m.get("token").and_then(|t| t.as_str()).map(String::from)),
+            .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("auth")),
         Ok(Some(Ok(ws::Message::Close(_)))) | Ok(None) => return Err("connection closed before authenticating".into()),
         Ok(Some(Ok(_))) => None,             // first frame wasn't auth
         Ok(Some(Err(e))) => return Err(format!("websocket error: {e}")),
         Err(_) => None,                      // timeout
     };
+    let str_field = |k: &str| frame.as_ref().and_then(|m| m.get(k)).and_then(|v| v.as_str()).map(String::from);
+    let token = str_field("token");
+    let timezone = str_field("timezone");
+    let work_date = str_field("work_date");
+    let plan = str_field("plan");
 
-    match token {
-        Some(t) if !t.trim().is_empty() => {
-            state.verifier.verify(&t).map_err(|e| e.to_string())
-        }
+    let principal = match token {
+        Some(t) if !t.trim().is_empty() => state.verifier.verify(&t).map_err(|e| e.to_string())?,
         _ if dev_allow => {
             warn!("AMOS_DEV_ALLOW_UNAUTH set — accepting an unauthenticated dev session");
-            Ok(crate::auth::Principal {
+            crate::auth::Principal {
                 user_id: uuid::Uuid::nil(),
                 entity_id: state.served_entity,
                 role: "Owner".into(),
-            })
+            }
         }
-        _ => Err("Sign in to the ERP to use Amos.".into()),
-    }
+        _ => return Err("Sign in to the ERP to use Amos.".into()),
+    };
+    Ok(Handshake { principal, timezone, work_date, plan })
 }
 
 async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
@@ -130,8 +145,8 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // its first frame; we verify the signature and that the token's entity ==
     // the entity this Amos serves. A mismatch, a bad/expired token, or no auth
     // frame ⇒ the session is refused. No runner, no tools, no data, no memory.
-    let principal = match authenticate(&mut ws_receiver, &state).await {
-        Ok(p) => p,
+    let handshake = match authenticate(&mut ws_receiver, &state).await {
+        Ok(h) => h,
         Err(reason) => {
             warn!("session refused: {reason}");
             if let Some(sink) = &state.audit {
@@ -144,6 +159,22 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
             return;
         }
     };
+    let principal = handshake.principal;
+    // Per-user timezone + work-as-of (posting) date, from the handshake. Shared
+    // so a mid-session `context` frame (the user changing their work-date) can
+    // update the clock the current_datetime tool reads.
+    let clock = crate::clock::shared(crate::clock::SessionClock::from_handshake(
+        handshake.timezone.as_deref(),
+        handshake.work_date.as_deref(),
+    ));
+    {
+        let c = clock.read().await;
+        info!("🕑 session clock: tz {} · posting date {}", c.tz.name(), c.effective_posting_date());
+    }
+    // Plan entitlements: gate the expensive capabilities (voice, web search) by
+    // tier. Resolved handshake → AMOS_PLAN env → Business default.
+    let entitlements = crate::plan::Plan::resolve(handshake.plan.as_deref()).entitlements();
+    info!("💳 plan: {} · voice {} · web_search {}", entitlements.plan, entitlements.voice, entitlements.web_search);
     info!("🔓 session authenticated: user {} · role {} · entity {}", principal.user_id, principal.role, principal.entity_id);
     if let Some(sink) = &state.audit {
         let _ = sink
@@ -152,8 +183,12 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     }
     let principal = Arc::new(principal);
 
+    // Per-session store for files the user attaches in the chat. The ingest loop
+    // below writes to it; the `analyze_attachment` sub-agent tool reads from it.
+    let attachments = crate::subagents::new_store();
+
     // Fresh runner per browser session, scoped to this principal.
-    let runner = match agent::build_runner(&state, principal.clone()).await {
+    let runner = match agent::build_runner(&state, principal.clone(), attachments.clone(), clock.clone(), entitlements).await {
         Ok(r) => Arc::new(r),
         Err(e) => {
             error!("Failed to build runner: {e}");
@@ -171,7 +206,11 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
 
     let _ = ws_sender
         .send(ws::Message::Text(
-            serde_json::json!({"type": "connected", "session_id": runner.session_id().await}).to_string().into(),
+            serde_json::json!({
+                "type": "connected",
+                "session_id": runner.session_id().await,
+                "entitlements": entitlements,
+            }).to_string().into(),
         ))
         .await;
 
@@ -199,10 +238,25 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let runner_send = runner.clone();
     let transcript_send = transcript.clone();
     let tx_guard = tx.clone();
+    let attachments_ingest = attachments.clone();
+    let clock_ingest = clock.clone();
+    let voice_enabled = entitlements.voice;
     let send_handle = tokio::spawn(async move {
+        let mut voice_upsold = false;
         while let Some(Ok(msg)) = ws_receiver.next().await {
             match msg {
                 ws::Message::Binary(data) => {
+                    // Voice is a paid capability — drop audio on a text-only plan
+                    // and upsell once (the UI hides the mic, so this is a backstop).
+                    if !voice_enabled {
+                        if !voice_upsold {
+                            voice_upsold = true;
+                            let _ = tx_guard.send(ws::Message::Text(
+                                serde_json::json!({"type": "notice", "message": "Voice chat is available on the Business plan. You can keep typing to Amos here."}).to_string().into(),
+                            )).await;
+                        }
+                        continue;
+                    }
                     let audio_b64 = base64::engine::general_purpose::STANDARD.encode(&data);
                     if let Err(e) = runner_send.send_audio(&audio_b64).await {
                         warn!("send_audio failed: {e}");
@@ -231,6 +285,36 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                     let _ = runner_send.send_text(content).await;
                                     let _ = runner_send.create_response().await;
                                 }
+                            }
+                            Some("attachment") => {
+                                // The user attached a file (paperclip). Stash it
+                                // for the analyze_attachment sub-agent, then let
+                                // the model know it's available to read.
+                                let name = msg.get("name").and_then(|v| v.as_str()).unwrap_or("attachment").to_string();
+                                let mime = msg.get("mime").and_then(|v| v.as_str()).unwrap_or("application/octet-stream").to_string();
+                                if let Some(data) = msg.get("data").and_then(|v| v.as_str()) {
+                                    let att = crate::subagents::Attachment { name: name.clone(), mime_type: mime.clone(), data_b64: data.to_string() };
+                                    attachments_ingest.write().await.push(att);
+                                    info!("📎 received attachment {name} ({mime}, {} b64 chars)", data.len());
+                                    let _ = tx_guard.send(ws::Message::Text(
+                                        serde_json::json!({"type": "attachment_ack", "name": name}).to_string().into(),
+                                    )).await;
+                                    let _ = runner_send.send_text(&format!(
+                                        "(system) The user attached a file named \"{name}\" ({mime}). \
+                                         It is available to read via the analyze_attachment tool. \
+                                         Call analyze_attachment when the user's request needs its contents."
+                                    )).await;
+                                }
+                            }
+                            Some("context") => {
+                                // The user changed their timezone or work-as-of
+                                // date mid-session; refresh the clock the
+                                // current_datetime tool reads.
+                                let tz = msg.get("timezone").and_then(|v| v.as_str());
+                                let wd = msg.get("work_date").and_then(|v| v.as_str());
+                                let updated = crate::clock::SessionClock::from_handshake(tz, wd);
+                                info!("🕑 context update: tz {} · posting date {}", updated.tz.name(), updated.effective_posting_date());
+                                *clock_ingest.write().await = updated;
                             }
                             Some("commit_audio") => {
                                 let _ = runner_send.commit_audio().await;

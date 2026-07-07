@@ -177,6 +177,19 @@
   .send-btn:disabled { background: var(--line); color: var(--ink-4); cursor: default; }
   .send-btn svg { width: 15px; height: 15px; }
   .composer-hint { font-size: 11px; color: var(--ink-4); text-align: center; padding-top: 9px; }
+  .attach-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 7px; }
+  .attach-tray:empty { display: none; }
+  .attach-chip {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 8px; font-size: 12px; color: var(--ink-2); box-shadow: var(--shadow-1);
+  }
+  .attach-chip svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--accent); }
+  .attach-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach-chip .rm { border: none; background: transparent; color: var(--ink-4); cursor: pointer; padding: 0 0 0 2px; font-size: 14px; line-height: 1; }
+  .attach-chip .rm:hover { color: var(--red, #dc2626); }
+  .msg-attach { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--ink-3); }
+  .msg-attach svg { width: 13px; height: 13px; color: var(--accent); }
 
   /* ══ Right panel ═════════════════════════════════════════ */
   .panel {
@@ -316,12 +329,19 @@
           <span id="voiceText">Listening</span>
           <span class="interrupt-link" id="interruptLink" style="display:none">Interrupt</span>
         </div>
+        <div class="attach-tray" id="attachTray"></div>
         <div class="composer">
           <button class="icon-btn" id="micBtn" title="Toggle microphone">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
             </svg>
           </button>
+          <button class="icon-btn" id="attachBtn" title="Attach a PDF or image">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.34 3.34 0 0 1 4.72 4.72l-9.2 9.19a1.67 1.67 0 0 1-2.36-2.36l8.49-8.48"/>
+            </svg>
+          </button>
+          <input id="attachInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" multiple hidden>
           <input id="textInput" placeholder="Ask about the books, or give Amos work to do…" autocomplete="off">
           <button class="send-btn" id="sendBtn" title="Send">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -329,7 +349,7 @@
             </svg>
           </button>
         </div>
-        <div class="composer-hint">Amos reads and writes the live ledger. Postings always require your explicit confirmation.</div>
+        <div class="composer-hint" id="composerHint">Amos reads and writes the live ledger. Postings always require your explicit confirmation.</div>
       </div>
     </div>
   </section>
@@ -391,14 +411,36 @@ let snapTimer = null;
 // Identity: the ERP parent page hands us the user's access token via
 // postMessage. Amos verifies it and only serves users of its own tenant.
 let authToken = null;
+// The signed-in user's session context (timezone + work-as-of posting date),
+// forwarded by the ERP shell. Amos grounds "today" and default posting dates on
+// these. Standalone (no parent) falls back to the browser's own timezone.
+let sessionContext = { timezone: null, work_date: null, plan: null };
+try { sessionContext.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (_) {}
+// Plan entitlements (sent by the server on `connected`). Voice is a paid
+// capability; on a text-only plan we hide the mic and the voice-session button.
+let entitlements = { voice: true, web_search: true, plan: 'business' };
+function applyEntitlements() {
+  const voice = !!entitlements.voice;
+  const mic = $('micBtn'), sess = $('sessionBtn'), attach = $('attachBtn');
+  if (mic) mic.style.display = voice ? '' : 'none';
+  if (sess) sess.style.display = voice ? '' : 'none';
+  if (attach) attach.style.display = entitlements.attachments === false ? 'none' : '';
+  const hint = $('composerHint');
+  if (hint && !voice) hint.textContent = 'Amos reads and writes the live ledger. Voice chat is on the Business plan — type below to get started.';
+}
 window.addEventListener('message', (e) => {
   // Same-origin embed in prod; dev cross-origin (:3000 → :8090). Accept the
   // token from the framing parent only.
   if (e.data && e.data.type === 'amos-auth' && typeof e.data.token === 'string') {
     authToken = e.data.token;
-    // If a session is already open, refresh its credential.
+    // The shell also forwards the user's timezone + work-as-of date.
+    if (typeof e.data.timezone === 'string') sessionContext.timezone = e.data.timezone;
+    sessionContext.work_date = (typeof e.data.work_date === 'string' && e.data.work_date) ? e.data.work_date : null;
+    if (typeof e.data.plan === 'string') sessionContext.plan = e.data.plan;
+    // If a session is already open, refresh its credential + context.
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'auth', token: authToken }));
+      ws.send(JSON.stringify({ type: 'context', timezone: sessionContext.timezone, work_date: sessionContext.work_date }));
     }
   }
 });
@@ -439,6 +481,7 @@ const ACTION_LABELS = {
   get_journal_entries: 'Read journal entries',
   plan_tasks: 'Prepared the workplan', update_task: 'Updated the workplan',
   showcase_step: 'Filed evidence',
+  analyze_attachment: 'Read the attached document', web_search: 'Searched the web',
 };
 function actionLabel(name) {
   if (ACTION_LABELS[name]) return ACTION_LABELS[name];
@@ -556,12 +599,12 @@ function connect() {
       setConn(true, 'Authenticating…');
       // Identity gate: the FIRST frame must be the user's token, or the server
       // refuses the session.
-      ws.send(JSON.stringify({ type: 'auth', token: authToken || '' }));
+      ws.send(JSON.stringify({ type: 'auth', token: authToken || '', timezone: sessionContext.timezone, work_date: sessionContext.work_date, plan: sessionContext.plan }));
     };
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) { playAudio(event.data); return; }
       const msg = JSON.parse(event.data);
-      if (msg.type === 'connected' && !settled) { settled = true; onLive(); resolve(); }
+      if (msg.type === 'connected') { if (msg.entitlements) { entitlements = msg.entitlements; applyEntitlements(); } if (!settled) { settled = true; onLive(); resolve(); } }
       if (msg.type === 'error' && msg.fatal && !settled) { settled = true; reject(new Error(msg.message || 'refused')); }
       handleServer(msg);
     };
@@ -604,6 +647,7 @@ function handleServer(msg) {
     case 'skill':            logSkill(msg.name); break;
     case 'memory':           addMemory({kind: msg.kind, text: msg.text, at: new Date().toISOString()}, true); break;
     case 'error':            addNotice(msg.message); break;
+    case 'notice':           addNotice(msg.message); break;
   }
 }
 
@@ -792,6 +836,61 @@ async function sendText() {
 }
 $('sendBtn').onclick = sendText;
 $('textInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } });
+
+// ─── Attachments: send a PDF/image to Amos's document sub-agent ───
+const CLIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.34 3.34 0 0 1 4.72 4.72l-9.2 9.19a1.67 1.67 0 0 1-2.36-2.36l8.49-8.48"/></svg>';
+const MAX_ATTACH_BYTES = 18 * 1024 * 1024; // Gemini inline-data ceiling (~20MB request)
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+$('attachBtn').onclick = () => $('attachInput').click();
+$('attachInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if (!files.length) return;
+  if (!sessionActive) {
+    try { await connect(); }
+    catch (_) { addNotice('Could not reach the Amos service. Check that it is running on this machine.'); return; }
+  }
+  for (const file of files) {
+    if (file.size > MAX_ATTACH_BYTES) { addNotice(`"${file.name}" is too large to attach (max 18 MB).`); continue; }
+    let data;
+    try { data = await fileToBase64(file); }
+    catch (_) { addNotice(`Could not read "${file.name}".`); continue; }
+    const mime = file.type || 'application/octet-stream';
+    ws.send(JSON.stringify({ type: 'attachment', name: file.name, mime, data }));
+    addAttachChip(file.name);
+    addAttachMessage(file.name);
+  }
+}, false);
+
+function addAttachChip(name) {
+  const chip = document.createElement('span');
+  chip.className = 'attach-chip';
+  chip.innerHTML = CLIP_SVG + `<span class="name"></span><button class="rm" title="Dismiss">×</button>`;
+  chip.querySelector('.name').textContent = name;
+  chip.querySelector('.rm').onclick = () => chip.remove(); // visual only; Amos keeps it for the session
+  $('attachTray').appendChild(chip);
+}
+function addAttachMessage(name) {
+  finalizePending();
+  const row = addMessage('user', '');
+  const body = row.querySelector('.row-body');
+  body.textContent = 'Attached a file for Amos to read:';
+  const a = document.createElement('div');
+  a.className = 'msg-attach';
+  a.innerHTML = CLIP_SVG + `<span></span>`;
+  a.querySelector('span').textContent = name;
+  body.appendChild(a);
+  scrollThread();
+}
 
 document.querySelectorAll('.suggestion').forEach(btn => {
   btn.onclick = () => { $('textInput').value = btn.dataset.q; sendText(); };
