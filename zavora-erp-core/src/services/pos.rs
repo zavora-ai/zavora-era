@@ -284,11 +284,24 @@ fn r_money(v: Decimal) -> String {
 pub async fn pos_receipt_html(engine: &ErpEngine, entity_id: Uuid, invoice_id: Uuid, tendered: Option<Decimal>) -> ErpResult<String> {
     use qrcode::{QrCode, render::svg};
 
-    let inv: (String, chrono::NaiveDate, Decimal, Decimal, Decimal, String, Option<String>) = sqlx::query_as(
-        "SELECT number, issue_date, subtotal, tax_total, gross_total, etims_status, etims_invoice_number FROM invoices WHERE id=$1 AND entity_id=$2",
+    #[derive(sqlx::FromRow)]
+    struct RcptInv {
+        number: String, issue_date: chrono::NaiveDate,
+        subtotal: Decimal, tax_total: Decimal, gross_total: Decimal,
+        etims_status: String,
+        etims_rcpt_no: Option<i64>, etims_tot_rcpt_no: Option<i64>, etims_invc_no: Option<i64>,
+        etims_sdc_id: Option<String>, etims_rcpt_sign: Option<String>,
+        etims_intrl_data: Option<String>, etims_qr_url: Option<String>,
+    }
+    let inv = sqlx::query_as::<_, RcptInv>(
+        "SELECT number, issue_date, subtotal, tax_total, gross_total, etims_status,
+                etims_rcpt_no, etims_tot_rcpt_no, etims_invc_no, etims_sdc_id, etims_rcpt_sign,
+                etims_intrl_data, etims_qr_url
+         FROM invoices WHERE id=$1 AND entity_id=$2",
     ).bind(invoice_id).bind(entity_id).fetch_optional(engine.pool()).await?
      .ok_or_else(|| ErpError::NotFound { entity_type: "invoice".into(), id: invoice_id })?;
-    let (number, issue_date, subtotal, tax_total, gross_total, etims_status, etims_no) = inv;
+    let (number, issue_date, subtotal, tax_total, gross_total, etims_status) =
+        (inv.number, inv.issue_date, inv.subtotal, inv.tax_total, inv.gross_total, inv.etims_status);
 
     let lines: Vec<(String, Decimal, Decimal, Decimal)> = sqlx::query_as(
         "SELECT description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id=$1 ORDER BY id",
@@ -310,14 +323,35 @@ pub async fn pos_receipt_html(engine: &ErpEngine, entity_id: Uuid, invoice_id: U
     let tendered = tendered.unwrap_or(gross_total);
     let change = if tender == "cash" { (tendered - gross_total).max(Decimal::ZERO) } else { Decimal::ZERO };
 
-    // eTIMS control block + QR. When real eTIMS transmission is wired the QR
-    // carries KRA's signed payload; until then it encodes a verification URL.
+    // eTIMS control block + QR. Once transmitted, the QR carries KRA's signed
+    // verification URL and the block shows the SCU id, receipt number and the
+    // internal-data / signature KRA returned. Before transmission it falls back
+    // to a plain verification URL and a "pending" state.
     let transmitted = etims_status == "transmitted";
-    let control = etims_no.clone().unwrap_or_else(|| "PENDING".into());
-    let qr_payload = format!("https://etims.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?PIN={kra_pin}&RcptNo={number}&Amt={gross_total}");
+    let qr_payload = inv.etims_qr_url.clone().unwrap_or_else(||
+        format!("https://etims.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?PIN={kra_pin}&RcptNo={number}&Amt={gross_total}"));
     let qr_svg = QrCode::new(qr_payload.as_bytes())
         .map(|c| c.render::<svg::Color>().min_dimensions(150,150).quiet_zone(false).build())
         .unwrap_or_default();
+    // KRA-mandated control block rows (only meaningful once transmitted).
+    let etims_control = if transmitted {
+        let rcpt = match (inv.etims_rcpt_no, inv.etims_tot_rcpt_no) {
+            (Some(c), Some(t)) => format!("{c}/{t}"),
+            (Some(c), None) => c.to_string(),
+            _ => "-".into(),
+        };
+        format!(
+            "<div>SCU ID: {sdc}</div><div>Receipt No: {rcpt}</div><div>Invoice No: {invc}</div>\
+             <div style='word-break:break-all;font-size:9px'>Int. Data: {intrl}</div>\
+             <div style='word-break:break-all;font-size:9px'>Signature: {sign}</div>",
+            sdc = r_esc(&inv.etims_sdc_id.clone().unwrap_or_default()),
+            invc = inv.etims_invc_no.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+            intrl = r_esc(&inv.etims_intrl_data.clone().unwrap_or_default()),
+            sign = r_esc(&inv.etims_rcpt_sign.clone().unwrap_or_default()),
+        )
+    } else {
+        String::new()
+    };
 
     let mut item_rows = String::new();
     for (d, q, up, lt) in &lines {
@@ -366,8 +400,8 @@ pub async fn pos_receipt_html(engine: &ErpEngine, entity_id: Uuid, invoice_id: U
   <div class="row"><span>Change</span><span>{change}</span></div>
   <div class="etims">
     <div class="b">eTIMS TAX RECEIPT</div>
-    <div>Control Unit No: {control}</div>
     <div>{etims_state}</div>
+    {etims_control}
     {qr_svg}
     <div style="font-size:9px">Scan to verify on KRA eTIMS</div>
   </div>
@@ -386,7 +420,7 @@ pub async fn pos_receipt_html(engine: &ErpEngine, entity_id: Uuid, invoice_id: U
         tender_label = match tender.as_str() {"mpesa"=>"M-PESA","card"=>"CARD",_=>"CASH"},
         tendered = r_money(tendered),
         change = r_money(change),
-        control = r_esc(&control),
+        etims_control = etims_control,
         etims_state = if transmitted { "eTIMS: Transmitted to KRA" } else { "eTIMS: Pending transmission" },
         qr_svg = qr_svg,
     ))

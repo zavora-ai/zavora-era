@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceEtims, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf } from '../../api/client';
+import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceKra, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
@@ -428,38 +428,52 @@ export default function InvoiceDetailPage() {
 
 function TransmitEtimsModal({ invoiceId, onClose }: { invoiceId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [etimsNumber, setEtimsNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<any>(null);
 
   const mutation = useMutation({
-    mutationFn: () => transmitInvoiceEtims(invoiceId, { etims_invoice_number: etimsNumber.trim() || undefined }),
-    onSuccess: () => {
+    mutationFn: () => transmitInvoiceKra(invoiceId).then((r) => r.data),
+    onSuccess: (data) => {
+      setReceipt(data);
       queryClient.invalidateQueries({ queryKey: ['invoice', invoiceId] });
-      onClose();
     },
     onError: (e: any) => setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to transmit to eTIMS.'),
   });
 
+  if (receipt) return (
+    <Modal open={true} onClose={onClose} title="Transmitted to KRA eTIMS" subtitle="This is now a signed tax invoice" size="sm">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm">
+          <ShieldCheck className="w-4 h-4 shrink-0" /><span>KRA signed and accepted this invoice.</span>
+        </div>
+        <div className="text-sm space-y-1">
+          {receipt.rcpt_no != null && <div className="flex justify-between"><span className="text-gray-500">Receipt No.</span><span className="font-medium">{receipt.rcpt_no}{receipt.tot_rcpt_no ? ` / ${receipt.tot_rcpt_no}` : ''}</span></div>}
+          {receipt.sdc_id && <div className="flex justify-between"><span className="text-gray-500">SCU ID</span><span className="font-medium">{receipt.sdc_id}</span></div>}
+          {receipt.invc_no != null && <div className="flex justify-between"><span className="text-gray-500">Invoice No.</span><span className="font-medium">{receipt.invc_no}</span></div>}
+          {receipt.rcpt_sign && <div><div className="text-gray-500">Signature</div><div className="font-mono text-xs break-all">{receipt.rcpt_sign}</div></div>}
+        </div>
+        <div className="flex justify-end pt-1"><button onClick={onClose} className="btn-primary">Done</button></div>
+      </div>
+    </Modal>
+  );
+
   return (
-    <Modal open={true} onClose={onClose} title="Transmit to KRA eTIMS" subtitle="Record this tax invoice as transmitted" size="sm">
+    <Modal open={true} onClose={onClose} title="Transmit to KRA eTIMS" subtitle="Send this tax invoice to KRA in real time" size="sm">
       <form onSubmit={(e) => { e.preventDefault(); setError(null); mutation.mutate(); }} className="space-y-4">
         {error && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
-            <ShieldCheck className="w-4 h-4 shrink-0" /><span>{error}</span>
+          <div className="flex flex-col gap-1 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+            <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 shrink-0" /><span>{error}</span></div>
+            {/enabled|initiali/i.test(error) && <a href="/etims" className="underline text-red-800">Configure eTIMS in Settings → KRA eTIMS</a>}
           </div>
         )}
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-sm">
           <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>Once transmitted, this invoice is on record at KRA and can only be corrected with a credit note — it can no longer be edited or voided.</span>
-        </div>
-        <div>
-          <label className="label">eTIMS Invoice Number <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input className="input" value={etimsNumber} onChange={(e) => setEtimsNumber(e.target.value)} placeholder="KRA control / CU invoice number" />
+          <span>This sends the invoice to KRA via eTIMS OSCU/VSCU. Once accepted it is on record at KRA and can only be corrected with a credit note — it can no longer be edited or voided.</span>
         </div>
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Transmitting...' : 'Mark Transmitted'}
+            {mutation.isPending ? 'Transmitting…' : 'Transmit to KRA'}
           </button>
         </div>
       </form>

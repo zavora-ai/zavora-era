@@ -1,11 +1,38 @@
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { getInvoice, getCustomer, getSettings } from '../../api/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getInvoice, getCustomer, getSettings, transmitInvoiceKra } from '../../api/client';
 import type { Invoice, Customer, BrandingConfig } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/format';
 import DocumentLayout from '../../components/documents/DocumentLayout';
 import DocumentLineItems, { type LineItem } from '../../components/documents/DocumentLineItems';
 import DocumentActions from '../../components/documents/DocumentActions';
+import { ShieldCheck } from 'lucide-react';
+
+/** eTIMS status + real KRA transmission for a credit note (a credit/refund receipt). */
+function EtimsCreditNoteBar({ inv }: { inv: any }) {
+  const qc = useQueryClient();
+  const status = inv.etims_status ?? 'not_transmitted';
+  const transmitted = status === 'transmitted';
+  const mut = useMutation({
+    mutationFn: () => transmitInvoiceKra(inv.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credit-note-preview', inv.id] }),
+    onError: (e: any) => window.alert(e?.response?.data?.error || 'Transmission failed.'),
+  });
+  const badge = transmitted ? 'bg-green-100 text-green-700'
+    : status === 'transmission_failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600';
+  const label = transmitted ? 'Transmitted to KRA'
+    : status === 'transmission_failed' ? 'Transmission failed' : 'Not transmitted';
+  return (
+    <div className="print:hidden flex items-center gap-3 mb-4 flex-wrap">
+      <span className={`px-2 py-0.5 rounded text-xs font-medium ${badge}`}>eTIMS: {label}</span>
+      {!transmitted && (
+        <button onClick={() => mut.mutate()} disabled={mut.isPending} className="btn-secondary text-sm">
+          <ShieldCheck className="w-4 h-4" /> {mut.isPending ? 'Transmitting…' : 'Transmit to KRA'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function CreditNotePreview() {
   const { id } = useParams<{ id: string }>();
@@ -53,6 +80,7 @@ export default function CreditNotePreview() {
   return (
     <div className="p-6">
       <DocumentActions />
+      <EtimsCreditNoteBar inv={invoice} />
 
       <DocumentLayout
         branding={branding}
@@ -115,6 +143,19 @@ export default function CreditNotePreview() {
               <div className="flex justify-between max-w-xs mx-auto border-t pt-1 font-bold">
                 <span>Total Credit</span><span>{formatCurrency(invoice.gross_total, invoice.currency)}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* KRA eTIMS control block (once signed by KRA) */}
+        {(invoice as any).etims_status === 'transmitted' && (
+          <div className="mt-8 pt-6 border-t text-xs text-gray-600">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">KRA eTIMS</h4>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-0.5">
+              {(invoice as any).etims_sdc_id && <div><span className="text-gray-400">SCU ID: </span>{(invoice as any).etims_sdc_id}</div>}
+              {(invoice as any).etims_rcpt_no != null && <div><span className="text-gray-400">Receipt No: </span>{(invoice as any).etims_rcpt_no}</div>}
+              {(invoice as any).etims_invc_no != null && <div><span className="text-gray-400">Invoice No: </span>{(invoice as any).etims_invc_no}</div>}
+              {(invoice as any).etims_rcpt_sign && <div className="col-span-2 break-all"><span className="text-gray-400">Signature: </span>{(invoice as any).etims_rcpt_sign}</div>}
             </div>
           </div>
         )}

@@ -537,6 +537,11 @@ pub async fn create_credit_note(
 
     tx.commit().await?;
 
+    // Real-time KRA eTIMS transmission of the credit note (best-effort). It goes
+    // out as a credit/refund receipt referencing the original invoice's eTIMS
+    // number — a no-op unless a device is enabled + initialised.
+    crate::services::etims::try_auto_transmit(engine, entity_id, cn_id).await;
+
     Ok(CreditNoteResult {
         credit_note_id: cn_id,
         credit_note_number: cn_number,
@@ -2208,6 +2213,10 @@ pub async fn post_invoice(
     .await?;
 
     tx.commit().await?;
+
+    // Real-time KRA eTIMS transmission (best-effort; a no-op unless an eTIMS
+    // device is enabled + initialised for this entity, and never fails the post).
+    crate::services::etims::try_auto_transmit(engine, entity_id, invoice_id).await;
 
     Ok(entry.id)
 }

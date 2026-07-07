@@ -1,5 +1,7 @@
 //! Zavora ERP — Core ERP Engine
 //!
+#![recursion_limit = "256"]
+//!
 //! A double-entry accounting engine with Kenya-specific compliance features
 //! (KRA iTax, M-Pesa, PAYE/NSSF/NHIF, WHT) designed for both human UI
 //! and agentic layer consumption.
