@@ -36,6 +36,11 @@ sample_data/
 *.png
 # … but documentation images are committed
 !docs/assets/*.png
+# … and brand + marketing assets must ship with the web app
+!zavora-erp-ui/public/zavora-logo.png
+!zavora-erp-ui/public/zavora-logo-white.png
+!zavora-erp-ui/public/favicon.png
+!zavora-erp-ui/public/marketing/*.png
 
 # Local DB backups (contain real tenant data — never commit)
 backups/
