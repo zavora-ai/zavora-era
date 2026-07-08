@@ -39,6 +39,7 @@ const navigation = [
   { name: 'Payments', href: '/payments', icon: CreditCard },
   { name: 'Banking', href: '/banking', icon: Landmark },
   { name: 'Reconciliation', href: '/reconciliation', icon: CheckCircle },
+  { name: 'Cash Forecast', href: '/cash-forecast', icon: BarChart3 },
   { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
 
   { divider: true, label: 'PRODUCTS & INVENTORY' },

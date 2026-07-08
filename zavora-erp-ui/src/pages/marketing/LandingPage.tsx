@@ -40,7 +40,7 @@ function Nav({ menu, setMenu }: { menu: boolean; setMenu: (v: boolean) => void }
           <Logo />
         </a>
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-          <a href="#amos" className="hover:text-slate-900">Amos AI</a>
+          <Link to="/amos-ai" className="hover:text-slate-900">Amos AI</Link>
           <a href="#modules" className="hover:text-slate-900">Modules</a>
           <a href="#compliance" className="hover:text-slate-900">Kenya-ready</a>
           <a href="#pricing" className="hover:text-slate-900">Pricing</a>
@@ -53,7 +53,7 @@ function Nav({ menu, setMenu }: { menu: boolean; setMenu: (v: boolean) => void }
       </div>
       {menu && (
         <div className="md:hidden border-t border-slate-100 px-5 py-4 space-y-3 bg-white">
-          <a href="#amos" className="block text-slate-700" onClick={() => setMenu(false)}>Amos AI</a>
+          <Link to="/amos-ai" className="block text-slate-700" onClick={() => setMenu(false)}>Amos AI</Link>
           <a href="#modules" className="block text-slate-700" onClick={() => setMenu(false)}>Modules</a>
           <a href="#pricing" className="block text-slate-700" onClick={() => setMenu(false)}>Pricing</a>
           <Link to="/login" className="block font-semibold text-indigo-600">Sign in →</Link>
@@ -140,7 +140,7 @@ function AmosSpotlight() {
     'Records supplier bills and customer invoices from a sentence',
     'Reconciles the bank and M-Pesa till automatically',
     'Runs payroll and prepares KRA returns on the deadline calendar',
-    'Works while you sleep — morning briefings, eTIMS sweeps and month-end packs, on schedule',
+    'Acts before you ask — morning briefings, eTIMS sweeps, month-end packs, on schedule',
     'Answers "how is the business doing?" in plain language',
   ];
   return (
@@ -154,7 +154,7 @@ function AmosSpotlight() {
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Amos does the accounting. You run the business.</h2>
           <p className="mt-5 text-slate-300 text-lg">
             Amos lives inside your ledger — not a bolt-on chatbot. It sees every invoice, bill and payment, and
-            takes action with your approval. It's like hiring a qualified accountant who never sleeps.
+            takes action with your approval. A qualified accountant that never sleeps — already part of your ERP.
           </p>
           <ul className="mt-7 space-y-3">
             {bullets.map((b) => (
@@ -164,9 +164,14 @@ function AmosSpotlight() {
               </li>
             ))}
           </ul>
-          <Link to={SIGNUP} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white text-slate-900 font-semibold px-6 py-3 hover:bg-slate-100 transition">
-            Try Amos free <ArrowRight className="w-4 h-4" />
-          </Link>
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <Link to={SIGNUP} className="inline-flex items-center gap-2 rounded-full bg-white text-slate-900 font-semibold px-6 py-3 hover:bg-slate-100 transition">
+              Try Amos free <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link to="/amos-ai" className="inline-flex items-center gap-2 font-semibold text-indigo-300 hover:text-indigo-200 transition">
+              Everything Amos can do <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
         <div className="relative">
           <div className="absolute -inset-3 bg-gradient-to-tr from-indigo-600/40 to-fuchsia-600/30 blur-2xl rounded-3xl" />
