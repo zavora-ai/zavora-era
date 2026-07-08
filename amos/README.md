@@ -130,13 +130,22 @@ image (both compose files already use it).
 | `GET /` | The Amos web app (`?embed=1` hides its header for the ERP iframe) |
 | `GET /ws` | Realtime session (audio + JSON control) |
 | `GET /api/snapshot` | Live business snapshot from the ledger |
-| `GET /api/tasks` · `GET /api/showcase` · `GET /api/skills` | Panel state |
+| `GET /api/skills` · `GET /api/context` | Skills catalog · entity context |
+| `GET /api/memories` · `DELETE /api/memories/forget?query=` | Memory listing (newest first) · correction |
+| `GET /api/sessions` · `GET /api/sessions/{id}` | Past-session list · full transcript |
 | `GET /showcase/<file>` | Evidence screenshots |
+
+Every `/api/*` endpoint and `/showcase/*` requires the user's ERP access token
+(`Authorization: Bearer …`, or `?token=` for image loads); requests without a
+valid token for the served entity get `401`. `AMOS_DEV_ALLOW_UNAUTH=1` (dev
+only) skips this. Tasks and evidence are per-session — they arrive over the
+session's own websocket, not REST.
 
 WS JSON from the client: `{"type":"text"|"interrupt"|"commit_audio"|"create_response", ...}`.
 From the server: `connected`, `text_delta`, `transcript`, `input_transcript`,
 `speech_started/stopped`, `response_done`, `tool_call`, `tasks`, `showcase`,
-`skill`, `error`. Binary frames are PCM audio in both directions.
+`skill`, `memory`, `memory_removed`, `suggestions`, `error`. Binary frames are
+PCM audio in both directions.
 
 ## Production deployment
 

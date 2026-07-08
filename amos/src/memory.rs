@@ -121,9 +121,38 @@ impl AmosMemory {
         Ok(Arc::new(service))
     }
 
+    /// Cosine similarity above which a new memory of the same kind is treated
+    /// as a duplicate of an existing one and skipped. Guards against months of
+    /// session distillations re-storing the same business facts in slightly
+    /// different words, which would crowd out diversity in the prompt block.
+    const DEDUP_SCORE: f32 = 0.9;
+
     /// Store a memory. Lessons are scoped to their skill's project so they
-    /// surface when that skill is next used.
-    pub async fn remember(&self, kind: MemoryKind, text: &str, skill: Option<&str>) -> Result<()> {
+    /// surface when that skill is next used. Near-duplicates of an existing
+    /// same-kind memory are silently skipped (returns `Ok(false)`).
+    pub async fn remember(&self, kind: MemoryKind, text: &str, skill: Option<&str>) -> Result<bool> {
+        // Dedup: if a same-kind memory this similar already exists, keep the
+        // original (its timestamp preserves "first learned") and skip the copy.
+        // Session summaries are exempt — each session is its own record.
+        if kind != MemoryKind::Session {
+            if let Ok(existing) = self
+                .search(text, skill, 3, Some(Self::DEDUP_SCORE))
+                .await
+            {
+                // Postgres applies min_score as real cosine similarity; the
+                // in-memory fallback keyword-matches and ignores it, so there
+                // we only trust an (effectively) exact text match.
+                let is_dup = |i: &&MemoryItem| {
+                    i.kind == kind.author()
+                        && (self.backend == "postgres"
+                            || normalize(&i.text) == normalize(text))
+                };
+                if let Some(dup) = existing.iter().find(is_dup) {
+                    info!("memory: skipping near-duplicate {kind:?} (existing: {})", dup.text);
+                    return Ok(false);
+                }
+            }
+        }
         let entry = MemoryEntry {
             content: Content::new("assistant").with_text(text),
             author: kind.author().to_string(),
@@ -140,7 +169,28 @@ impl AmosMemory {
                 self.service.add_entry(APP, &self.user_scope, entry).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             }
         }
-        Ok(())
+        Ok(true)
+    }
+
+    /// Delete memories matching the given text (full-text match). With `skill`,
+    /// deletes within that skill's lesson project instead of the global pool.
+    /// Returns how many entries were removed. This is the correction path: a
+    /// wrong fact or stale lesson must not live forever.
+    pub async fn forget(&self, query: &str, skill: Option<&str>) -> Result<u64> {
+        let n = match skill {
+            Some(skill) => self
+                .service
+                .delete_entries_in_project(APP, &self.user_scope, &skill_project(skill), query)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+            None => self
+                .service
+                .delete_entries(APP, &self.user_scope, query)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+        };
+        info!("memory: forgot {n} entr{} matching query", if n == 1 { "y" } else { "ies" });
+        Ok(n)
     }
 
     /// Semantic search. With `skill`, project-scoped lessons for that skill
@@ -178,20 +228,18 @@ impl AmosMemory {
     pub async fn profile_block(&self, limit: usize) -> String {
         let mut lines = Vec::new();
         // Broad query: pgvector still ranks by similarity, and the in-memory
-        // backend keyword-matches; either way we only surface `profile` and
-        // the freshest `session` entries.
+        // backend keyword-matches; either way we only surface `profile` facts.
         if let Ok(items) = self.search("Zavora business facts preferences history", None, limit * 3, None).await {
-            let mut sessions: Vec<&MemoryItem> = Vec::new();
             for item in &items {
-                match item.kind.as_str() {
-                    "profile" if lines.len() < limit => {
-                        lines.push(format!("- {}", item.text));
-                    }
-                    "session" => sessions.push(item),
-                    _ => {}
+                if item.kind == "profile" && lines.len() < limit {
+                    lines.push(format!("- {}", item.text));
                 }
             }
-            if let Some(latest) = sessions.iter().max_by_key(|i| i.at) {
+        }
+        // "Last session" by actual recency — a semantic query can rank the
+        // latest summary out of its window after months of accumulation.
+        if let Ok(recent) = self.service.list_recent(APP, &self.user_scope, 50).await {
+            if let Some(latest) = recent.iter().map(to_item_ref).find(|i| i.kind == "session") {
                 lines.push(format!("- Last session ({}): {}", latest.at.format("%d %b %Y"), latest.text));
             }
         }
@@ -217,14 +265,14 @@ impl AmosMemory {
         }
     }
 
-    /// Recent memories for the UI panel (best-effort, keyword-broad).
+    /// Most recent memories for the UI panel — a true recency listing
+    /// (newest first), so the user can audit what Amos actually knows.
     pub async fn recent(&self, limit: usize) -> Vec<MemoryItem> {
-        let mut items = self
-            .search("Zavora business lesson session preference fact", None, limit, None)
+        self.service
+            .list_recent(APP, &self.user_scope, limit)
             .await
-            .unwrap_or_default();
-        items.sort_by_key(|i| std::cmp::Reverse(i.at));
-        items
+            .map(|entries| entries.into_iter().map(to_item).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -233,5 +281,68 @@ fn to_item(e: MemoryEntry) -> MemoryItem {
         kind: e.author.clone(),
         text: adk_memory::text::extract_text(&e.content),
         at: e.timestamp,
+    }
+}
+
+fn to_item_ref(e: &MemoryEntry) -> MemoryItem {
+    MemoryItem {
+        kind: e.author.clone(),
+        text: adk_memory::text::extract_text(&e.content),
+        at: e.timestamp,
+    }
+}
+
+/// Case/whitespace/punctuation-insensitive form for exact-duplicate checks.
+fn normalize(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_memory(scope: &str) -> AmosMemory {
+        AmosMemory {
+            service: Arc::new(InMemoryMemoryService::new()),
+            user_scope: scope.to_string(),
+            backend: "in-memory",
+        }
+    }
+
+    #[tokio::test]
+    async fn dedup_skips_exact_duplicates_but_keeps_new_facts() {
+        let mem = in_memory("t1");
+        assert!(mem.remember(MemoryKind::Profile, "The company banks with Equity Bank.", None).await.unwrap());
+        // Same fact, different case/punctuation → skipped.
+        assert!(!mem.remember(MemoryKind::Profile, "the company banks with Equity Bank", None).await.unwrap());
+        // Shares words ("company") but is a different fact → stored. This is
+        // the in-memory false-positive guard; postgres uses real cosine.
+        assert!(mem.remember(MemoryKind::Profile, "The company registered for VAT in 2020.", None).await.unwrap());
+        assert_eq!(mem.recent(10).await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn forget_removes_matching_memories() {
+        let mem = in_memory("t2");
+        mem.remember(MemoryKind::Profile, "Craig prefers monthly statements emailed as PDF.", None).await.unwrap();
+        let removed = mem.forget("Craig monthly statements", None).await.unwrap();
+        assert_eq!(removed, 1);
+        assert!(mem.recent(10).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recent_lists_newest_first() {
+        let mem = in_memory("t3");
+        mem.remember(MemoryKind::Profile, "Fact alpha about banking.", None).await.unwrap();
+        mem.remember(MemoryKind::Lesson, "Lesson beta about invoices.", None).await.unwrap();
+        let items = mem.recent(10).await;
+        assert_eq!(items.len(), 2);
+        assert!(items[0].at >= items[1].at);
     }
 }

@@ -3,7 +3,7 @@
 
 use crate::mcp;
 use crate::persona;
-use crate::state::{AmosTask, AppState, ShowcaseStep, TaskStatus};
+use crate::state::{AmosTask, AppState, SessionState, ShowcaseStep, TaskStatus};
 use adk_realtime::config::{RealtimeConfig, ToolDefinition};
 use adk_realtime::events::ToolCall;
 use adk_realtime::integration::{DefaultToolContextFactory, SessionIdentity, ToolBridgeAdapter};
@@ -17,6 +17,7 @@ use tracing::{info, warn};
 
 pub async fn build_runner(
     state: &Arc<AppState>,
+    session: &Arc<SessionState>,
     principal: Arc<crate::auth::Principal>,
     attachments: crate::subagents::AttachmentStore,
     clock: crate::clock::SharedClock,
@@ -83,13 +84,14 @@ pub async fn build_runner(
     }
 
     builder = builder
-        .tool_arc(plan_tasks_def(), Arc::new(PlanTasks { state: state.clone() }))
-        .tool_arc(update_task_def(), Arc::new(UpdateTask { state: state.clone() }))
-        .tool_arc(use_skill_def(), Arc::new(UseSkill { state: state.clone() }))
+        .tool_arc(plan_tasks_def(), Arc::new(PlanTasks { session: session.clone() }))
+        .tool_arc(update_task_def(), Arc::new(UpdateTask { state: state.clone(), session: session.clone() }))
+        .tool_arc(use_skill_def(), Arc::new(UseSkill { state: state.clone(), session: session.clone() }))
         .tool_arc(remember_def(), Arc::new(Remember { state: state.clone() }))
         .tool_arc(recall_def(), Arc::new(Recall { state: state.clone() }))
+        .tool_arc(forget_def(), Arc::new(Forget { state: state.clone() }))
         .tool_arc(erp_login_def(), Arc::new(ErpLoginTool { state: state.clone(), factory: factory.clone() }))
-        .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), factory: factory.clone() }))
+        .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), session: session.clone(), factory: factory.clone() }))
         // Specialist sub-agents: read attached PDFs/images (every plan).
         .tool_arc(
             crate::subagents::analyze_attachment_def(),
@@ -236,7 +238,7 @@ fn plan_tasks_def() -> ToolDefinition {
 }
 
 struct PlanTasks {
-    state: Arc<AppState>,
+    session: Arc<SessionState>,
 }
 
 #[async_trait]
@@ -252,8 +254,8 @@ impl ToolHandler for PlanTasks {
             .map(|(i, t)| AmosTask { id: i as u32 + 1, title: t.clone(), status: TaskStatus::Pending, note: None })
             .collect();
         info!("📋 plan_tasks: {} tasks", tasks.len());
-        *self.state.tasks.write().await = tasks;
-        self.state.push_tasks().await;
+        *self.session.tasks.write().await = tasks;
+        self.session.push_tasks().await;
         Ok(json!({"status": "ok", "task_count": titles.len(), "message": "Task list is now visible to the user."}))
     }
 }
@@ -282,6 +284,7 @@ fn update_task_def() -> ToolDefinition {
 
 struct UpdateTask {
     state: Arc<AppState>,
+    session: Arc<SessionState>,
 }
 
 #[async_trait]
@@ -298,7 +301,7 @@ impl ToolHandler for UpdateTask {
         let mut found = false;
         let mut failed_title = None;
         {
-            let mut tasks = self.state.tasks.write().await;
+            let mut tasks = self.session.tasks.write().await;
             if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
                 task.status = status;
                 if status == TaskStatus::Failed {
@@ -310,16 +313,17 @@ impl ToolHandler for UpdateTask {
                 found = true;
             }
         }
-        self.state.push_tasks().await;
+        self.session.push_tasks().await;
 
         // Failures are how Amos learns: file the note as a lesson under the
         // skill in play so the next run of that playbook sees it.
         if let (Some(title), Some(note)) = (failed_title, note) {
             let state = self.state.clone();
+            let session = self.session.clone();
             tokio::spawn(async move {
-                let skill = state.active_skill.read().await.clone();
+                let skill = session.active_skill.read().await.clone();
                 let text = format!("While doing '{title}': {note}");
-                if state.memory.remember(crate::memory::MemoryKind::Lesson, &text, skill.as_deref()).await.is_ok() {
+                if matches!(state.memory.remember(crate::memory::MemoryKind::Lesson, &text, skill.as_deref()).await, Ok(true)) {
                     info!("🧠 auto-lesson filed{}", skill.as_deref().map(|s| format!(" under {s}")).unwrap_or_default());
                     state.push_json(json!({"type": "memory", "kind": "lesson", "text": text}));
                 }
@@ -352,6 +356,7 @@ fn use_skill_def() -> ToolDefinition {
 
 struct UseSkill {
     state: Arc<AppState>,
+    session: Arc<SessionState>,
 }
 
 #[async_trait]
@@ -366,8 +371,8 @@ impl ToolHandler for UseSkill {
                 if let Some(lessons) = self.state.memory.lessons_block(&name, &block).await {
                     block.push_str(&lessons);
                 }
-                *self.state.active_skill.write().await = Some(name.clone());
-                self.state.push_json(json!({"type": "skill", "name": name}));
+                *self.session.active_skill.write().await = Some(name.clone());
+                self.session.push_json(json!({"type": "skill", "name": name}));
                 Ok(json!({"skill": name, "playbook": block, "instruction": "Follow this workflow exactly — tool order, checks, and confirmation gates."}))
             }
             None => Ok(json!({
@@ -422,11 +427,12 @@ impl ToolHandler for Remember {
             return Ok(json!({"error": "I won't store passwords, keys, or other secrets in memory."}));
         }
         match self.state.memory.remember(kind, &content, skill.as_deref()).await {
-            Ok(()) => {
+            Ok(true) => {
                 info!("🧠 remember [{kind:?}]: {content}");
                 self.state.push_json(json!({"type": "memory", "kind": kind, "text": content}));
                 Ok(json!({"status": "remembered"}))
             }
+            Ok(false) => Ok(json!({"status": "already_known", "message": "A very similar memory already exists; nothing stored."})),
             Err(e) => {
                 warn!("remember failed: {e}");
                 Ok(json!({"error": e.to_string()}))
@@ -466,6 +472,50 @@ impl ToolHandler for Recall {
         match self.state.memory.recall(query, skill, 5).await {
             Ok(items) if items.is_empty() => Ok(json!({"memories": [], "note": "nothing relevant remembered"})),
             Ok(items) => Ok(json!({"memories": items})),
+            Err(e) => Ok(json!({"error": e.to_string()})),
+        }
+    }
+}
+
+fn forget_def() -> ToolDefinition {
+    ToolDefinition {
+        name: "forget".into(),
+        description: Some(
+            "Delete stored memories that are wrong or outdated — use when the user corrects \
+             a fact you had remembered, or a lesson no longer applies. Pass the distinctive \
+             words of the memory to remove (recall it first to quote it accurately)."
+                .into(),
+        ),
+        parameters: Some(json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Distinctive words of the memory to delete (matches full-text)"},
+                "skill": {"type": "string", "description": "For lessons: the skill the lesson is filed under"}
+            },
+            "required": ["query"]
+        })),
+    }
+}
+
+struct Forget {
+    state: Arc<AppState>,
+}
+
+#[async_trait]
+impl ToolHandler for Forget {
+    async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
+        let query = call.arguments["query"].as_str().unwrap_or("");
+        let skill = call.arguments["skill"].as_str();
+        if query.trim().is_empty() {
+            return Ok(json!({"error": "query must not be empty"}));
+        }
+        match self.state.memory.forget(query, skill).await {
+            Ok(0) => Ok(json!({"status": "nothing_matched", "message": "No stored memory matched those words."})),
+            Ok(n) => {
+                info!("🧠 forget: removed {n} memories matching '{query}'");
+                self.state.push_json(json!({"type": "memory_removed", "count": n}));
+                Ok(json!({"status": "forgotten", "removed": n}))
+            }
             Err(e) => Ok(json!({"error": e.to_string()})),
         }
     }
@@ -665,8 +715,13 @@ fn newest_recent_png(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         .map(|(_, path)| path)
 }
 
+/// Ceiling on evidence cards kept per session — a marathon session can't grow
+/// the feed (and the UI's DOM) without bound.
+const SHOWCASE_SESSION_CAP: usize = 50;
+
 struct ShowcaseStepTool {
     state: Arc<AppState>,
+    session: Arc<SessionState>,
     factory: Arc<dyn ToolContextFactory>,
 }
 
@@ -694,7 +749,7 @@ impl ToolHandler for ShowcaseStepTool {
         use base64::Engine as _;
 
         let caption = call.arguments["caption"].as_str().unwrap_or("Showcase").to_string();
-        let step_id = self.state.showcase.read().await.len() as u32 + 1;
+        let step_id = self.session.showcase.read().await.len() as u32 + 1;
         let filename = format!("step-{step_id}-{}.png", chrono::Utc::now().timestamp());
         let path = self.state.showcase_dir.join(&filename);
 
@@ -741,8 +796,15 @@ impl ToolHandler for ShowcaseStepTool {
             image_url: image_url.clone(),
             at: chrono::Utc::now(),
         };
-        self.state.showcase.write().await.push(step.clone());
-        self.state.push_json(json!({"type": "showcase", "step": step}));
+        {
+            let mut feed = self.session.showcase.write().await;
+            feed.push(step.clone());
+            if feed.len() > SHOWCASE_SESSION_CAP {
+                let excess = feed.len() - SHOWCASE_SESSION_CAP;
+                feed.drain(..excess);
+            }
+        }
+        self.session.push_json(json!({"type": "showcase", "step": step}));
         info!("📸 showcase_step #{step_id}: {caption}");
 
         Ok(json!({

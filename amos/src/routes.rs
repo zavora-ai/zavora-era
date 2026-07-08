@@ -2,12 +2,13 @@
 //! the realtime WebSocket (binary = PCM audio both ways, JSON = everything else).
 
 use crate::agent;
-use crate::state::{AppState, TaskStatus};
+use crate::state::{AppState, SessionState, TaskStatus};
 use axum::{
     Json, Router,
-    extract::{State, WebSocketUpgrade, ws},
-    response::{Html, IntoResponse},
-    routing::get,
+    extract::{Path, Query, State, WebSocketUpgrade, ws},
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+    routing::{delete, get},
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -15,29 +16,59 @@ use tower_http::services::ServeDir;
 use tracing::{error, info, warn};
 
 pub fn create_router(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/", get(serve_index))
-        .route("/api/tasks", get(get_tasks))
-        .route("/api/showcase", get(get_showcase))
+    // The panel REST endpoints and showcase images carry real ledger data and
+    // months of distilled business facts — every one of them requires the same
+    // JWT the websocket handshake does. Only the page shell and the websocket
+    // (which runs its own auth-first handshake) are open.
+    let protected = Router::new()
         .route("/api/snapshot", get(get_snapshot))
         .route("/api/skills", get(get_skills))
         .route("/api/memories", get(get_memories))
+        .route("/api/memories/forget", delete(delete_memories))
         .route("/api/context", get(get_context))
-        .route("/ws", get(ws_handler))
+        .route("/api/sessions", get(get_sessions))
+        .route("/api/sessions/{id}", get(get_session_transcript))
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), require_auth));
+
+    Router::new()
+        .route("/", get(serve_index))
+        .route("/ws", get(ws_handler))
+        .merge(protected)
         .with_state(state)
+}
+
+/// Bearer (or `?token=` for `<img>` loads, which can't set headers) auth on
+/// the REST surface. Verifies against the same served-entity boundary as the
+/// websocket. `AMOS_DEV_ALLOW_UNAUTH=1` keeps standalone dev working.
+async fn require_auth(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let dev_allow = std::env::var("AMOS_DEV_ALLOW_UNAUTH").is_ok_and(|v| v == "1" || v == "true");
+    let bearer = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned);
+    // JWTs use only URL-safe characters, so a plain split is sufficient here.
+    let query_token = req.uri().query().and_then(|q| {
+        q.split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .find(|(k, _)| *k == "token")
+            .map(|(_, v)| v.to_string())
+    });
+    match bearer.or(query_token) {
+        Some(token) if state.verifier.verify(&token).is_ok() => next.run(req).await,
+        _ if dev_allow => next.run(req).await,
+        _ => (StatusCode::UNAUTHORIZED, "sign in to the ERP to use Amos").into_response(),
+    }
 }
 
 async fn serve_index() -> Html<String> {
     Html(include_str!("../assets/index.html").to_string())
-}
-
-async fn get_tasks(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(state.tasks.read().await.clone())
-}
-
-async fn get_showcase(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(state.showcase.read().await.clone())
 }
 
 async fn get_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -46,6 +77,45 @@ async fn get_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 
 async fn get_memories(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(state.memory.recent(20).await)
+}
+
+#[derive(serde::Deserialize)]
+struct ForgetParams {
+    query: String,
+}
+
+/// The user's correction path in the memory panel: delete memories matching
+/// the given text.
+async fn delete_memories(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ForgetParams>,
+) -> impl IntoResponse {
+    match state.memory.forget(&params.query, None).await {
+        Ok(n) => Json(serde_json::json!({"removed": n})).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Past sessions (metadata + preview), newest first.
+async fn get_sessions(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match &state.history {
+        Some(h) => Json(h.list(20).await).into_response(),
+        None => Json(Vec::<crate::history::SessionMeta>::new()).into_response(),
+    }
+}
+
+/// One past session's full transcript.
+async fn get_session_transcript(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<uuid::Uuid>,
+) -> impl IntoResponse {
+    match &state.history {
+        Some(h) => match h.transcript(id).await {
+            Some(t) => Json(serde_json::json!({"id": id, "transcript": t})).into_response(),
+            None => (StatusCode::NOT_FOUND, "no such session").into_response(),
+        },
+        None => (StatusCode::NOT_FOUND, "session history is not enabled").into_response(),
+    }
 }
 
 /// Entity context for the UI header + entity-aware opening suggestions:
@@ -233,13 +303,19 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
             .await;
     }
     let principal = Arc::new(principal);
+    let session_started = chrono::Utc::now();
 
     // Per-session store for files the user attaches in the chat. The ingest loop
     // below writes to it; the `analyze_attachment` sub-agent tool reads from it.
     let attachments = crate::subagents::new_store();
 
+    // Per-session panel state: this conversation's workplan, evidence feed and
+    // active skill. Never shared across sessions — two people (or two tabs)
+    // each see only their own plan and evidence.
+    let session = Arc::new(SessionState::new());
+
     // Fresh runner per browser session, scoped to this principal.
-    let runner = match agent::build_runner(&state, principal.clone(), attachments.clone(), clock.clone(), entitlements).await {
+    let runner = match agent::build_runner(&state, &session, principal.clone(), attachments.clone(), clock.clone(), entitlements).await {
         Ok(r) => Arc::new(r),
         Err(e) => {
             error!("Failed to build runner: {e}");
@@ -267,22 +343,29 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
 
     let (tx, mut rx) = mpsc::channel::<ws::Message>(64);
 
-    // Session transcript for the end-of-session memory distillation:
-    // (buffer, last_speaker) — a speaker tag is inserted when the voice
-    // changes so the summarizer can follow the dialogue. Capped so a long
-    // session can't grow unbounded.
+    // Session transcript for the end-of-session memory distillation and the
+    // history store: (buffer, last_speaker) — a speaker tag is inserted when
+    // the voice changes so the summarizer can follow the dialogue. A ROLLING
+    // window: on overflow the OLDEST text is dropped, keeping the tail — the
+    // end of a long session is what the summarizer and follow-up generator
+    // need most (the old cap kept the greeting and lost the conclusions).
     let transcript = Arc::new(tokio::sync::Mutex::new((String::new(), ' ')));
     const TRANSCRIPT_CAP: usize = 30_000;
     async fn scribe(t: &tokio::sync::Mutex<(String, char)>, speaker: char, text: &str) {
         let mut guard = t.lock().await;
-        if guard.0.len() >= TRANSCRIPT_CAP {
-            return;
-        }
         if guard.1 != speaker {
             guard.0.push_str(if speaker == 'u' { "\n[owner]: " } else { "\n[amos]: " });
             guard.1 = speaker;
         }
         guard.0.push_str(text);
+        if guard.0.len() > TRANSCRIPT_CAP {
+            // Trim to the cap from the front, on a char boundary.
+            let mut cut = guard.0.len() - TRANSCRIPT_CAP;
+            while !guard.0.is_char_boundary(cut) {
+                cut += 1;
+            }
+            guard.0.drain(..cut);
+        }
     }
 
     // Task: browser → Gemini (audio + control/chat messages).
@@ -389,7 +472,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // Task: Gemini → browser (audio, transcripts, tool events).
     let runner_recv = runner.clone();
     let tx_events = tx.clone();
-    let state_recv = state.clone();
+    let session_recv = session.clone();
     let transcript_recv = transcript.clone();
     // Gemini Live tends to end its turn mid-workplan, narrating the next step
     // instead of calling its tool. When a turn completes with unfinished tasks,
@@ -424,7 +507,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                         )),
                         ServerEvent::ResponseDone { .. } => {
                             let incomplete = {
-                                let tasks = state_recv.tasks.read().await;
+                                let tasks = session_recv.tasks.read().await;
                                 !tasks.is_empty()
                                     && tasks.iter().any(|t| matches!(t.status, TaskStatus::Pending | TaskStatus::InProgress))
                             };
@@ -432,11 +515,11 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                 && auto_continues.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
                             {
                                 let runner = runner_recv.clone();
-                                let state = state_recv.clone();
+                                let session = session_recv.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
                                     let still_incomplete = {
-                                        let tasks = state.tasks.read().await;
+                                        let tasks = session.tasks.read().await;
                                         tasks.iter().any(|t| matches!(t.status, TaskStatus::Pending | TaskStatus::InProgress))
                                     };
                                     if still_incomplete {
@@ -527,12 +610,23 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
         }
     });
 
-    // Task: panel pushes (tasks/showcase) → browser.
+    // Task: tenant-wide pushes (memory events) → browser.
     let mut push_rx = state.push.subscribe();
     let tx_push = tx.clone();
     let push_handle = tokio::spawn(async move {
         while let Ok(json) = push_rx.recv().await {
             if tx_push.send(ws::Message::Text(json.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Task: THIS session's panel pushes (tasks/showcase/skill) → browser.
+    let mut session_rx = session.push.subscribe();
+    let tx_session = tx.clone();
+    let session_push_handle = tokio::spawn(async move {
+        while let Ok(json) = session_rx.recv().await {
+            if tx_session.send(ws::Message::Text(json.into())).await.is_err() {
                 break;
             }
         }
@@ -552,12 +646,25 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
         _ = recv_handle => {}
         _ = forward_handle => {}
         _ = push_handle => {}
+        _ = session_push_handle => {}
     }
 
     let _ = runner.close().await;
     info!("🔇 Amos session closed");
 
-    // Distill the session into long-term memory (best-effort, off-thread).
     let session_transcript = transcript.lock().await.0.clone();
+
+    // Persist the conversation — the durable record behind "Past sessions"
+    // (best-effort, off-thread).
+    if let Some(history) = state.history.clone() {
+        let session_id = uuid::Uuid::new_v4();
+        let user_id = principal.user_id;
+        let t = session_transcript.clone();
+        tokio::spawn(async move {
+            history.save(session_id, user_id, session_started, &t).await;
+        });
+    }
+
+    // Distill the session into long-term memory (best-effort, off-thread).
     crate::summarizer::spawn(state.clone(), session_transcript);
 }

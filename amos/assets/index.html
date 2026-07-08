@@ -277,6 +277,57 @@
   .lightbox img { max-width: 100%; max-height: 88vh; border-radius: 10px; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
   .lightbox figcaption { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; color: #d7dae0; font-size: 13px; }
 
+  /* ══ Past-session transcript viewer ═══ */
+  .transcript-modal {
+    position: fixed; inset: 0; background: rgba(15,17,22,.55); backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center; padding: 40px; z-index: 65;
+  }
+  .transcript-modal.open { display: flex; }
+  .transcript-card {
+    background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-2);
+    width: min(720px, 100%); max-height: 82vh; display: flex; flex-direction: column;
+  }
+  .transcript-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 22px; border-bottom: 1px solid var(--line);
+  }
+  .transcript-head h3 { font-size: 14.5px; font-weight: 650; color: var(--ink); }
+  .transcript-close {
+    border: none; background: transparent; color: var(--ink-3); font-size: 22px;
+    line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px;
+  }
+  .transcript-close:hover { background: var(--line-soft); color: var(--ink); }
+  .transcript-body {
+    margin: 0; padding: 18px 22px; overflow-y: auto; white-space: pre-wrap;
+    font-family: inherit; font-size: 13px; line-height: 1.65; color: var(--ink-2);
+  }
+  .sess-row { cursor: pointer; }
+  .sess-row:hover .log-text { color: var(--accent); }
+  .mem-del {
+    border: none; background: transparent; color: var(--ink-4); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 0 0 6px; flex-shrink: 0; visibility: hidden;
+  }
+  .log-row:hover .mem-del { visibility: visible; }
+  .mem-del:hover { color: var(--red); }
+
+  /* ══ Markdown in Amos's replies ═══ */
+  .row-body :is(h1,h2,h3) { font-size: 13.5px; font-weight: 680; margin: 10px 0 4px; }
+  .row-body p { margin: 6px 0; }
+  .row-body ul, .row-body ol { margin: 6px 0; padding-left: 20px; }
+  .row-body li { margin: 2px 0; }
+  .row-body code {
+    font-family: var(--mono); font-size: 12px; background: var(--line-soft);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  .row-body pre {
+    background: var(--line-soft); border-radius: 8px; padding: 10px 12px;
+    overflow-x: auto; margin: 8px 0;
+  }
+  .row-body pre code { background: none; padding: 0; }
+  .row-body table { border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
+  .row-body th, .row-body td { border: 1px solid var(--line); padding: 5px 10px; text-align: left; }
+  .row-body th { background: var(--line-soft); font-weight: 650; }
+
   /* ══ Honest gate (Amos not provisioned for this tenant) ═══ */
   .gate {
     position: fixed; inset: 0; background: var(--bg);
@@ -413,6 +464,11 @@
       <div class="log" id="memList"><div class="panel-empty">Facts and lessons Amos has learned appear here — he carries them across sessions.</div></div>
     </div>
 
+    <div class="panel-section">
+      <div class="panel-head"><h3>Past sessions</h3><span class="meta" id="sessMeta"></span></div>
+      <div class="log" id="sessList"><div class="panel-empty">Previous conversations with Amos are kept here for your records.</div></div>
+    </div>
+
     <div class="panel-section" style="border-bottom:none">
       <div class="panel-head"><h3>Activity</h3></div>
       <div class="log" id="log"><div class="panel-empty">A timestamped record of every action Amos takes.</div></div>
@@ -441,6 +497,17 @@
   <img id="lightboxImg" alt="">
   <figcaption id="lightboxCap"></figcaption>
 </figure>
+
+<!-- Past-session transcript viewer -->
+<div class="transcript-modal" id="transcriptModal">
+  <div class="transcript-card">
+    <div class="transcript-head">
+      <h3 id="transcriptTitle">Session transcript</h3>
+      <button class="transcript-close" id="transcriptClose" title="Close">×</button>
+    </div>
+    <pre class="transcript-body" id="transcriptBody"></pre>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -475,11 +542,32 @@ function applyEntitlements() {
   const hint = $('composerHint');
   if (hint && !voice) hint.textContent = 'Amos reads and writes the live ledger. Voice chat is on the Business plan — type below to get started.';
 }
+// The panel REST endpoints require the same token as the websocket, so boot
+// waits for it: resolved when the parent posts amos-auth, immediately when
+// standalone (dev, where the server allows unauthenticated), or after a short
+// timeout as a fallback.
+let tokenReadyResolve;
+const tokenReady = new Promise(res => { tokenReadyResolve = res; });
+if (window.parent === window) tokenReadyResolve();
+setTimeout(() => tokenReadyResolve(), 4000);
+
+// fetch() with the user's token. All /api/* endpoints require it.
+function authFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers, authToken ? { Authorization: `Bearer ${authToken}` } : {});
+  return fetch(url, Object.assign({}, opts, { headers }));
+}
+// <img> loads can't carry headers — append the token as a query param
+// (the server accepts either).
+function tokUrl(url) {
+  return authToken ? `${url}${url.includes('?') ? '&' : '?'}token=${authToken}` : url;
+}
+
 window.addEventListener('message', (e) => {
   // Same-origin embed in prod; dev cross-origin (:3000 → :8090). Accept the
   // token from the framing parent only.
   if (e.data && e.data.type === 'amos-auth' && typeof e.data.token === 'string') {
     authToken = e.data.token;
+    tokenReadyResolve();
     // The shell also forwards the user's timezone + work-as-of date.
     if (typeof e.data.timezone === 'string') sessionContext.timezone = e.data.timezone;
     sessionContext.work_date = (typeof e.data.work_date === 'string' && e.data.work_date) ? e.data.work_date : null;
@@ -557,10 +645,60 @@ function addMemory(item, prepend) {
   const row = document.createElement('div');
   row.className = 'log-row';
   const color = MEM_KIND_STYLE[item.kind] || 'var(--ink-4)';
-  row.innerHTML = `<span class="log-time" style="color:${color}">${esc(item.kind)}</span><span class="log-text">${esc(item.text)}</span>`;
+  row.innerHTML = `<span class="log-time" style="color:${color}">${esc(item.kind)}</span><span class="log-text">${esc(item.text)}</span><button class="mem-del" title="Forget this memory">×</button>`;
+  // The correction path: a wrong memory must be deletable, not permanent.
+  row.querySelector('.mem-del').onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm('Forget this memory? Amos will no longer recall it.')) return;
+    try {
+      const res = await authFetch(`${BASE}/api/memories/forget?query=${encodeURIComponent(item.text)}`, { method: 'DELETE' });
+      if (res.ok) loadMemories();
+    } catch (_) { /* leave the row; nothing was deleted */ }
+  };
   if (prepend) el.prepend(row); else el.appendChild(row);
   while (el.children.length > 20) el.removeChild(el.lastChild);
 }
+
+async function loadMemories() {
+  try {
+    const mems = await authFetch(`${BASE}/api/memories`).then(r => r.json());
+    const el = $('memList');
+    el.innerHTML = mems.length ? '' : '<div class="panel-empty">Facts and lessons Amos has learned appear here — he carries them across sessions.</div>';
+    $('memMeta').textContent = mems.length ? mems.length + (mems.length === 1 ? ' memory' : ' memories') : '';
+    for (const m of mems) addMemory(m, false);
+  } catch (_) { /* panel keeps its current state */ }
+}
+
+// ─── Past sessions panel ─────────────────────────────────
+async function loadSessions() {
+  try {
+    const sessions = await authFetch(`${BASE}/api/sessions`).then(r => r.json());
+    const el = $('sessList');
+    if (!sessions.length) return;
+    el.innerHTML = '';
+    $('sessMeta').textContent = sessions.length + (sessions.length === 1 ? ' session' : ' sessions');
+    for (const s of sessions) {
+      const row = document.createElement('div');
+      row.className = 'log-row sess-row';
+      const when = new Date(s.started_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      row.innerHTML = `<span class="log-time">${esc(when)}</span><span class="log-text">${esc(s.preview || '(voice session)')}</span>`;
+      row.onclick = () => openTranscript(s);
+      el.appendChild(row);
+    }
+  } catch (_) { /* panel stays in its empty state */ }
+}
+
+async function openTranscript(s) {
+  try {
+    const d = await authFetch(`${BASE}/api/sessions/${s.id}`).then(r => r.json());
+    const when = new Date(s.started_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    $('transcriptTitle').textContent = `Session — ${when}`;
+    $('transcriptBody').textContent = (d.transcript || '').trim();
+    $('transcriptModal').classList.add('open');
+  } catch (_) { addNotice('Could not load that session transcript.'); }
+}
+$('transcriptClose').onclick = () => $('transcriptModal').classList.remove('open');
+$('transcriptModal').onclick = (e) => { if (e.target === $('transcriptModal')) $('transcriptModal').classList.remove('open'); };
 
 function logSkill(name) {
   const log = $('log');
@@ -570,6 +708,64 @@ function logSkill(name) {
   row.className = 'log-row';
   row.innerHTML = `<span class="log-time">${now()}</span><span class="log-text">Loaded playbook: <strong>${esc(name)}</strong></span>`;
   log.prepend(row);
+}
+
+// ─── Markdown (Amos's replies) ───────────────────────────
+// Escape-first, then a conservative structural pass: headings, bold/italic,
+// inline + fenced code, lists and tables — what an accountant's answers
+// actually contain. No raw HTML from the model ever reaches the DOM.
+function mdInline(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
+}
+function renderMarkdown(raw) {
+  const lines = esc(raw).split('\n');
+  let html = '', inCode = false, listTag = null, inTable = false, headerDone = false, para = [];
+  const closePara = () => { if (para.length) { html += `<p>${mdInline(para.join('<br>'))}</p>`; para = []; } };
+  const closeList = () => { if (listTag) { html += `</${listTag}>`; listTag = null; } };
+  const closeTable = () => { if (inTable) { html += '</tbody></table>'; inTable = false; headerDone = false; } };
+  const closeBlocks = () => { closePara(); closeList(); closeTable(); };
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      closeBlocks();
+      html += inCode ? '</code></pre>' : '<pre><code>';
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) { html += line + '\n'; continue; }
+    const t = line.trim();
+    if (!t) { closeBlocks(); continue; }
+    const h = t.match(/^#{1,4}\s+(.*)/);
+    if (h) { closeBlocks(); html += `<h3>${mdInline(h[1])}</h3>`; continue; }
+    if (/^\|.*\|$/.test(t)) {
+      closePara(); closeList();
+      if (/^\|[\s:|-]+\|$/.test(t)) continue; // header separator row
+      const cells = t.slice(1, -1).split('|').map(c => mdInline(c.trim()));
+      if (!inTable) {
+        html += '<table><thead><tr>' + cells.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+        inTable = true; headerDone = true;
+        continue;
+      }
+      html += '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+      continue;
+    }
+    closeTable();
+    const li = t.match(/^([-*]|\d+\.)\s+(.*)/);
+    if (li) {
+      closePara();
+      const tag = /^\d/.test(li[1]) ? 'ol' : 'ul';
+      if (listTag !== tag) { closeList(); html += `<${tag}>`; listTag = tag; }
+      html += `<li>${mdInline(li[2])}</li>`;
+      continue;
+    }
+    closeList();
+    para.push(t);
+  }
+  if (inCode) html += '</code></pre>';
+  closeBlocks();
+  return html;
 }
 
 // ─── Thread ──────────────────────────────────────────────
@@ -586,7 +782,10 @@ function addMessage(role, text, pending = false) {
       <div class="row-head"><span class="who">${role === 'amos' ? 'Amos' : 'You'}</span><time>${now()}</time></div>
       <div class="row-body"></div>
     </div>`;
-  row.querySelector('.row-body').textContent = text;
+  // Amos's replies render as (sanitized) markdown; the user's stay plain text.
+  row._raw = text;
+  if (role === 'amos') row.querySelector('.row-body').innerHTML = renderMarkdown(text);
+  else row.querySelector('.row-body').textContent = text;
   $('threadInner').appendChild(row);
   scrollThread();
   return row;
@@ -602,10 +801,14 @@ function addNotice(text) {
 function appendPending(which, content) {
   if (which === 'user') {
     if (!pendingUser) pendingUser = addMessage('user', '', true);
-    pendingUser.querySelector('.row-body').textContent += content;
+    pendingUser._raw += content;
+    pendingUser.querySelector('.row-body').textContent = pendingUser._raw;
   } else {
     if (!pendingAmos) pendingAmos = addMessage('amos', '', true);
-    pendingAmos.querySelector('.row-body').textContent += content;
+    // Streaming: re-render the full buffer each chunk so structures (lists,
+    // tables) form correctly as they arrive.
+    pendingAmos._raw += content;
+    pendingAmos.querySelector('.row-body').innerHTML = renderMarkdown(pendingAmos._raw);
   }
   scrollThread();
 }
@@ -725,6 +928,7 @@ function handleServer(msg) {
     case 'showcase':         addEvidence(msg.step); break;
     case 'skill':            logSkill(msg.name); break;
     case 'memory':           addMemory({kind: msg.kind, text: msg.text, at: new Date().toISOString()}, true); break;
+    case 'memory_removed':   loadMemories(); break;
     case 'error':            addNotice(msg.message); break;
     case 'notice':           addNotice(msg.message); break;
     case 'suggestions':      renderFollowups(msg.items); break;
@@ -800,7 +1004,7 @@ $('interruptLink').onclick = () => {
 // ─── Snapshot panel ──────────────────────────────────────
 async function loadSnapshot() {
   try {
-    const res = await fetch(`${BASE}/api/snapshot`);
+    const res = await authFetch(`${BASE}/api/snapshot`);
     if (!res.ok) throw new Error(await res.text());
     const d = await res.json();
     const asAt = d.as_at ? new Date(d.as_at) : new Date();
@@ -865,10 +1069,10 @@ function addEvidence(step) {
   const time = new Date(step.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const card = document.createElement('div');
   card.className = 'evidence-card';
-  card.innerHTML = (step.image_url ? `<img src="${BASE}${step.image_url}" alt="" loading="lazy">` : '') +
+  card.innerHTML = (step.image_url ? `<img src="${tokUrl(BASE + step.image_url)}" alt="" loading="lazy">` : '') +
     `<div class="evidence-meta"><span class="evidence-cap">${esc(step.caption)}</span><time>${time}</time></div>`;
   if (step.image_url) card.onclick = () => {
-    $('lightboxImg').src = BASE + step.image_url;
+    $('lightboxImg').src = tokUrl(BASE + step.image_url);
     $('lightboxCap').textContent = step.caption;
     $('lightbox').classList.add('open');
   };
@@ -1005,7 +1209,7 @@ if (new URLSearchParams(location.search).get('embed') === '1') {
 // company name, currency and current fiscal year.
 async function loadContext() {
   try {
-    const c = await fetch(`${BASE}/api/context`).then(r => r.json());
+    const c = await authFetch(`${BASE}/api/context`).then(r => r.json());
     if (c && c.company) {
       $('entityInfo').innerHTML = `<strong>${esc(c.company)}</strong> · FY ${c.fiscal_year} · ${esc(c.currency || '')}`;
       const intro = $('welcomeIntro');
@@ -1032,18 +1236,16 @@ async function loadContext() {
 }
 
 async function boot() {
+  // The panel endpoints require the user's token — wait for the parent shell
+  // to hand it over (standalone dev resolves immediately).
+  await tokenReady;
   loadSnapshot();
   loadContext();
-  try {
-    const [tasks, shots, mems] = await Promise.all([
-      fetch(`${BASE}/api/tasks`).then(r => r.json()),
-      fetch(`${BASE}/api/showcase`).then(r => r.json()),
-      fetch(`${BASE}/api/memories`).then(r => r.json()),
-    ]);
-    renderTasks(tasks);
-    for (const s of shots) addEvidence(s);
-    for (const m of mems) addMemory(m, false);
-  } catch (_) { /* panels stay in their empty state */ }
+  // Workplan + evidence are per-session now — they start empty and fill over
+  // this session's websocket. Memory and past sessions are the durable,
+  // tenant-wide panels.
+  loadMemories();
+  loadSessions();
 }
 boot();
 </script>

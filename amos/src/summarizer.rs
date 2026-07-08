@@ -64,14 +64,16 @@ async fn store(state: &Arc<AppState>, distilled: Value) {
     let mut stored = 0usize;
 
     if let Some(summary) = distilled["summary"].as_str().filter(|s| !s.trim().is_empty()) {
-        if state.memory.remember(MemoryKind::Session, summary, None).await.is_ok() {
+        if matches!(state.memory.remember(MemoryKind::Session, summary, None).await, Ok(true)) {
             state.push_json(json!({"type": "memory", "kind": "session", "text": summary}));
             stored += 1;
         }
     }
     for fact in distilled["profile_facts"].as_array().into_iter().flatten() {
         if let Some(text) = fact.as_str().filter(|s| !s.trim().is_empty()) {
-            if state.memory.remember(MemoryKind::Profile, text, None).await.is_ok() {
+            // Dedup happens in remember(): re-learned facts are skipped, so
+            // months of sessions don't accrete near-identical copies.
+            if matches!(state.memory.remember(MemoryKind::Profile, text, None).await, Ok(true)) {
                 state.push_json(json!({"type": "memory", "kind": "profile", "text": text}));
                 stored += 1;
             }
@@ -80,7 +82,7 @@ async fn store(state: &Arc<AppState>, distilled: Value) {
     for lesson in distilled["lessons"].as_array().into_iter().flatten() {
         if let Some(text) = lesson["text"].as_str().filter(|s| !s.trim().is_empty()) {
             let skill = lesson["skill"].as_str().filter(|s| !s.is_empty() && *s != "null");
-            if state.memory.remember(MemoryKind::Lesson, text, skill).await.is_ok() {
+            if matches!(state.memory.remember(MemoryKind::Lesson, text, skill).await, Ok(true)) {
                 state.push_json(json!({"type": "memory", "kind": "lesson", "text": text}));
                 stored += 1;
             }
