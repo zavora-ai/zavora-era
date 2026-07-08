@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::ap::CreateSupplierCreditNoteRequest;
 use zavora_erp_core::services::supplier_credit_notes as svc;
@@ -54,7 +54,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSupplierCreditNoteRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create supplier credit note").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_supplier_credit_note(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(cn) => Ok(Json(serde_json::to_value(cn).unwrap_or_default())),

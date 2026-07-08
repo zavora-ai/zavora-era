@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_permission, require_role, AuthContext, ROLES_CREATE, ROLES_SEND};
+use crate::middleware::auth::{require_permission, AuthContext};
 use zavora_erp_core::parties::*;
 use zavora_erp_core::services::parties as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -51,7 +51,6 @@ pub async fn create_customer(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateCustomerRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create customer").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_customer(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
@@ -65,7 +64,6 @@ pub async fn update_customer(
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update customer") { return Err(err_response(e)); }
     // Update all provided fields
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE customers SET name = $1 WHERE id = $2 AND entity_id = $3")
@@ -141,7 +139,7 @@ pub async fn update_customer(
             .bind(is_active).bind(id).bind(ctx.entity_id)
             .execute(state.engine.pool()).await.ok();
     }
-    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
+    Ok::<_, axum::response::Response>(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 pub async fn customer_statement(
@@ -175,13 +173,6 @@ pub async fn send_statement(
     use zavora_erp_core::notifications::{NotificationEventType, SendNotificationRequest};
     use zavora_erp_core::types::Channel;
 
-    require_role(ROLES_SEND, &ctx, "send customer statement").map_err(|e| {
-        let status = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => axum::http::StatusCode::FORBIDDEN,
-            _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        (status, Json(serde_json::json!({ "error": e.to_string() })))
-    })?;
 
     let unprocessable = |msg: &str| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
 
@@ -336,7 +327,6 @@ pub async fn create_vendor(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateVendorRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create vendor").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_vendor(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
@@ -350,7 +340,6 @@ pub async fn update_vendor(
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update vendor") { return Err(err_response(e)); }
     if let Some(name) = patch.get("name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE vendors SET name = $1 WHERE id = $2 AND entity_id = $3")
             .bind(name).bind(id).bind(ctx.entity_id)
@@ -430,7 +419,7 @@ pub async fn update_vendor(
             .bind(is_active).bind(id).bind(ctx.entity_id)
             .execute(state.engine.pool()).await.ok();
     }
-    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
+    Ok::<_, axum::response::Response>(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 // === Employees ===
@@ -475,7 +464,6 @@ pub async fn create_employee(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateEmployeeRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create employee").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_employee(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
@@ -489,7 +477,6 @@ pub async fn update_employee(
     Path(id): Path<Uuid>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update employee") { return Err(err_response(e)); }
     if let Some(full_name) = patch.get("full_name").and_then(|v| v.as_str()) {
         sqlx::query("UPDATE employees SET full_name = $1 WHERE id = $2 AND entity_id = $3")
             .bind(full_name).bind(id).bind(ctx.entity_id)
@@ -584,5 +571,5 @@ pub async fn update_employee(
                 .bind(val).bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await.ok();
         }
     }
-    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
+    Ok::<_, axum::response::Response>(Json(serde_json::json!({ "id": id, "updated": true })))
 }

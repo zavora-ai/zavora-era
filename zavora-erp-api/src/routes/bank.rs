@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::bank::*;
 use zavora_erp_core::services::bank as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -58,7 +58,6 @@ pub async fn create_account(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateBankAccountRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create bank account").map_err(err_response)?;
     let id = uuid::Uuid::new_v4();
     let currency = req.currency.unwrap_or_else(|| "KES".to_string());
     let gl = req.gl_account.unwrap_or_else(|| "1020".to_string());
@@ -92,7 +91,6 @@ pub async fn import_statement(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ImportStatementBody>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "import bank statement").map_err(err_response)?;
     let req = ImportStatementRequest {
         entity_id: ctx.entity_id,
         bank_account_id: body.bank_account_id,
@@ -114,13 +112,12 @@ pub async fn import_statement(
 /// deterministic importer + idempotency + categorisation queue remain the single
 /// source of truth. OCR'd financial rows are never auto-committed.
 pub async fn extract_statement(
-    ctx: AuthContext,
+    _ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
     let er = |e: zavora_erp_core::ErpError| err_response(e).into_response();
-    require_role(ROLES_CREATE, &ctx, "extract bank statement").map_err(|e| er(e))?;
 
     const MAX_BYTES: usize = 8 * 1024 * 1024;
     let mut bytes: Vec<u8> = Vec::new();
@@ -214,7 +211,6 @@ pub async fn delete_account(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "delete bank account").map_err(err_response)?;
     let result = sqlx::query(
         "UPDATE bank_accounts SET is_active = false WHERE id = $1 AND entity_id = $2",
     )
@@ -233,7 +229,6 @@ pub async fn reconcile(
     State(state): State<Arc<AppState>>,
     Path(statement_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "reconcile bank statement").map_err(err_response)?;
     match svc::match_bank_lines(&state.engine, ctx.entity_id, statement_id).await {
         Ok(report) => Ok(Json(serde_json::to_value(report).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -245,7 +240,6 @@ pub async fn confirm_match(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ConfirmMatchRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "confirm bank match").map_err(err_response)?;
     match svc::confirm_match(&state.engine, ctx.entity_id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "confirmed" }))),
         Err(e) => Err(err_response(e)),

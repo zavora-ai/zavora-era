@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::transactions::*;
 use zavora_erp_core::services::transactions as svc;
 
@@ -99,7 +99,6 @@ pub async fn categorise(
     Path(id): Path<Uuid>,
     Json(req): Json<CategoriseRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "categorise transaction").map_err(err_response)?;
     let mut cat_req = req;
     cat_req.transaction_id = id;
     cat_req.categorised_by = zavora_erp_core::AgentOrUserId::User(ctx.user_id);
@@ -115,7 +114,6 @@ pub async fn split(
     Path(id): Path<Uuid>,
     Json(req): Json<SplitRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "split transaction").map_err(err_response)?;
     let mut split_req = req;
     split_req.transaction_id = id;
     match svc::split_transaction(&state.engine, ctx.entity_id, split_req).await {
@@ -129,7 +127,6 @@ pub async fn merge(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MergeRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "merge transactions").map_err(err_response)?;
     match svc::merge_transactions(&state.engine, ctx.entity_id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "merged" }))),
         Err(e) => Err(err_response(e)),
@@ -142,12 +139,11 @@ pub async fn exclude(
     Path(id): Path<Uuid>,
     Json(_req): Json<ExcludeRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "exclude transaction") { return Err(err_response(e)); }
     sqlx::query("UPDATE imported_transactions SET category_status = 'excluded' WHERE id = $1 AND entity_id = $2")
         .bind(id)
         .bind(ctx.entity_id)
         .execute(state.engine.pool())
         .await
         .ok();
-    Ok(Json(serde_json::json!({ "status": "excluded" })))
+    Ok::<_, axum::response::Response>(Json(serde_json::json!({ "status": "excluded" })))
 }

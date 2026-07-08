@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_APPROVE, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::ap::*;
 use zavora_erp_core::services::bills as svc;
@@ -60,7 +60,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateBillRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create bill").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_bill(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(bill) => Ok(Json(serde_json::to_value(bill).unwrap_or_default())),
@@ -73,7 +72,6 @@ pub async fn approve(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_APPROVE, &ctx, "approve bill").map_err(err_response)?;
     let req = ApproveBillRequest {
         bill_id: id,
         approved_by: ctx.user_id,
@@ -89,7 +87,6 @@ pub async fn post_bill(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "post bill").map_err(err_response)?;
     // Post bill to GL: DR Expense / CR AP / DR VAT Input / CR WHT Payable
     let bill = sqlx::query_as::<_, BillRow>(
         "SELECT * FROM bills WHERE id = $1 AND entity_id = $2",
@@ -229,7 +226,6 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(req): Json<CreateBillRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "edit bill").map_err(err_response)?;
     match svc::update_bill_draft(&state.engine, ctx.entity_id, id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "updated": true }))),
         Err(e) => Err(err_response(e)),
@@ -242,7 +238,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "delete bill").map_err(err_response)?;
     match svc::delete_bill_draft(&state.engine, ctx.entity_id, id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "deleted": true }))),
         Err(e) => Err(err_response(e)),

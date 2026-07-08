@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_permission, require_role, ROLES_CREATE, ROLES_APPROVE, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext, require_permission};
 use super::err_response;
 use zavora_erp_core::payroll::*;
 use zavora_erp_core::services::payroll as svc;
@@ -15,7 +15,6 @@ pub async fn run(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RunPayrollRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "run payroll").map_err(err_response)?;
     match svc::run_payroll(&state.engine, ctx.entity_id, req).await {
         Ok(pay_run) => Ok(Json(serde_json::to_value(pay_run).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -27,7 +26,6 @@ pub async fn approve(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_APPROVE, &ctx, "approve pay run").map_err(err_response)?;
     let req = ApprovePayRunRequest {
         pay_run_id: id,
         approved_by: AgentOrUserId::User(ctx.user_id),
@@ -43,7 +41,6 @@ pub async fn post_run(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "post pay run").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::post_pay_run(&state.engine, ctx.entity_id, id, &actor).await {
         Ok(je_id) => Ok(Json(serde_json::json!({ "journal_entry_id": je_id }))),
@@ -56,7 +53,6 @@ pub async fn mark_paid(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "mark pay run paid").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::mark_pay_run_paid(&state.engine, ctx.entity_id, id, &actor).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "paid" }))),
@@ -120,7 +116,6 @@ pub async fn recompute(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "recompute pay run").map_err(err_response)?;
     match svc::recompute_pay_run(&state.engine, ctx.entity_id, id).await {
         Ok(run) => Ok(Json(serde_json::to_value(run).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -133,7 +128,6 @@ pub async fn delete_draft(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "delete pay run").map_err(err_response)?;
     match svc::delete_draft_pay_run(&state.engine, ctx.entity_id, id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted" }))),
         Err(e) => Err(err_response(e)),
@@ -160,7 +154,6 @@ pub async fn add_input(
     Path(id): Path<Uuid>,
     Json(req): Json<CreatePayRunInputRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "add pay run input").map_err(err_response)?;
     match masters::add_run_input(&state.engine, ctx.entity_id, id, req).await {
         Ok(input_id) => Ok(Json(serde_json::json!({ "id": input_id }))),
         Err(e) => Err(err_response(e)),
@@ -173,7 +166,6 @@ pub async fn delete_input(
     State(state): State<Arc<AppState>>,
     Path((_id, input_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "delete pay run input").map_err(err_response)?;
     match masters::delete_run_input(&state.engine, ctx.entity_id, input_id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted" }))),
         Err(e) => Err(err_response(e)),

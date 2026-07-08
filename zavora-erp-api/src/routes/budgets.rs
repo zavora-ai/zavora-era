@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /budgets — all budget entries for the entity, with account + period labels.
@@ -59,7 +59,6 @@ pub async fn set(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SetBudgetRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "set budget").map_err(err_response)?;
     let res = sqlx::query(
         r#"INSERT INTO budget_entries (entity_id, period_id, account_code, amount)
            VALUES ($1, $2, $3, $4)

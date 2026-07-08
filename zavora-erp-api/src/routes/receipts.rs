@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use crate::AppState;
 use super::err_response;
 use axum::response::{IntoResponse, Response};
@@ -42,7 +42,6 @@ pub async fn capture(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "capture receipt").map_err(er)?;
     let entity_id = ctx.entity_id;
 
     // Read the `file` part.
@@ -201,7 +200,6 @@ pub async fn confirm(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ConfirmRequest>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "confirm receipt").map_err(er)?;
 
     let confirm_req = ConfirmReceiptRequest {
         capture_id: req.capture_id,

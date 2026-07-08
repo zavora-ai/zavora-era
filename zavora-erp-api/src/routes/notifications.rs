@@ -10,7 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use super::pagination::{PaginatedResponse, PaginationParams};
 
@@ -176,8 +176,6 @@ pub async fn delivery_list(
     Query(params): Query<DeliveryParams>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "view notification delivery history")
-        .map_err(|e| err_response(e).into_response())?;
 
     let page = PaginationParams { limit: params.limit, offset: params.offset };
 
@@ -249,9 +247,6 @@ pub async fn delivery_stats(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "view notification delivery stats")
-        .map_err(|e| err_response(e).into_response())?;
 
     let by_status = sqlx::query_as::<_, StatusCount>(
         "SELECT status, COUNT(*) AS count FROM notifications WHERE entity_id = $1 GROUP BY status",
@@ -317,8 +312,6 @@ pub async fn get_settings(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "view notification settings")
-        .map_err(|e| err_response(e).into_response())?;
 
     match settings_payload(&state, ctx.entity_id).await {
         Ok(payload) => Ok(Json(payload)),
@@ -346,8 +339,6 @@ pub async fn update_settings(
     Json(req): Json<UpdateSettingsInput>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "update notification settings")
-        .map_err(|e| err_response(e).into_response())?;
 
     for ev in &req.events {
         zavora_erp_core::services::notification_prefs::upsert(
@@ -380,8 +371,6 @@ pub async fn get_providers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "view notification providers")
-        .map_err(|e| err_response(e).into_response())?;
 
     match zavora_erp_core::services::notification_providers::get_masked(state.engine.pool(), ctx.entity_id).await {
         Ok(list) => Ok(Json(serde_json::json!({
@@ -412,8 +401,6 @@ pub async fn put_provider(
     Json(req): Json<ProviderInput>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "update notification providers")
-        .map_err(|e| err_response(e).into_response())?;
 
     let input = zavora_erp_core::services::notification_providers::UpsertProvider {
         channel: req.channel,
@@ -448,8 +435,6 @@ pub async fn test_provider(
     Json(req): Json<TestProviderInput>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     use axum::response::IntoResponse;
-    require_role(ROLES_MANAGE, &ctx, "test notification provider")
-        .map_err(|e| err_response(e).into_response())?;
 
     if req.recipient.trim().is_empty() {
         return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {

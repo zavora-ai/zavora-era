@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::catalog::*;
 use zavora_erp_core::services::catalog as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -50,7 +50,6 @@ pub async fn create_product(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateProductRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create product").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_product(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
@@ -64,7 +63,6 @@ pub async fn update_product(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateProductRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "update product") { return Err(err_response(e)); }
 
     // Confirm the product belongs to the tenant before mutating.
     let exists = sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 AND entity_id = $2")
@@ -126,7 +124,6 @@ pub async fn delete_product(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "delete product") { return Err(err_response(e)); }
 
     let exists = sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 AND entity_id = $2")
         .bind(id).bind(ctx.entity_id)

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use crate::AppState;
 use super::err_response;
 use axum::response::{IntoResponse, Response};
@@ -35,7 +35,6 @@ pub async fn upload(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, Response> {
-    require_role(ROLES_CREATE, &ctx, "upload attachment").map_err(|e| er(e))?;
 
     let mut bytes: Vec<u8> = Vec::new();
     let mut filename = "attachment".to_string();
@@ -120,9 +119,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl IntoResponse> {
-    if let Err(e) = require_role(ROLES_CREATE, &ctx, "delete attachment") {
-        return Err(err_response(e));
-    }
     match svc::delete(&state.engine, ctx.entity_id, id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted" }))),
         Err(e) => Err(err_response(e)),

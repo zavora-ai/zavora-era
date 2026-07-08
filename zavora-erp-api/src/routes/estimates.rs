@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_SEND};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::AgentOrUserId;
 
@@ -66,7 +66,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<zavora_erp_core::invoicing::CreateEstimateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create estimate").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match zavora_erp_core::services::invoicing::create_estimate(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id, "status": "draft" }))),
@@ -81,7 +80,6 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(req): Json<zavora_erp_core::invoicing::CreateEstimateRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "edit estimate").map_err(role_err)?;
     guard_draft(&state, ctx.entity_id, id).await?;
     match zavora_erp_core::services::invoicing::update_estimate_draft(&state.engine, ctx.entity_id, id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "status": "draft" }))),
@@ -95,21 +93,11 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "delete estimate").map_err(role_err)?;
     guard_draft(&state, ctx.entity_id, id).await?;
     match zavora_erp_core::services::invoicing::delete_estimate_draft(&state.engine, ctx.entity_id, id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "deleted", "id": id }))),
         Err(e) => Err(svc_err(e)),
     }
-}
-
-/// Map a permission error to an HTTP response tuple.
-fn role_err(e: zavora_erp_core::ErpError) -> (axum::http::StatusCode, Json<serde_json::Value>) {
-    let status = match &e {
-        zavora_erp_core::ErpError::PermissionDenied { .. } => axum::http::StatusCode::FORBIDDEN,
-        _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    (status, Json(serde_json::json!({ "error": e.to_string() })))
 }
 
 /// Map a service error to an HTTP response tuple.
@@ -153,7 +141,6 @@ pub async fn convert(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "convert estimate").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match zavora_erp_core::services::invoicing::convert_estimate_to_invoice(&state.engine, ctx.entity_id, id, &actor).await {
         Ok(invoice_id) => Ok(Json(serde_json::json!({ "status": "converted", "estimate_id": id, "invoice_id": invoice_id }))),
@@ -167,10 +154,6 @@ pub async fn send(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_SEND, &ctx, "send estimate").map_err(|e| {
-        use axum::response::IntoResponse;
-        err_response(e).into_response()
-    })?;
     transition_estimate(&state, ctx.entity_id, id, &["draft", "sent"], "sent").await
 }
 
@@ -180,10 +163,6 @@ pub async fn accept(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_SEND, &ctx, "accept estimate").map_err(|e| {
-        use axum::response::IntoResponse;
-        err_response(e).into_response()
-    })?;
     transition_estimate(&state, ctx.entity_id, id, &["draft", "sent"], "accepted").await
 }
 
@@ -193,10 +172,6 @@ pub async fn decline(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_SEND, &ctx, "decline estimate").map_err(|e| {
-        use axum::response::IntoResponse;
-        err_response(e).into_response()
-    })?;
     transition_estimate(&state, ctx.entity_id, id, &["draft", "sent", "accepted"], "declined").await
 }
 

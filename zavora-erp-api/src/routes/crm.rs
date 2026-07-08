@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::crm::*;
 use zavora_erp_core::services::crm as svc;
 use zavora_erp_core::ErpError;
@@ -43,7 +43,6 @@ pub async fn get_settings(ctx: AuthContext, State(state): State<Arc<AppState>>) 
 }
 
 pub async fn set_enabled(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(p): Json<EnabledPatch>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "manage CRM settings").map_err(er)?;
     let s = svc::set_enabled(&state.engine, ctx.entity_id, p.enabled).await.map_err(er)?;
     Ok(Json(serde_json::to_value(s).unwrap_or_default()))
 }
@@ -72,21 +71,18 @@ pub async fn list_leads(ctx: AuthContext, State(state): State<Arc<AppState>>, Qu
 
 pub async fn create_lead(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateLeadRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "create lead").map_err(er)?;
     let id = svc::create_lead(&state.engine, ctx.entity_id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
 pub async fn update_lead(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<UpdateLeadRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "update lead").map_err(er)?;
     svc::update_lead(&state.engine, ctx.entity_id, id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 pub async fn convert_lead(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<ConvertLeadRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "convert lead").map_err(er)?;
     let res = svc::convert_lead(&state.engine, ctx.entity_id, id, req).await.map_err(er)?;
     Ok(Json(res))
 }
@@ -101,28 +97,24 @@ pub async fn list_opportunities(ctx: AuthContext, State(state): State<Arc<AppSta
 
 pub async fn create_opportunity(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateOpportunityRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "create opportunity").map_err(er)?;
     let id = svc::create_opportunity(&state.engine, ctx.entity_id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
 pub async fn move_opportunity(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<MoveOpportunityRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "move opportunity").map_err(er)?;
     svc::move_opportunity(&state.engine, ctx.entity_id, id, Some(ctx.user_id), req).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 pub async fn win_opportunity(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "win opportunity").map_err(er)?;
     svc::close_opportunity(&state.engine, ctx.entity_id, id, Some(ctx.user_id), true, None).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "won" })))
 }
 
 pub async fn lose_opportunity(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<LoseOpportunityRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "lose opportunity").map_err(er)?;
     svc::close_opportunity(&state.engine, ctx.entity_id, id, Some(ctx.user_id), false, req.reason).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "lost" })))
 }
@@ -137,14 +129,12 @@ pub async fn list_activities(ctx: AuthContext, State(state): State<Arc<AppState>
 
 pub async fn create_activity(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateActivityRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "create activity").map_err(er)?;
     let id = svc::create_activity(&state.engine, ctx.entity_id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
 pub async fn complete_activity(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "complete activity").map_err(er)?;
     svc::set_activity_done(&state.engine, ctx.entity_id, id, true).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "done" })))
 }
@@ -165,14 +155,12 @@ pub async fn get_ticket(ctx: AuthContext, State(state): State<Arc<AppState>>, Pa
 
 pub async fn reply_ticket(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<TicketReplyRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "reply to ticket").map_err(er)?;
     svc::reply_ticket(&state.engine, ctx.entity_id, id, "staff", Some(ctx.user_id), &req.body).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 pub async fn set_ticket_status(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(p): Json<StatusPatch>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "update ticket").map_err(er)?;
     svc::set_ticket_status(&state.engine, ctx.entity_id, id, &p.status).await.map_err(er)?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -189,7 +177,6 @@ pub async fn analytics(ctx: AuthContext, State(state): State<Arc<AppState>>) -> 
 
 pub async fn invite_customer(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<InviteCustomerRequest>) -> ApiResult {
     gate(&state, ctx.entity_id).await?;
-    require_role(ROLES_CREATE, &ctx, "invite customer to portal").map_err(er)?;
 
     let email = req.email.trim().to_lowercase();
     let display_name = req.display_name.clone().unwrap_or_else(|| email.clone());

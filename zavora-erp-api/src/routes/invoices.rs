@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE, ROLES_SEND, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::invoicing::*;
 use zavora_erp_core::services::invoicing as svc;
@@ -60,7 +60,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create invoice").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_invoice(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(invoice) => Ok(Json(serde_json::to_value(invoice).unwrap_or_default())),
@@ -73,7 +72,6 @@ pub async fn post_invoice(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "post invoice").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::post_invoice(&state.engine, ctx.entity_id, id, &actor).await {
         Ok(je_id) => Ok(Json(serde_json::json!({ "journal_entry_id": je_id }))),
@@ -98,7 +96,6 @@ pub async fn write_off(
     Path(id): Path<Uuid>,
     Json(req): Json<WriteOffRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "write off invoice").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::write_off_invoice(&state.engine, ctx.entity_id, id, req.expense_account, req.amount, req.reason, actor).await {
         Ok(je_id) => Ok(Json(serde_json::json!({ "journal_entry_id": je_id }))),
@@ -115,7 +112,6 @@ pub async fn send(
     Path(id): Path<Uuid>,
     Json(mut req): Json<SendInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_SEND, &ctx, "send invoice").map_err(err_response)?;
     req.invoice_id = id; // path is authoritative
     match svc::send_invoice(&state.engine, ctx.entity_id, req).await {
         Ok(Some(recipient)) => Ok(Json(serde_json::json!({ "status": "sent", "invoice_id": id, "emailed_to": recipient }))),
@@ -131,7 +127,6 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "edit invoice").map_err(err_response)?;
     match svc::update_invoice_draft(&state.engine, ctx.entity_id, id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "updated": true }))),
         Err(e) => Err(err_response(e)),
@@ -144,7 +139,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "delete invoice").map_err(err_response)?;
     match svc::delete_invoice_draft(&state.engine, ctx.entity_id, id).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "deleted": true }))),
         Err(e) => Err(err_response(e)),
@@ -157,13 +151,6 @@ pub async fn create_credit_note(
     Path(id): Path<Uuid>,
     Json(mut req): Json<zavora_erp_core::invoicing::CreateCreditNoteRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "create credit note").map_err(|e| {
-        let (status, msg) = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
-            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": msg })))
-    })?;
 
     // Ensure the request's invoice_id matches the path parameter
     req.invoice_id = id;
@@ -224,7 +211,6 @@ pub async fn etims_transmit(
     Path(id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_SEND, &ctx, "transmit invoice to eTIMS").map_err(err_response)?;
     let etims_number = req.get("etims_invoice_number").and_then(|v| v.as_str()).map(|s| s.to_string());
     match svc::mark_invoice_etims_transmitted(&state.engine, ctx.entity_id, id, etims_number).await {
         Ok(()) => Ok(Json(serde_json::json!({ "id": id, "etims_status": "transmitted" }))),
@@ -253,13 +239,6 @@ pub async fn create_recurring(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateRecurringInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "create recurring invoice").map_err(|e| {
-        let (status, msg) = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
-            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": msg })))
-    })?;
 
     let bad_request = |msg: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
 
@@ -333,13 +312,6 @@ pub async fn update_recurring(
     Path(id): Path<Uuid>,
     Json(req): Json<CreateRecurringInvoiceRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "update recurring invoice").map_err(|e| {
-        let (status, msg) = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
-            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": msg })))
-    })?;
 
     let unprocessable = |msg: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": msg })));
 
@@ -399,13 +371,6 @@ pub async fn delete_recurring(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    require_role(ROLES_CREATE, &ctx, "delete recurring invoice").map_err(|e| {
-        let (status, msg) = match &e {
-            zavora_erp_core::ErpError::PermissionDenied { .. } => (axum::http::StatusCode::FORBIDDEN, e.to_string()),
-            _ => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": msg })))
-    })?;
 
     let result = sqlx::query("DELETE FROM recurring_invoices WHERE id = $1 AND entity_id = $2")
         .bind(id)

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_APPROVE, ROLES_CREATE, ROLES_VIEW};
+use crate::middleware::auth::{AuthContext};
 use crate::AppState;
 use zavora_erp_core::procurement::*;
 use zavora_erp_core::services::procurement as svc;
@@ -25,7 +25,6 @@ fn ok<T: serde::Serialize>(v: T) -> ApiResult {
 
 /// GET /api/v1/vendor-applications — pending (and recent) registrations.
 pub async fn list_applications(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view vendor applications").map_err(err_response_boxed)?;
     let rows = sqlx::query_as::<_, VendorUserRow>(
         "SELECT id, entity_id, email, display_name, company_name, kra_pin, phone, status, vendor_id, last_login, created_at \
          FROM vendor_users WHERE entity_id = $1 ORDER BY created_at DESC",
@@ -42,7 +41,6 @@ pub async fn approve_application(
     Path(id): Path<Uuid>,
     Json(req): Json<ApproveVendorRequest>,
 ) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "approve vendor").map_err(err_response_boxed)?;
     let pool = state.engine.pool();
 
     let app = sqlx::query_as::<_, VendorUserRow>(
@@ -82,7 +80,6 @@ pub async fn reject_application(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "reject vendor").map_err(err_response_boxed)?;
     let n = sqlx::query("UPDATE vendor_users SET status='rejected' WHERE id=$1 AND entity_id=$2")
         .bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await
         .map_err(|e| err_response_boxed(ErpError::Database(e)))?;
@@ -95,14 +92,12 @@ pub async fn reject_application(
 // ── Tenders ─────────────────────────────────────────────────────────────────
 
 pub async fn list_tenders(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view tenders").map_err(err_response_boxed)?;
     let rows = sqlx::query_as::<_, TenderRow>("SELECT * FROM tenders WHERE entity_id=$1 ORDER BY created_at DESC")
         .bind(ctx.entity_id).fetch_all(state.engine.pool()).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?;
     ok(rows)
 }
 
 pub async fn get_tender(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view tender").map_err(err_response_boxed)?;
     let pool = state.engine.pool();
     let tender = sqlx::query_as::<_, TenderRow>("SELECT * FROM tenders WHERE id=$1 AND entity_id=$2")
         .bind(id).bind(ctx.entity_id).fetch_optional(pool).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?
@@ -113,20 +108,17 @@ pub async fn get_tender(ctx: AuthContext, State(state): State<Arc<AppState>>, Pa
 }
 
 pub async fn create_tender(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateTenderRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "create tender").map_err(err_response_boxed)?;
     let row = svc::create_tender(&state.engine, ctx.entity_id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(row)
 }
 
 pub async fn publish_tender(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "publish tender").map_err(err_response_boxed)?;
     svc::publish_tender(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?;
     ok(serde_json::json!({ "id": id, "status": "open" }))
 }
 
 /// GET /api/v1/tenders/{id}/bids — submitted bids for a tender (buyer view).
 pub async fn list_bids(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view bids").map_err(err_response_boxed)?;
     let rows = sqlx::query_as::<_, BidRow>(
         "SELECT * FROM bids WHERE tender_id=$1 AND entity_id=$2 ORDER BY total_amount ASC",
     )
@@ -141,7 +133,6 @@ pub async fn award_tender(
     Path(id): Path<Uuid>,
     Json(req): Json<AwardTenderRequest>,
 ) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "award tender").map_err(err_response_boxed)?;
     let po = svc::award_tender(&state.engine, ctx.entity_id, id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(po)
 }
@@ -149,7 +140,6 @@ pub async fn award_tender(
 // ── Purchase orders ─────────────────────────────────────────────────────────
 
 pub async fn list_purchase_orders(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view purchase orders").map_err(err_response_boxed)?;
     let rows = sqlx::query_as::<_, PurchaseOrderRow>("SELECT * FROM purchase_orders WHERE entity_id=$1 ORDER BY created_at DESC")
         .bind(ctx.entity_id).fetch_all(state.engine.pool()).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?;
     ok(rows)
@@ -158,7 +148,6 @@ pub async fn list_purchase_orders(ctx: AuthContext, State(state): State<Arc<AppS
 /// GET /api/v1/procurement/analytics — spend by vendor, open commitments, and
 /// document counts by status.
 pub async fn analytics(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view procurement analytics").map_err(err_response_boxed)?;
     let out = svc::procurement_analytics(&state.engine, ctx.entity_id).await.map_err(err_response_boxed)?;
     ok(out)
 }
@@ -166,7 +155,6 @@ pub async fn analytics(ctx: AuthContext, State(state): State<Arc<AppState>>) -> 
 /// GET /api/v1/procurement/budget-control — budget vs committed vs actual by
 /// account (encumbrance view).
 pub async fn budget_control(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view budget control").map_err(err_response_boxed)?;
     let out = svc::budget_commitments(&state.engine, ctx.entity_id).await.map_err(err_response_boxed)?;
     ok(out)
 }
@@ -174,14 +162,12 @@ pub async fn budget_control(ctx: AuthContext, State(state): State<Arc<AppState>>
 // ── Purchase requisitions (self-service → approval → convert) ───────────────
 
 pub async fn list_requisitions(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view requisitions").map_err(err_response_boxed)?;
     let rows = sqlx::query_as::<_, PurchaseRequisitionRow>("SELECT * FROM purchase_requisitions WHERE entity_id=$1 ORDER BY created_at DESC")
         .bind(ctx.entity_id).fetch_all(state.engine.pool()).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?;
     ok(rows)
 }
 
 pub async fn get_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view requisition").map_err(err_response_boxed)?;
     let pool = state.engine.pool();
     let pr = sqlx::query_as::<_, PurchaseRequisitionRow>("SELECT * FROM purchase_requisitions WHERE id=$1 AND entity_id=$2")
         .bind(id).bind(ctx.entity_id).fetch_optional(pool).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?
@@ -193,25 +179,21 @@ pub async fn get_requisition(ctx: AuthContext, State(state): State<Arc<AppState>
 
 /// POST /api/v1/requisitions — any staff member can raise one (self-service).
 pub async fn create_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateRequisitionRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "create requisition").map_err(err_response_boxed)?;
     let pr = svc::create_requisition(&state.engine, ctx.entity_id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(pr)
 }
 
 pub async fn submit_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "submit requisition").map_err(err_response_boxed)?;
     let pr = svc::submit_requisition(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?;
     ok(pr)
 }
 
 pub async fn approve_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "approve requisition").map_err(err_response_boxed)?;
     let pr = svc::approve_requisition(&state.engine, ctx.entity_id, id, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(pr)
 }
 
 pub async fn reject_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<RejectRequisitionRequest>) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "reject requisition").map_err(err_response_boxed)?;
     let pr = svc::reject_requisition(&state.engine, ctx.entity_id, id, ctx.user_id, req.reason).await.map_err(err_response_boxed)?;
     ok(pr)
 }
@@ -219,7 +201,6 @@ pub async fn reject_requisition(ctx: AuthContext, State(state): State<Arc<AppSta
 /// POST /api/v1/requisitions/{id}/convert — turn an approved requisition into a
 /// tender or a direct PO.
 pub async fn convert_requisition(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<ConvertRequisitionRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "convert requisition").map_err(err_response_boxed)?;
     let out = svc::convert_requisition(&state.engine, ctx.entity_id, id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(out)
 }
@@ -227,13 +208,11 @@ pub async fn convert_requisition(ctx: AuthContext, State(state): State<Arc<AppSt
 /// POST /api/v1/purchase-orders — direct procurement: raise an LPO straight
 /// against a vendor master (no tender needed, vendor need not be on the portal).
 pub async fn create_purchase_order(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreatePurchaseOrderRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "create purchase order").map_err(err_response_boxed)?;
     let po = svc::create_purchase_order(&state.engine, ctx.entity_id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(po)
 }
 
 pub async fn get_purchase_order(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view purchase order").map_err(err_response_boxed)?;
     let pool = state.engine.pool();
     let po = sqlx::query_as::<_, PurchaseOrderRow>("SELECT * FROM purchase_orders WHERE id=$1 AND entity_id=$2")
         .bind(id).bind(ctx.entity_id).fetch_optional(pool).await.map_err(|e| err_response_boxed(ErpError::Database(e)))?
@@ -247,7 +226,6 @@ pub async fn get_purchase_order(ctx: AuthContext, State(state): State<Arc<AppSta
 
 /// POST /api/v1/purchase-orders/{id}/receipts — record a goods receipt (GRN).
 pub async fn create_goods_receipt(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<CreateGrnRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "record goods receipt").map_err(err_response_boxed)?;
     let grn = svc::create_goods_receipt(&state.engine, ctx.entity_id, id, req, ctx.user_id).await.map_err(err_response_boxed)?;
     ok(grn)
 }
@@ -260,7 +238,6 @@ pub struct SendPoRequest {
 
 /// POST /api/v1/purchase-orders/{id}/send — email the LPO PDF to the vendor.
 pub async fn send_purchase_order(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<SendPoRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "send purchase order").map_err(err_response_boxed)?;
     let sent_to = svc::send_purchase_order(&state.engine, ctx.entity_id, id, req.recipient_email, req.message).await.map_err(err_response_boxed)?;
     let _ = zavora_erp_core::services::audit::record_event(&state.engine, ctx.entity_id, "Sent", "purchase_order", id,
         &zavora_erp_core::AgentOrUserId::User(ctx.user_id), Some(serde_json::json!({ "to": sent_to }))).await;
@@ -269,14 +246,12 @@ pub async fn send_purchase_order(ctx: AuthContext, State(state): State<Arc<AppSt
 
 /// GET /api/v1/purchase-orders/{id}/receipts — GRNs recorded against this PO.
 pub async fn list_goods_receipts(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view goods receipts").map_err(err_response_boxed)?;
     let rows = svc::list_goods_receipts(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?;
     ok(rows)
 }
 
 /// GET /api/v1/purchase-orders/{id}/match — the 3-way match report.
 pub async fn purchase_order_match(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view 3-way match").map_err(err_response_boxed)?;
     let m = svc::three_way_match(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?;
     ok(m)
 }
@@ -290,9 +265,6 @@ pub async fn purchase_order_document(
     Path(id): Path<Uuid>,
     axum::extract::Query(q): axum::extract::Query<DocumentQuery>,
 ) -> axum::response::Response {
-    if let Err(e) = require_role(ROLES_VIEW, &ctx, "view purchase order document") {
-        return err_response_boxed(e);
-    }
     render_po_document(&state, ctx.entity_id, id, q.format.as_deref() == Some("pdf")).await
 }
 
@@ -352,41 +324,32 @@ use zavora_erp_core::services::debit_notes as dn_svc;
 use zavora_erp_core::services::expense_claims as ec_svc;
 
 pub async fn list_debit_notes(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view debit notes").map_err(err_response_boxed)?;
     ok(dn_svc::list_debit_notes(&state.engine, ctx.entity_id).await.map_err(err_response_boxed)?)
 }
 pub async fn get_debit_note(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view debit note").map_err(err_response_boxed)?;
     ok(dn_svc::get_debit_note(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?)
 }
 pub async fn create_debit_note(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<dn_svc::CreateDebitNoteRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "create debit note").map_err(err_response_boxed)?;
     ok(dn_svc::create_debit_note(&state.engine, ctx.entity_id, req, ctx.user_id).await.map_err(err_response_boxed)?)
 }
 
 // ── Expense claims ──────────────────────────────────────────────────────────
 
 pub async fn list_expense_claims(ctx: AuthContext, State(state): State<Arc<AppState>>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view expense claims").map_err(err_response_boxed)?;
     ok(ec_svc::list_claims(&state.engine, ctx.entity_id).await.map_err(err_response_boxed)?)
 }
 pub async fn get_expense_claim(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_VIEW, &ctx, "view expense claim").map_err(err_response_boxed)?;
     ok(ec_svc::get_claim(&state.engine, ctx.entity_id, id).await.map_err(err_response_boxed)?)
 }
 pub async fn create_expense_claim(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<ec_svc::CreateClaimRequest>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "create expense claim").map_err(err_response_boxed)?;
     ok(ec_svc::create_claim(&state.engine, ctx.entity_id, req, ctx.user_id).await.map_err(err_response_boxed)?)
 }
 pub async fn submit_expense_claim(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_CREATE, &ctx, "submit expense claim").map_err(err_response_boxed)?;
     ok(ec_svc::submit_claim(&state.engine, ctx.entity_id, id, ctx.user_id).await.map_err(err_response_boxed)?)
 }
 pub async fn approve_expense_claim(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "approve expense claim").map_err(err_response_boxed)?;
     ok(ec_svc::approve_claim(&state.engine, ctx.entity_id, id, ctx.user_id).await.map_err(err_response_boxed)?)
 }
 pub async fn reject_expense_claim(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(req): Json<RejectRequisitionRequest>) -> ApiResult {
-    require_role(ROLES_APPROVE, &ctx, "reject expense claim").map_err(err_response_boxed)?;
     ok(ec_svc::reject_claim(&state.engine, ctx.entity_id, id, ctx.user_id, req.reason).await.map_err(err_response_boxed)?)
 }

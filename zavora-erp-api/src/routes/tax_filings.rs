@@ -4,7 +4,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::AgentOrUserId;
 use zavora_erp_core::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
@@ -43,7 +43,6 @@ pub async fn file(
     State(state): State<Arc<AppState>>,
     Json(req): Json<FileRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "file tax return").map_err(err_response)?;
     let id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO tax_filings (entity_id, tax_type, period_from, period_to, amount, filed_by)
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
@@ -72,7 +71,6 @@ pub async fn remit(
     Path(id): Path<Uuid>,
     Json(req): Json<RemitRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "remit tax").map_err(err_response)?;
 
     let filing = sqlx::query_as::<_, (String, Decimal, String)>(
         "SELECT tax_type, amount, status FROM tax_filings WHERE id = $1 AND entity_id = $2",

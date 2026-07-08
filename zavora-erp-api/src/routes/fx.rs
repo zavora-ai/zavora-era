@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::fx::*;
 use zavora_erp_core::services::fx as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -35,7 +35,6 @@ pub async fn upsert(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpsertRateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "upsert FX rate").map_err(err_response)?;
     match svc::upsert_rate(&state.engine, ctx.entity_id, req).await {
         Ok(rate) => Ok(Json(serde_json::to_value(rate).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -48,7 +47,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "delete FX rate").map_err(err_response)?;
     let result = sqlx::query("DELETE FROM exchange_rates WHERE id = $1 AND entity_id = $2")
         .bind(id)
         .bind(ctx.entity_id)
@@ -72,7 +70,6 @@ pub async fn revaluation(
     State(state): State<Arc<AppState>>,
     Query(params): Query<RevaluationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "run FX revaluation").map_err(err_response)?;
 
     let rate_date = params.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let period = zavora_erp_core::services::periods::period_for_date(&state.engine, ctx.entity_id, rate_date)
