@@ -92,3 +92,46 @@ impl SkillsCatalog {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The installed skill pack parses and unlocks the tools the coverage map
+    /// promises — a regression gate against a skill file that fails to parse
+    /// (which would silently drop its tools from every session).
+    #[test]
+    fn skill_pack_loads_and_unlocks_coverage_tools() {
+        let catalog = SkillsCatalog::load();
+        let names = catalog.names();
+        for expected in [
+            "record-vendor-bill",
+            "record-customer-invoice",
+            "record-payment",
+            "inventory-ops",
+            "bank-reconciliation",
+            "tax-filing",
+            "month-end-review",
+            "manage-procurement",
+            "financial-reporting",
+            "manual-journal",
+            "hr-payroll",
+            "crm",
+            "erp-showcase",
+        ] {
+            assert!(names.iter().any(|n| n == expected), "skill '{expected}' missing from catalog: {names:?}");
+        }
+        let tools = catalog.extra_allowed_tools();
+        for expected in [
+            // AR + eTIMS
+            "create_invoice_draft", "post_invoice", "etims_transmit_invoice",
+            // Inventory
+            "get_stock_levels", "adjust_stock", "transfer_stock",
+            // Banking / period-end / statutory
+            "compute_reconciliation", "complete_reconciliation", "close_period",
+            "list_tax_filings", "file_tax_return", "remit_tax_filing",
+        ] {
+            assert!(tools.contains(expected), "tool '{expected}' not unlocked by any skill");
+        }
+    }
+}

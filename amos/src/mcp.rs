@@ -17,11 +17,17 @@ const ERP_TOOLS: &[&str] = &[
     "list_accounts",
     "list_customers",
     "get_customer",
+    "create_customer",
+    "update_customer",
     "list_vendors",
     "get_vendor",
     "list_products",
+    // AR — an accountant must be able to raise an invoice, not just read them.
     "list_invoices",
     "get_invoice",
+    "create_invoice_draft",
+    "submit_invoice",
+    "post_invoice",
     "list_bills",
     "get_bill",
     "create_bill_draft",
@@ -41,6 +47,9 @@ const ERP_TOOLS: &[&str] = &[
     "approve_pay_run",
     "post_pay_run",
     "mark_pay_run_paid",
+    // KRA eTIMS — referenced by system.md; must be visible to the session.
+    "etims_status",
+    "etims_transmit_invoice",
 ];
 
 /// Browser tools for the showcase. Everything needed to log in, navigate and
