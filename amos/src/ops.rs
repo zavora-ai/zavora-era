@@ -258,7 +258,7 @@ impl Ops {
                     let Ok(schedule) = cron::Schedule::from_str(&spec.cron) else { continue };
                     if schedule.after(&last).next().is_some_and(|due| due <= now) {
                         info!("🗓️ ops: cron fired for {}", spec.name);
-                        let _ = ops.run_now(&state, &spec.name, "cron").await;
+                        let _ = ops.run_now(&state, &spec.name, "cron", None).await;
                     }
                 }
                 last = now;
@@ -267,8 +267,17 @@ impl Ops {
     }
 
     /// Fire a routine (Skip concurrency: refused while already running).
-    /// Returns immediately; the run executes in the background.
-    pub async fn run_now(self: &Arc<Self>, state: &Arc<AppState>, name: &str, fired_by: &str) -> Result<String> {
+    /// Returns immediately; the run executes in the background. `context` is
+    /// extra event data appended to the routine's prompt — the reactive-trigger
+    /// primitive (a webhook/ERP event posts what happened; the routine acts on
+    /// it).
+    pub async fn run_now(
+        self: &Arc<Self>,
+        state: &Arc<AppState>,
+        name: &str,
+        fired_by: &str,
+        context: Option<String>,
+    ) -> Result<String> {
         let spec = self.spec(name).ok_or_else(|| {
             anyhow!("unknown routine '{name}' — available: {}", self.routines.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(", "))
         })?.clone();
@@ -283,13 +292,13 @@ impl Ops {
         let started = format!("routine '{name}' started ({fired_by})");
         let fired_by = fired_by.to_string();
         tokio::spawn(async move {
-            ops.execute(&state, &spec, &fired_by).await;
+            ops.execute(&state, &spec, &fired_by, context.as_deref()).await;
             ops.running.lock().await.remove(&spec.name);
         });
         Ok(started)
     }
 
-    async fn execute(&self, state: &Arc<AppState>, spec: &RoutineSpec, fired_by: &str) {
+    async fn execute(&self, state: &Arc<AppState>, spec: &RoutineSpec, fired_by: &str, context: Option<&str>) {
         let run_id = uuid::Uuid::new_v4();
         info!("🗓️ ops run {run_id}: {} ({fired_by})", spec.name);
         if let Some(pool) = &self.pool {
@@ -306,7 +315,7 @@ impl Ops {
         }
 
         let started = std::time::Instant::now();
-        let outcome = tokio::time::timeout(std::time::Duration::from_secs(300), self.run_subagent(state, spec, run_id)).await;
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(300), self.run_subagent(state, spec, run_id, context)).await;
         let (status, summary) = match outcome {
             Ok(Ok(text)) if !text.trim().is_empty() => ("ok", text),
             Ok(Ok(_)) => ("failed", "the routine produced no report".to_string()),
@@ -343,7 +352,7 @@ impl Ops {
 
     /// One-shot sub-agent: Gemini Flash + the routine's scoped/audited ERP
     /// tools + the skill playbook. Text in, report out — no voice, no browser.
-    async fn run_subagent(&self, state: &Arc<AppState>, spec: &RoutineSpec, run_id: uuid::Uuid) -> Result<String> {
+    async fn run_subagent(&self, state: &Arc<AppState>, spec: &RoutineSpec, run_id: uuid::Uuid, context: Option<&str>) -> Result<String> {
         use adk_session::{CreateRequest, SessionService};
         use futures::StreamExt;
 
@@ -432,7 +441,11 @@ impl Ops {
             .run(
                 adk_core::UserId::new("amos-ops").map_err(|e| anyhow!("{e}"))?,
                 adk_core::SessionId::new(&session_id).map_err(|e| anyhow!("{e}"))?,
-                adk_core::Content::new("user").with_text(&spec.prompt),
+                adk_core::Content::new("user").with_text(&match context {
+                    // Reactive trigger: the firing event's data rides along.
+                    Some(ctx) => format!("{}\n\n## Trigger context (from the event that fired this run)\n{}", spec.prompt, ctx),
+                    None => spec.prompt.clone(),
+                }),
             )
             .await
             .map_err(|e| anyhow!("run: {e}"))?;

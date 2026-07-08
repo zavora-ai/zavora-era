@@ -573,7 +573,8 @@ fn run_routine_def() -> ToolDefinition {
         parameters: Some(json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Routine name from ops_status, e.g. morning-briefing"}
+                "name": {"type": "string", "description": "Routine name from ops_status, e.g. morning-briefing"},
+                "context": {"type": "string", "description": "Optional: extra context for this run (e.g. 'focus on the Equity USD account')"}
             },
             "required": ["name"]
         })),
@@ -588,8 +589,9 @@ struct RunRoutine {
 impl ToolHandler for RunRoutine {
     async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
         let name = call.arguments["name"].as_str().unwrap_or("");
+        let context = call.arguments["context"].as_str().map(String::from);
         match &self.state.ops {
-            Some(ops) => match ops.run_now(&self.state, name, "manual").await {
+            Some(ops) => match ops.run_now(&self.state, name, "manual", context).await {
                 Ok(msg) => {
                     info!("🗓️ manual routine trigger: {name}");
                     Ok(json!({"status": "started", "message": msg}))

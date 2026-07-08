@@ -309,6 +309,18 @@
   }
   .log-row:hover .mem-del { visibility: visible; }
   .mem-del:hover { color: var(--red); }
+  .ops-row { align-items: center; }
+  .ops-main { flex: 1; min-width: 0; }
+  .ops-title { font-size: 12px; color: var(--ink-2); font-weight: 550; }
+  .ops-sub { font-size: 10.5px; color: var(--ink-4); }
+  .ops-sub .ok { color: var(--green); }
+  .ops-sub .fail { color: var(--red); }
+  .ops-run {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-3);
+    border-radius: 6px; cursor: pointer; font-size: 10px; padding: 3px 8px; flex-shrink: 0;
+  }
+  .ops-run:hover { border-color: var(--accent); color: var(--accent); }
+  .ops-run:disabled { opacity: .5; cursor: default; }
 
   /* ══ Markdown in Amos's replies ═══ */
   .row-body :is(h1,h2,h3) { font-size: 13.5px; font-weight: 680; margin: 10px 0 4px; }
@@ -467,6 +479,11 @@
     <div class="panel-section">
       <div class="panel-head"><h3>Past sessions</h3><span class="meta" id="sessMeta"></span></div>
       <div class="log" id="sessList"><div class="panel-empty">Previous conversations with Amos are kept here for your records.</div></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-head"><h3>Routines</h3><span class="meta" id="opsMeta"></span></div>
+      <div class="log" id="opsList"><div class="panel-empty">Scheduled accounting routines (briefings, eTIMS sweeps, month-end packs) appear here.</div></div>
     </div>
 
     <div class="panel-section" style="border-bottom:none">
@@ -700,6 +717,51 @@ async function openTranscript(s) {
 $('transcriptClose').onclick = () => $('transcriptModal').classList.remove('open');
 $('transcriptModal').onclick = (e) => { if (e.target === $('transcriptModal')) $('transcriptModal').classList.remove('open'); };
 
+// ─── Routines panel (ambient ops) ────────────────────────
+function fmtDue(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date();
+  const days = Math.round((d - now) / 86400000);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (days <= 0) return `today ${time}`;
+  if (days === 1) return `tomorrow ${time}`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ` ${time}`;
+}
+async function loadOps() {
+  try {
+    const d = await authFetch(`${BASE}/api/ops`).then(r => r.json());
+    const el = $('opsList');
+    if (!d.routines || !d.routines.length) return;
+    el.innerHTML = '';
+    $('opsMeta').textContent = d.routines.length + ' scheduled';
+    // Last outcome per routine, from the recent runs.
+    const last = {};
+    for (const r of (d.recent_runs || [])) if (!last[r.routine]) last[r.routine] = r;
+    for (const r of d.routines) {
+      const row = document.createElement('div');
+      row.className = 'log-row ops-row';
+      const lr = last[r.name];
+      const outcome = lr
+        ? ` · last <span class="${lr.status === 'ok' ? 'ok' : 'fail'}">${lr.status === 'ok' ? '✓' : '✗'}</span>`
+        : '';
+      row.innerHTML = `<div class="ops-main"><div class="ops-title"></div>
+        <div class="ops-sub">next ${esc(fmtDue(r.next_due))}${outcome}</div></div>
+        <button class="ops-run" title="Run this routine now">Run now</button>`;
+      row.querySelector('.ops-title').textContent = r.title;
+      const btn = row.querySelector('.ops-run');
+      btn.onclick = async () => {
+        btn.disabled = true; btn.textContent = 'Running…';
+        try {
+          const res = await authFetch(`${BASE}/api/ops/run/${encodeURIComponent(r.name)}`, { method: 'POST' });
+          if (!res.ok) { addNotice(await res.text()); btn.disabled = false; btn.textContent = 'Run now'; }
+          // On success the routine_done push re-enables via loadOps().
+        } catch (_) { btn.disabled = false; btn.textContent = 'Run now'; }
+      };
+      el.appendChild(row);
+    }
+  } catch (_) { /* panel stays in its empty state */ }
+}
+
 function logSkill(name) {
   const log = $('log');
   const empty = log.querySelector('.panel-empty');
@@ -929,6 +991,10 @@ function handleServer(msg) {
     case 'skill':            logSkill(msg.name); break;
     case 'memory':           addMemory({kind: msg.kind, text: msg.text, at: new Date().toISOString()}, true); break;
     case 'memory_removed':   loadMemories(); break;
+    case 'routine_done':
+      addNotice(`${msg.status === 'ok' ? '🗓️' : '⚠️'} ${msg.title}: ${String(msg.summary || '').slice(0, 200)}${(msg.summary || '').length > 200 ? '… (full report in your notifications)' : ''}`);
+      loadOps();
+      break;
     case 'error':            addNotice(msg.message); break;
     case 'notice':           addNotice(msg.message); break;
     case 'suggestions':      renderFollowups(msg.items); break;
@@ -1246,6 +1312,7 @@ async function boot() {
   // tenant-wide panels.
   loadMemories();
   loadSessions();
+  loadOps();
 }
 boot();
 </script>

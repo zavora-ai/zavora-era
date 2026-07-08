@@ -106,14 +106,24 @@ async fn get_ops(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     }
 }
 
-/// Manual routine trigger (the UI's "Run now" button; same Skip-concurrency
-/// guard as the chat tool and the cron).
+/// Manual/webhook routine trigger (the UI's "Run now" button, or an ERP/event
+/// system POSTing what happened). Same Skip-concurrency guard as the chat tool
+/// and the cron. Optional JSON body `{"context": "..."}` rides into the
+/// routine's prompt — the reactive-trigger primitive.
 async fn post_ops_run(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
+    body: Option<Json<serde_json::Value>>,
 ) -> impl IntoResponse {
+    let context = body
+        .as_ref()
+        .and_then(|b| b.0.get("context"))
+        .and_then(|c| c.as_str())
+        // Bound event payloads: prompt context, not a document dump.
+        .map(|c| c.chars().take(4000).collect::<String>());
+    let fired_by = if context.is_some() { "webhook" } else { "manual" };
     match &state.ops {
-        Some(ops) => match ops.run_now(&state, &name, "manual").await {
+        Some(ops) => match ops.run_now(&state, &name, fired_by, context).await {
             Ok(msg) => Json(serde_json::json!({"status": "started", "message": msg})).into_response(),
             Err(e) => (StatusCode::CONFLICT, e.to_string()).into_response(),
         },
