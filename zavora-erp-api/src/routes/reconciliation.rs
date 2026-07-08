@@ -4,7 +4,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 async fn bank_gl_account(state: &AppState, entity_id: Uuid, bank_account_id: Uuid) -> Option<String> {
@@ -82,7 +82,6 @@ pub async fn complete(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CompleteRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "complete bank reconciliation").map_err(err_response)?;
     let Some(gl) = bank_gl_account(&state, ctx.entity_id, req.bank_account_id).await else {
         return Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "BankAccount".into(), id: req.bank_account_id }));
     };

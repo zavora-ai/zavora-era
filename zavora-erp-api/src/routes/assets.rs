@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::assets::*;
 use zavora_erp_core::services::assets as svc;
 use zavora_erp_core::AgentOrUserId;
@@ -36,7 +36,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateAssetRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create fixed asset").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::create_asset(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(id) => Ok(Json(serde_json::json!({ "id": id }))),
@@ -52,7 +51,6 @@ pub async fn run_depreciation(
     State(state): State<Arc<AppState>>,
     Query(params): Query<DepreciationParams>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "run depreciation").map_err(err_response)?;
 
     let as_of = params.date.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let actor = AgentOrUserId::User(ctx.user_id);

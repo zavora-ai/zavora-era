@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CLOSE_PERIOD, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::period::*;
 use zavora_erp_core::services::periods as svc;
@@ -24,7 +24,6 @@ pub async fn generate(
     State(state): State<Arc<AppState>>,
     Json(req): Json<GeneratePeriodsRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "generate fiscal periods").map_err(err_response)?;
     match svc::generate_periods(&state.engine, ctx.entity_id, req).await {
         Ok(periods) => Ok(Json(serde_json::to_value(periods).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
@@ -37,7 +36,6 @@ pub async fn close(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CLOSE_PERIOD, &ctx, "close fiscal period").map_err(err_response)?;
     // Actor is taken from the verified JWT, never the request body (audit integrity).
     let close_type = match body.get("close_type").and_then(|v| v.as_str()) {
         Some(s) if s.eq_ignore_ascii_case("hard") => PeriodCloseType::Hard,
@@ -60,7 +58,6 @@ pub async fn reopen(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CLOSE_PERIOD, &ctx, "reopen fiscal period").map_err(err_response)?;
     let reason = body
         .get("reason")
         .and_then(|v| v.as_str())
@@ -89,7 +86,6 @@ pub async fn year_end_close(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CLOSE_PERIOD, &ctx, "execute year-end close").map_err(err_response)?;
     let Some(fiscal_year) = body.get("fiscal_year").and_then(|v| v.as_i64()) else {
         return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
             message: "Missing or invalid 'fiscal_year' (expected an integer year)".to_string(),

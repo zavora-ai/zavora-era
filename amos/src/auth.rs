@@ -37,6 +37,30 @@ pub struct Principal {
     pub role: String,
 }
 
+/// Why a session was refused. The `code` is a stable, machine-readable tag the
+/// UI keys off to show an *honest* state — a persistent "Amos isn't enabled for
+/// your organisation yet" gate for `wrong_tenant`/`portal_account`, versus the
+/// transient "couldn't reach the service" notice for connectivity.
+#[derive(Debug, Clone)]
+pub struct VerifyError {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl VerifyError {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self { code, message: message.into() }
+    }
+}
+
+impl std::fmt::Display for VerifyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for VerifyError {}
+
 impl Principal {
     /// Scopes granted to this principal, mirroring the ERP's role gates
     /// (`middleware/auth.rs`: ROLES_POST_JOURNAL = Owner/Admin/Accountant).
@@ -75,22 +99,26 @@ impl TokenVerifier {
     /// Verify a token and confirm it belongs to the served entity. Returns the
     /// principal only when the signature, type, expiry, issuer, AND tenant all
     /// check out — this is the tenant boundary.
-    pub fn verify(&self, token: &str) -> Result<Principal> {
+    pub fn verify(&self, token: &str) -> Result<Principal, VerifyError> {
         let mut validation = Validation::default(); // HS256, checks exp
         validation.set_issuer(&[&self.issuer]);
         let data = decode::<Claims>(token, &DecodingKey::from_secret(self.secret.as_bytes()), &validation)
-            .map_err(|e| anyhow!("invalid token: {e}"))?;
+            .map_err(|e| VerifyError::new("invalid_token", format!("invalid token: {e}")))?;
         let c = data.claims;
         if c.token_type != TOKEN_TYPE_ACCESS {
-            return Err(anyhow!("wrong token type: expected access"));
+            return Err(VerifyError::new("invalid_token", "wrong token type: expected access"));
         }
         // Redundant with validation.set_issuer, but explicit.
         if !c.iss.is_empty() && c.iss != self.issuer {
-            return Err(anyhow!("unexpected token issuer"));
+            return Err(VerifyError::new("invalid_token", "unexpected token issuer"));
         }
         if c.entity_id != self.served_entity {
-            return Err(anyhow!(
-                "this Amos serves a different organisation — access denied"
+            // Not an error the user can fix by retrying — Amos simply isn't
+            // provisioned for their tenant. The UI turns this into a friendly
+            // "being set up for your workspace" gate rather than a dead "Offline".
+            return Err(VerifyError::new(
+                "wrong_tenant",
+                "Amos isn't enabled for your organisation yet",
             ));
         }
         // Defence in depth: Amos is a back-office-staff-only assistant. External
@@ -98,7 +126,10 @@ impl TokenVerifier {
         // self-service issues `role = "Employee"`, both signed with the same
         // secret for the served entity — must never open a session.
         if c.role.eq_ignore_ascii_case("Vendor") || c.role.eq_ignore_ascii_case("Employee") {
-            return Err(anyhow!("external portal accounts cannot use Amos"));
+            return Err(VerifyError::new(
+                "portal_account",
+                "external portal accounts cannot use Amos",
+            ));
         }
         Ok(Principal { user_id: c.sub, entity_id: c.entity_id, role: c.role })
     }

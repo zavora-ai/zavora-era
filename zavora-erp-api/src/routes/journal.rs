@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::ledger::journal::*;
 use zavora_erp_core::AgentOrUserId;
@@ -63,7 +63,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "post journal entry").map_err(err_response)?;
 
     // Validate, resolve the period, and post against the CALLER's tenant. The
     // engine's `post_from_agent` is hardwired to the startup tenant's entity_id,
@@ -113,7 +112,6 @@ pub async fn reverse(
     Path(id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "reverse journal entry").map_err(err_response)?;
     let reason = req.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
     let reversal_date = req.get("date").and_then(|v| v.as_str()).and_then(|s| s.parse::<chrono::NaiveDate>().ok());
     let actor = AgentOrUserId::User(ctx.user_id);

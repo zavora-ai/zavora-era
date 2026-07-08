@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use zavora_erp_core::invoicing::{CreateTemplateRequest, InvoiceTemplateRow};
 
 /// GET /invoice-templates — list the entity's invoice templates (for the send
@@ -30,7 +30,6 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTemplateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "create invoice template").map_err(err_response)?;
     let id = uuid::Uuid::new_v4();
     let layout = req
         .layout

@@ -1,6 +1,11 @@
 # RBAC v2 — Granular, Audit-Grade Authorization
 
-Status: **Proposed → in build** · Supersedes the coarse 11-permission model in
+Status: **Implemented & enforced.** The granular catalog (181 permissions),
+rule-based SoD seed, declarative route→permission registry (295 routes),
+central default-deny middleware, coverage test and per-role verification are all
+live. The legacy coarse `require_role` groups and their ~233 call sites have been
+removed — the declarative registry is the single, auditable authorization gate.
+Supersedes the coarse 11-permission model in
 `RBAC_AND_USER_MANAGEMENT.md`. Goal: an access-control model that passes a
 rigorous ERP security audit — **resource × action** permissions (full CRUD +
 workflow verbs), **declarative** route→permission mapping, **central

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /custom-reports — saved definitions (id + name only).
@@ -57,7 +57,6 @@ pub async fn save(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SaveRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage custom reports").map_err(err_response)?;
     let res = if let Some(id) = req.id {
         sqlx::query("UPDATE custom_report_definitions SET name = $1, definition = $2, updated_at = NOW() WHERE id = $3 AND entity_id = $4")
             .bind(&req.name).bind(&req.definition).bind(id).bind(ctx.entity_id)
@@ -79,7 +78,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage custom reports").map_err(err_response)?;
     let res = sqlx::query("DELETE FROM custom_report_definitions WHERE id = $1 AND entity_id = $2")
         .bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await;
     match res {

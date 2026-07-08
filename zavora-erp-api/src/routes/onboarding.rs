@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::AgentOrUserId;
 use zavora_erp_core::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
@@ -32,7 +32,6 @@ pub async fn post_opening_balances(
     State(state): State<Arc<AppState>>,
     Json(req): Json<OpeningBalancesRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "post opening balances").map_err(err_response)?;
     let base_ccy = state.engine.config().base_currency.clone();
 
     let mut lines: Vec<CreateJournalLineRequest> = Vec::new();

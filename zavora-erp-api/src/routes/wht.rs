@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /wht-rates — configured WHT rates (the single source of truth).
@@ -35,11 +35,10 @@ pub struct UpdateRateRequest {
 /// PUT /wht-rates — set the rates for a category. Rates are national, so this is
 /// shared; restricted to managers.
 pub async fn update(
-    ctx: AuthContext,
+    _ctx: AuthContext,
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpdateRateRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage WHT rates").map_err(err_response)?;
     let res = sqlx::query(
         "INSERT INTO wht_rates (category, resident_rate, non_resident_rate) VALUES ($1, $2, $3)
          ON CONFLICT (category) DO UPDATE SET resident_rate = EXCLUDED.resident_rate,

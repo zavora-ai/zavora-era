@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /dimensions — dimension types, each with its values nested.
@@ -53,7 +53,6 @@ pub async fn create_type(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTypeRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage dimensions").map_err(err_response)?;
     let res = sqlx::query(
         "INSERT INTO dimension_types (entity_id, code, name) VALUES ($1, $2, $3)
          ON CONFLICT (entity_id, code) DO UPDATE SET name = EXCLUDED.name",
@@ -82,7 +81,6 @@ pub async fn create_value(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateValueRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage dimensions").map_err(err_response)?;
     let res = sqlx::query(
         "INSERT INTO dimension_values (entity_id, type_code, code, name) VALUES ($1, $2, $3, $4)
          ON CONFLICT (entity_id, type_code, code) DO UPDATE SET name = EXCLUDED.name",

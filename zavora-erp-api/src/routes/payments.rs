@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use zavora_erp_core::payments::*;
 use zavora_erp_core::services::payments as svc;
@@ -68,7 +68,6 @@ pub async fn record(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RecordPaymentRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "record payment").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::record_payment(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),
@@ -132,7 +131,6 @@ pub async fn mpesa_stk_push(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MpesaStkPushBody>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "initiate M-Pesa payment").map_err(err_response)?;
 
     // Ensure the invoice exists and belongs to this entity.
     let exists = sqlx::query_scalar::<_, bool>(
@@ -220,7 +218,6 @@ pub async fn apply_unapplied(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ApplyPaymentRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_CREATE, &ctx, "apply unapplied payment").map_err(err_response)?;
     let actor = AgentOrUserId::User(ctx.user_id);
     match svc::apply_unapplied_payment(&state.engine, ctx.entity_id, req, &actor).await {
         Ok(payment) => Ok(Json(serde_json::to_value(payment).unwrap_or_default())),

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_MANAGE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /report-schedules — schedules for the entity.
@@ -42,7 +42,6 @@ pub async fn save(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SaveRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage report schedules").map_err(err_response)?;
     let active = req.is_active.unwrap_or(true);
     let res = if let Some(id) = req.id {
         sqlx::query("UPDATE report_schedules SET name=$1, report_type=$2, cadence=$3, recipients=$4, is_active=$5 WHERE id=$6 AND entity_id=$7")
@@ -66,7 +65,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_MANAGE, &ctx, "manage report schedules").map_err(err_response)?;
     let res = sqlx::query("DELETE FROM report_schedules WHERE id = $1 AND entity_id = $2")
         .bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await;
     match res {

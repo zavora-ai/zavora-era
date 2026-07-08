@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::err_response;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_HR_MANAGE, ROLES_LEAVE_APPROVE};
+use crate::middleware::auth::{AuthContext};
 use crate::middleware::staff_auth::StaffContext;
 use zavora_erp_core::hr::*;
 use zavora_erp_core::services::leave as svc;
@@ -39,7 +39,6 @@ pub async fn list_types(ctx: AuthContext, State(state): State<Arc<AppState>>) ->
 }
 
 pub async fn create_type(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateLeaveTypeRequest>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "manage leave types").map_err(er)?;
     let id = svc::create_leave_type(&state.engine, ctx.entity_id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({"id": id})))
 }
@@ -47,7 +46,6 @@ pub async fn create_type(ctx: AuthContext, State(state): State<Arc<AppState>>, J
 #[derive(Deserialize)]
 pub struct ActivePatch { pub active: bool }
 pub async fn set_type_active(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(p): Json<ActivePatch>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "manage leave types").map_err(er)?;
     svc::set_leave_type_active(&state.engine, ctx.entity_id, id, p.active).await.map_err(er)?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
@@ -62,7 +60,6 @@ pub async fn list_holidays(ctx: AuthContext, State(state): State<Arc<AppState>>)
 
 /// Team-absence calendar (admin/approver).
 pub async fn calendar(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<CalendarQuery>) -> ApiResult {
-    require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave calendar").map_err(er)?;
     let today = chrono::Utc::now().date_naive();
     let from = q.from.unwrap_or(today);
     let to = q.to.unwrap_or(from + chrono::Duration::days(60));
@@ -73,12 +70,10 @@ pub async fn calendar(ctx: AuthContext, State(state): State<Arc<AppState>>, Quer
 #[derive(Deserialize)]
 pub struct CalendarQuery { pub from: Option<chrono::NaiveDate>, pub to: Option<chrono::NaiveDate> }
 pub async fn create_holiday(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateHolidayRequest>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "manage holidays").map_err(er)?;
     let id = svc::create_holiday(&state.engine, ctx.entity_id, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({"id": id})))
 }
 pub async fn delete_holiday(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "manage holidays").map_err(er)?;
     svc::delete_holiday(&state.engine, ctx.entity_id, id).await.map_err(er)?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
@@ -86,14 +81,12 @@ pub async fn delete_holiday(ctx: AuthContext, State(state): State<Arc<AppState>>
 // ─── Balances & requests (admin) ─────────────────────────────────────────────
 
 pub async fn list_balances(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<YearQuery>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "view leave balances").map_err(er)?;
     let emp = q.employee_id.ok_or_else(|| er(ErpError::ValidationFailed { message: "employee_id required".into() }))?;
     let rows = svc::list_balances(&state.engine, ctx.entity_id, emp, q.year.unwrap_or_else(this_year)).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
 }
 
 pub async fn list_requests(ctx: AuthContext, State(state): State<Arc<AppState>>, Query(q): Query<YearQuery>) -> ApiResult {
-    require_role(ROLES_LEAVE_APPROVE, &ctx, "view leave requests").map_err(er)?;
     let assigned = if q.mine { Some(ctx.user_id) } else { None };
     let rows = svc::list_leave_requests(&state.engine, ctx.entity_id, q.employee_id, q.status, assigned).await.map_err(er)?;
     Ok(Json(serde_json::to_value(rows).unwrap_or_default()))
@@ -101,19 +94,16 @@ pub async fn list_requests(ctx: AuthContext, State(state): State<Arc<AppState>>,
 
 /// Admin creates a request on behalf of an employee (employee_id required).
 pub async fn create_request(ctx: AuthContext, State(state): State<Arc<AppState>>, Json(req): Json<CreateLeaveRequest>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "create leave request").map_err(er)?;
     let emp = req.employee_id.ok_or_else(|| er(ErpError::ValidationFailed { message: "employee_id required".into() }))?;
     let id = svc::create_leave_request(&state.engine, ctx.entity_id, emp, req).await.map_err(er)?;
     Ok(Json(serde_json::json!({"id": id})))
 }
 
 pub async fn approve(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(d): Json<DecideLeaveRequest>) -> ApiResult {
-    require_role(ROLES_LEAVE_APPROVE, &ctx, "approve leave").map_err(er)?;
     svc::approve_leave(&state.engine, ctx.entity_id, id, ctx.user_id, d.note).await.map_err(er)?;
     Ok(Json(serde_json::json!({"status": "approved"})))
 }
 pub async fn decline(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(d): Json<DecideLeaveRequest>) -> ApiResult {
-    require_role(ROLES_LEAVE_APPROVE, &ctx, "decline leave").map_err(er)?;
     svc::decline_leave(&state.engine, ctx.entity_id, id, ctx.user_id, d.note).await.map_err(er)?;
     Ok(Json(serde_json::json!({"status": "declined"})))
 }
@@ -230,7 +220,6 @@ pub async fn my_payslips(ctx: StaffContext, State(state): State<Arc<AppState>>) 
 /// password is supplied the account is `active` and can sign in immediately;
 /// otherwise it lands as `invited`. Idempotent on email within the tenant.
 pub async fn invite_ess(ctx: AuthContext, State(state): State<Arc<AppState>>, Path(employee_id): Path<Uuid>, Json(req): Json<InviteStaffRequest>) -> ApiResult {
-    require_role(ROLES_HR_MANAGE, &ctx, "invite employee to self-service").map_err(er)?;
 
     let emp = sqlx::query_as::<_, zavora_erp_core::parties::EmployeeRow>(
         "SELECT * FROM employees WHERE id = $1 AND entity_id = $2",

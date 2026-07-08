@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{require_role, AuthContext, ROLES_CREATE};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 use axum::response::IntoResponse;
 
@@ -46,7 +46,6 @@ pub async fn create_group(
     State(state): State<Arc<AppState>>,
     Json(req): Json<GroupReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
     let table = match req.kind.as_str() {
         "vat_business" => "vat_business_groups",
         "vat_product" => "vat_product_groups",
@@ -77,7 +76,6 @@ pub async fn assign(
     State(state): State<Arc<AppState>>,
     Json(r): Json<AssignReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "assign posting groups").map_err(|e| err_response(e).into_response())?;
     let (table, gen_col, vat_col) = match r.kind.as_str() {
         "customer" => ("customers", "general_business_group_id", "vat_business_group_id"),
         "vendor" => ("vendors", "general_business_group_id", "vat_business_group_id"),
@@ -106,7 +104,6 @@ pub async fn upsert_business_control(
     State(state): State<Arc<AppState>>,
     Json(r): Json<BizControlReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
     let norm = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
     sqlx::query(
         "UPDATE general_business_groups SET receivables_account=$1, payables_account=$2 WHERE id=$3 AND entity_id=$4",
@@ -131,7 +128,6 @@ pub async fn upsert_general(
     State(state): State<Arc<AppState>>,
     Json(r): Json<GeneralCellReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
     // sales_account / purchase_account are NOT NULL in the table; the editor may
     // send only the field that changed (e.g. just sales for a royalty row), so
     // coerce any missing account to "" — the resolver treats empty as
@@ -167,7 +163,6 @@ pub async fn upsert_vat(
     State(state): State<Arc<AppState>>,
     Json(r): Json<VatCellReq>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    require_role(ROLES_CREATE, &ctx, "manage posting groups").map_err(|e| err_response(e).into_response())?;
     // vat_output_account / vat_input_account are NOT NULL; coerce missing to ""
     // (resolver treats empty as fall-through), so a partial cell edit still saves.
     let out = r.vat_output_account.clone().unwrap_or_default();

@@ -58,14 +58,14 @@ fn unauthorized(message: &str) -> Response {
 pub struct AuthContext {
     pub user_id: Uuid,
     pub entity_id: Uuid,
-    /// Legacy enum view of the role, used by `require_role`. A **custom** tenant
-    /// role has no enum variant, so it falls back to `Viewer` (least privilege)
-    /// here — such users get full effect only on `require_permission`-gated
-    /// endpoints (which use `role_key`), and read-level access on legacy
-    /// `require_role` endpoints until those migrate.
+    /// Coarse enum view of the role, retained for convenience/back-compat. A
+    /// **custom** tenant role has no enum variant and maps to `Viewer` here — but
+    /// this field is NOT used for authorization. All access decisions go through
+    /// `role_key` + the granular permission registry (`authz_layer`), so custom
+    /// roles are enforced correctly regardless of this coarse view.
     pub role: UserRole,
     /// The raw role KEY from the token (system role name or custom-role slug).
-    /// This is the authoritative identifier used by `require_permission`.
+    /// The authoritative identifier for authorization (`require_permission`).
     pub role_key: String,
 }
 
@@ -134,41 +134,6 @@ where
     }
 }
 
-/// Check whether the user's role is in the set of allowed roles for an action.
-///
-/// Returns `Ok(())` if the user's role is permitted, or an `ErpError::PermissionDenied`
-/// with a descriptive message identifying the required permission on failure.
-///
-/// # Example
-///
-/// ```ignore
-/// use zavora_erp_api::middleware::auth::{require_role, AuthContext};
-/// use zavora_erp_core::rbac::UserRole;
-///
-/// async fn create_invoice(ctx: AuthContext) {
-///     require_role(
-///         &[UserRole::Owner, UserRole::Admin, UserRole::Accountant, UserRole::Editor],
-///         &ctx,
-///         "create invoice",
-///     ).unwrap();
-/// }
-/// ```
-pub fn require_role(
-    _allowed: &[UserRole],
-    _ctx: &AuthContext,
-    _action: &str,
-) -> Result<(), ErpError> {
-    // DEPRECATED / NO-OP. Authorization is now enforced centrally and granularly
-    // by `middleware::authz_layer::enforce_permissions` against the declarative
-    // `ROUTE_PERMISSIONS` registry (default-deny) — the single, auditable gate.
-    // The old coarse `require_role(UserRole enum)` check is retained only as a
-    // call-site shim so the ~200 handlers compile unchanged; it intentionally
-    // does nothing (returning it here would double-gate and, for HrManager/custom
-    // roles, wrongly conflict with the granular permission). Call sites are being
-    // removed incrementally.
-    Ok(())
-}
-
 /// Data-driven authorization: check whether the caller's role grants `perm`
 /// (a permission key like `journal.post`). Resolves the role→permission set via
 /// the process `PermissionCache` (loaded from the DB on miss). This is the
@@ -207,88 +172,15 @@ fn parse_role(s: &str) -> Option<UserRole> {
     }
 }
 
-/// Get the display name of a role.
-fn role_name(role: &UserRole) -> &'static str {
-    match role {
-        UserRole::Owner => "Owner",
-        UserRole::Admin => "Admin",
-        UserRole::Accountant => "Accountant",
-        UserRole::HrManager => "HrManager",
-        UserRole::Editor => "Editor",
-        UserRole::Approver => "Approver",
-        UserRole::Viewer => "Viewer",
-    }
-}
+// (legacy role-group constants and role_name removed — enforcement is granular
+// and centralized in middleware::authz_layer.)
 
-// ─── Permission group constants ──────────────────────────────────────────────
 
-/// Roles allowed to create invoices, bills, and payments.
-pub const ROLES_CREATE: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::Accountant,
-    UserRole::Editor,
-];
 
-/// Roles allowed to send invoices and statements.
-pub const ROLES_SEND: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::Accountant,
-    UserRole::Editor,
-];
+// (legacy role-group constants and role_name removed — enforcement is granular
+// and centralized in middleware::authz_layer.)
 
-/// Roles allowed to approve bills and pay runs.
-pub const ROLES_APPROVE: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::Approver,
-];
 
-/// Roles allowed to post journal entries.
-pub const ROLES_POST_JOURNAL: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::Accountant,
-];
-
-/// Roles allowed to close or reopen fiscal periods.
-pub const ROLES_CLOSE_PERIOD: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-];
-
-/// Roles allowed to manage users and settings.
-pub const ROLES_MANAGE: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-];
-
-/// Roles allowed to administer HR: manage employees, configure leave types and
-/// holidays, and approve leave. HR Manager has these without finance access.
-pub const ROLES_HR_MANAGE: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::HrManager,
-];
-
-/// Roles allowed to approve/decline leave (HR admins plus line-manager approvers).
-pub const ROLES_LEAVE_APPROVE: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::HrManager,
-    UserRole::Approver,
-];
-
-/// All roles — used for read-only access.
-pub const ROLES_VIEW: &[UserRole] = &[
-    UserRole::Owner,
-    UserRole::Admin,
-    UserRole::Accountant,
-    UserRole::Editor,
-    UserRole::Approver,
-    UserRole::Viewer,
-];
 
 // ─── Golden test: data-driven RBAC seed reproduces the legacy role groups ────
 

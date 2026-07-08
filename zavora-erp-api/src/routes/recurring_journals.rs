@@ -3,7 +3,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::middleware::auth::{AuthContext, require_role, ROLES_POST_JOURNAL};
+use crate::middleware::auth::{AuthContext};
 use super::err_response;
 
 /// GET /recurring-journals
@@ -43,7 +43,6 @@ pub async fn save(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SaveRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "manage recurring journals").map_err(err_response)?;
 
     // Validate the template balances.
     let mut dr = rust_decimal::Decimal::ZERO;
@@ -82,7 +81,6 @@ pub async fn run_now(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "run recurring journals").map_err(err_response)?;
     match zavora_erp_core::services::scheduler::process_recurring_journals(&state.engine, ctx.entity_id).await {
         Ok(n) => Ok(Json(serde_json::json!({ "posted": n }))),
         Err(e) => Err(err_response(e)),
@@ -95,7 +93,6 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    require_role(ROLES_POST_JOURNAL, &ctx, "manage recurring journals").map_err(err_response)?;
     let res = sqlx::query("DELETE FROM recurring_journals WHERE id = $1 AND entity_id = $2")
         .bind(id).bind(ctx.entity_id).execute(state.engine.pool()).await;
     match res {
