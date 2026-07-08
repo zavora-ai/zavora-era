@@ -8,6 +8,99 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-08 — Amos Ambient Ops, full domain coverage, longevity hardening + sample-company onboarding
+
+Amos graduates from a chat-only assistant to a **scheduled + reactive practice**
+with a full accountant tool surface, and the platform gets a hardened
+multi-month data story. Landed via PRs #44–#48.
+
+#### Added
+- **Ambient Ops (phases 1–3)** — Amos's practice calendar
+  (`amos/routines/*.toml`): cron-scheduled **routine sub-agents** (one-shot
+  Gemini Flash text agents over the same scoped + audited ERP toolset — never
+  the browser, only declared scopes). Ships seven routines: morning briefing
+  (07:00), eTIMS compliance sweep (18:00), AR chase list (Mon), bank-recon
+  check (Fri), PAYE prep (5th), VAT prep (14th) and the month-end close pack
+  (3rd). Every run lands in the `amos_runs` ops ledger, the ERP **in-app
+  notification inbox**, and a live `routine_done` push. The live Amos knows
+  the calendar (`{ops}` prompt block + `ops_status` tool), can fire any
+  routine on demand (`run_routine`, a **Routines panel** with Run-now and
+  pause/resume ⏸/▶), and the ERP **reacts**: an eTIMS auto-transmit failure
+  fires Amos's trigger webhook with the event context
+  (`AMOS_WEBHOOK_URL`/`AMOS_WEBHOOK_SECRET`; the secret opens exactly
+  `POST /api/ops/run/*` and nothing else). Prep routines end at a report —
+  posting/filing/closing stays a human decision in the live session.
+- **Full accountant domain coverage** for Amos: AR invoicing (draft →
+  VAT-verified gross → confirm → post → **eTIMS check + retry**) with a
+  `record-customer-invoice` skill; new `inventory-ops`, `bank-reconciliation`
+  and `tax-filing` (KRA calendar) skills; `month-end-review` gains period
+  close/reopen. mcp-erp grew matching thin tools: reconciliation
+  compute/complete-and-lock, `close_period`/`reopen_period`, tax filings
+  list/file/remit. Fixed: the eTIMS tools were referenced by the persona but
+  missing from the session allowlist. A regression test pins the skill pack
+  (13 skills) and every coverage tool.
+- **Session history**: transcripts persist to `amos_sessions` on close (they
+  were distilled-then-destroyed); a **Past sessions** panel with a transcript
+  viewer. The dialogue in which a posting was approved is now auditable.
+- **Sample company at signup**: an opt-in "Explore with sample data" choice
+  provisions a realistic Kenyan-SME dataset through the real service layer
+  (6 customers, 5 vendors, 8 products, 8 invoices) so the dashboard, ageing,
+  P&L/BS and GL are populated to explore; opt-out yields a clean workspace.
+
+#### Changed / hardened
+- **Amos endpoint auth**: every `/api/*` and `/showcase/*` route now requires
+  the user's ERP JWT (`Authorization: Bearer`, or `?token=` for image loads) —
+  the ledger snapshot, distilled memories and evidence screenshots were
+  previously readable unauthenticated.
+- **Per-session panel state**: tasks/evidence/active-skill moved from
+  process-global to per-session — two concurrent sessions no longer overwrite
+  each other's workplan or see each other's evidence.
+- **Memory hygiene**: near-duplicate memories dedup on store (cosine ≥ 0.9 on
+  Postgres; exact-match guard on the in-memory fallback), a `forget` tool +
+  per-row delete in the Memory panel, and the panel lists by true recency
+  (new adk-memory `list_recent`).
+- **Longevity details**: showcase retention sweep (14-day default) + a
+  per-session evidence cap; the session transcript cap is a rolling tail (long
+  sessions keep their conclusions, not their greeting); Amos replies render as
+  sanitized markdown (headings/bold/code/lists/tables), streamed per chunk.
+
+#### Verified
+- Live endpoint probes (dev-unauth off): 401 without/with wrong-tenant token,
+  200 with a valid one; webhook secret opens only the trigger route.
+- Routine runs against the real ledger: manual morning briefing (cash split,
+  pending payables, overdrawn USD flagged) and a webhook-fired eTIMS sweep
+  that honoured its event context; reports delivered to the in-app inbox.
+- `amos` tests 10 passed (memory hygiene, skill pack, routine registry).
+
+### 2026-07-07 — KRA eTIMS (OSCU/VSCU), Amos sub-agents & plans, RBAC v2 enforcement
+
+#### Added
+- **KRA eTIMS real-time invoice transmission** (`services/etims.rs`, migration
+  `049`): device configuration + initialisation (`selectInitOsdcInfo`), sales
+  transmission (`saveTrnsSalesOsdc`) with tax-code mapping
+  (A/B/C/D/E ↔ VAT treatments), automatic item registration (`saveItem`),
+  **credit notes** as credit/refund receipts referencing the original invoice,
+  SCU receipt fields (rcptSign, intrlData, SCU id) + verification QR on
+  invoices and POS receipts, auto-transmit after posting (best-effort), an
+  eTIMS Settings page, invoice/credit-note transmit actions in the UI, and
+  `etims_status`/`etims_transmit_invoice` Amos tools.
+- **Amos specialist sub-agents** (Gemini 3 Flash): `analyze_attachment` reads
+  PDFs/images the user attaches (paperclip; context-cached for repeat
+  questions) and `web_search` answers external questions with Google-grounded,
+  cited results. Plus a **session clock** (user timezone + work-as-of posting
+  date), **plan tiers** (voice/web-search gated by plan; text-only sessions
+  never generate billable audio) and **entity-aware openers + contextual
+  follow-up chips** generated after each answer.
+- **Honest tenant gate**: a session for an organisation this Amos doesn't
+  serve now sees "Amos is being set up for your workspace" instead of a dead
+  "Offline" (typed refusal codes on the auth handshake).
+
+#### Changed
+- **RBAC v2 is the single gate**: authorization is enforced centrally by the
+  declarative route-permission registry (default-deny, granular, custom-role
+  aware); the legacy coarse `require_role` shim and its ~200 call sites were
+  removed (net −356 lines).
+
 ### 2026-07-06 — Optional CRM module + customer portal + Amos CRM skill
 
 Added an **optional, per-tenant CRM** (off by default, additive, never touches the
