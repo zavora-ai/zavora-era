@@ -75,7 +75,7 @@ function Hero() {
           The accountant that <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">never sleeps</span> — built into your books.
         </h1>
         <p className="mx-auto max-w-2xl mt-6 text-lg text-slate-300">
-          Amos lives inside your live ledger. It raises invoices, books bills, reconciles the bank,
+          Amos AI Accountant lives inside your general ledger. It raises invoices, books bills, reconciles the bank,
           runs payroll, prepares your KRA returns and tables the monthly management accounts —
           and every posting waits for your yes.
         </p>
