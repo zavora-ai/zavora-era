@@ -140,7 +140,7 @@ function AmosSpotlight() {
     'Records supplier bills and customer invoices from a sentence',
     'Reconciles the bank and M-Pesa till automatically',
     'Runs payroll and prepares KRA returns on the deadline calendar',
-    'Works while you sleep — morning briefings, eTIMS sweeps and month-end packs, on schedule',
+    'Acts before you ask — morning briefings, eTIMS sweeps, month-end packs, on schedule',
     'Answers "how is the business doing?" in plain language',
   ];
   return (

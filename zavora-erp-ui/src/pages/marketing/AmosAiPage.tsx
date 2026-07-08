@@ -32,7 +32,7 @@ export default function AmosAiPage() {
           <nav className="mx-auto max-w-7xl px-5 h-10 flex items-center gap-6 text-[13px] font-medium text-slate-500 overflow-x-auto">
             <span className="text-slate-400 uppercase tracking-wider text-[11px] shrink-0">Amos</span>
             <a href="#capabilities" className="hover:text-slate-900 whitespace-nowrap">Capabilities</a>
-            <a href="#routines" className="hover:text-slate-900 whitespace-nowrap">Works while you sleep</a>
+            <a href="#routines" className="hover:text-slate-900 whitespace-nowrap">Proactive by design</a>
             <a href="#trust" className="hover:text-slate-900 whitespace-nowrap">Trust &amp; control</a>
           </nav>
         </div>
@@ -179,10 +179,11 @@ function Routines() {
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 text-indigo-300 px-3 py-1 text-xs font-semibold mb-5">
             <CalendarClock className="w-3.5 h-3.5" /> Ambient operations
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">It works while you sleep.</h2>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">It doesn't wait to be asked.</h2>
           <p className="mt-5 text-slate-300 text-lg">
-            Amos runs your accounting calendar — eleven scheduled routines, each report delivered to
-            your notification inbox. Anything that posts money still waits for you.
+            Amos moves first: it runs your accounting calendar — eleven scheduled routines — and
+            reacts the moment something needs attention, delivering every report to your
+            notification inbox before you thought to ask. Anything that posts money still waits for you.
           </p>
           <div className="mt-7 overflow-hidden rounded-xl border border-white/10">
             <table className="w-full text-sm">
