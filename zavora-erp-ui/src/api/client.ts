@@ -91,6 +91,7 @@ export const signup = (data: {
   email: string;
   display_name: string;
   password: string;
+  with_sample_data?: boolean;
 }) => api.post('/auth/signup', data);
 export const logout = () => api.post('/auth/logout', {});
 // === Tenant management (multi-tenant: a user may belong to several entities) ===

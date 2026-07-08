@@ -132,6 +132,11 @@ pub struct SignupRequest {
     pub email: String,
     pub display_name: String,
     pub password: String,
+    /// Opt-in: seed a realistic sample company (customers, vendors, products,
+    /// posted + draft invoices) so the new tenant has data to explore. Defaults
+    /// to false (a clean, empty workspace).
+    #[serde(default)]
+    pub with_sample_data: bool,
 }
 
 const REFRESH_COOKIE: &str = "era_refresh";
@@ -281,6 +286,7 @@ pub async fn signup(
 
     // 2. Validate + normalise before any persistence (Req 7.4). A failure names
     //    exactly one offending field and reveals no identifiers.
+    let with_sample_data = req.with_sample_data;
     let provision_req = tenant::validate_signup(SignupInput {
         organization_name: req.organization_name,
         organization_type: req.organization_type,
@@ -296,6 +302,27 @@ pub async fn signup(
     let provisioned = tenant::provision_tenant(state.engine.pool(), provision_req)
         .await
         .map_err(er)?;
+
+    // 3b. Optional sample-company seed (best-effort; never fails signup). Runs
+    //     after the tenant + COA are committed so the new user lands on a
+    //     populated dashboard to explore.
+    if with_sample_data {
+        match zavora_erp_core::services::sample_data::seed_sample_company(
+            &state.engine,
+            provisioned.entity_id,
+        )
+        .await
+        {
+            Ok(summary) => tracing::info!(
+                entity_id = %provisioned.entity_id,
+                "seeded sample company: {summary:?}"
+            ),
+            Err(e) => tracing::warn!(
+                entity_id = %provisioned.entity_id,
+                "sample company seed failed (continuing): {e}"
+            ),
+        }
+    }
 
     // 4. Record the successful signup against the client's window budget.
     record_signup(&mut redis, &client_key).await;

@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [orgName, setOrgName] = useState('');
   const [orgType, setOrgType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
+  const [withSampleData, setWithSampleData] = useState(true);
   // "Start free" CTAs deep-link here with ?signup=1 to open create-organization.
   const [mode, setMode] = useState<'signin' | 'signup'>(
     params.get('signup') === '1' || params.get('mode') === 'signup' ? 'signup' : 'signin',
@@ -57,6 +58,7 @@ export default function LoginPage() {
         email: email.trim(),
         display_name: displayName.trim(),
         password,
+        with_sample_data: withSampleData,
       });
       storeAndGo(data);
     } catch (err: any) {
@@ -213,6 +215,20 @@ export default function LoginPage() {
                 placeholder="At least 8 characters"
               />
             </div>
+            <label className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${withSampleData ? 'border-indigo-300 bg-indigo-50/60' : 'border-gray-200 hover:bg-gray-50'}`}>
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={withSampleData}
+                onChange={(e) => setWithSampleData(e.target.checked)}
+              />
+              <span className="text-sm">
+                <span className="font-medium text-gray-900">Explore with sample data</span>
+                <span className="block text-xs text-gray-500">
+                  Load a demo company — customers, vendors, products and invoices — so you can try things out. You can delete it anytime.
+                </span>
+              </span>
+            </label>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
               {busy ? 'Creating…' : 'Create organization & sign in'}
             </button>
