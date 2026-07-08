@@ -118,6 +118,8 @@ mod tests {
             "hr-payroll",
             "crm",
             "payment-run",
+            "management-accounts",
+            "cash-forecast",
             "erp-showcase",
         ] {
             assert!(names.iter().any(|n| n == expected), "skill '{expected}' missing from catalog: {names:?}");
@@ -134,6 +136,8 @@ mod tests {
             // Gap-closure: CIT, statement ingestion, AR outreach, assets/FX, payment runs
             "cit_estimate", "import_bank_statement", "send_customer_statement",
             "list_fixed_assets", "run_depreciation", "run_fx_revaluation",
+            // Management accounting
+            "list_budgets", "set_budget",
         ] {
             assert!(tools.contains(expected), "tool '{expected}' not unlocked by any skill");
         }
