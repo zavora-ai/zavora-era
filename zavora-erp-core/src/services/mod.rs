@@ -15,6 +15,7 @@ pub mod payroll_config;
 pub mod payroll_masters;
 pub mod crm;
 pub mod rbac;
+pub mod sample_data;
 pub mod leave;
 pub mod hr_onboarding;
 pub mod reporting;
