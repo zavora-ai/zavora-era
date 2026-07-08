@@ -181,6 +181,9 @@ export const fileTaxReturn = (data: { tax_type: string; period_from: string; per
   api.post('/tax-filings', data);
 export const remitTaxFiling = (id: string, data: { liability_account: string; bank_account_code: string; payment_date: string }) =>
   api.post(`/tax-filings/${id}/remit`, data);
+export const getCitEstimate = (params?: { fiscal_year?: number; adjustments?: number }) =>
+  api.get('/tax/cit/estimate', { params });
+export const getCashForecast = (weeks = 13) => api.get('/forecasts/cash', { params: { weeks } });
 export const getWhtRates = () => api.get('/wht-rates');
 export const updateWhtRate = (data: { category: string; resident_rate: number; non_resident_rate: number }) =>
   api.put('/wht-rates', data);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getTaxFilings, fileTaxReturn, remitTaxFiling, getAccounts } from '../../api/client';
+import { getTaxFilings, fileTaxReturn, remitTaxFiling, getAccounts, getCitEstimate } from '../../api/client';
 import PageHeader from '../../components/shared/PageHeader';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { Plus } from 'lucide-react';
@@ -91,6 +91,49 @@ function RemitForm({ filing, liabilities, assets, onDone }: { filing: any; liabi
       <div><label className="label">Payment date</label><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <button className="btn-primary" disabled={!liability || !bank || mut.isPending} onClick={() => mut.mutate()}>{mut.isPending ? 'Posting…' : `Pay ${formatCurrency(Number(filing.amount))}`}</button>
       {mut.isError && <span className="text-xs text-red-600">{(mut.error as any)?.response?.data?.error ?? 'Failed'}</span>}
+    </div>
+  );
+}
+
+/** Corporation tax: the ledger-true estimate + the installment calendar
+ * (decision support — iTax is the filing of record). */
+function CitCard() {
+  const { data, isLoading, isError } = useQuery({ queryKey: ['cit-estimate'], queryFn: () => getCitEstimate() });
+  const est: any = data?.data;
+  if (isLoading) return <div className="card p-5 mb-6 text-sm text-slate-500">Computing corporation-tax estimate…</div>;
+  if (isError || !est) return null;
+  const badge = (st: string) =>
+    st === 'paid' ? 'bg-emerald-100 text-emerald-700' : st === 'due' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+  return (
+    <div className="card p-5 mb-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 className="font-semibold text-slate-800">Corporation tax — FY ending {formatDate(est.fiscal_year_end)}</h2>
+        <span className="text-xs text-slate-500">estimate · iTax is the filing of record</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
+        <div><div className="text-xs text-slate-500">Accounting profit</div><div className="font-semibold">{formatCurrency(Number(est.accounting_profit))}</div></div>
+        <div><div className="text-xs text-slate-500">+ Depreciation</div><div className="font-semibold">{formatCurrency(Number(est.depreciation_add_back))}</div></div>
+        <div><div className="text-xs text-slate-500">− Capital allowances</div><div className="font-semibold">{formatCurrency(Number(est.capital_allowances))}</div></div>
+        <div><div className="text-xs text-slate-500">Taxable (est.)</div><div className="font-semibold">{formatCurrency(Number(est.taxable_profit_estimate))}</div></div>
+        <div><div className="text-xs text-slate-500">CIT @ {est.cit_rate_percent}%</div><div className="font-semibold text-slate-900">{formatCurrency(Number(est.estimated_tax))}</div></div>
+      </div>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-slate-500 border-b"><th className="py-1.5">Installment</th><th>Due</th><th className="text-right">Amount</th><th className="text-right">Status</th></tr></thead>
+        <tbody>
+          {(est.installments ?? []).map((i: any) => (
+            <tr key={i.label} className="border-b border-slate-100">
+              <td className="py-1.5">{i.label}</td>
+              <td>{formatDate(i.due_date)}</td>
+              <td className="text-right">{formatCurrency(Number(i.amount))}</td>
+              <td className="text-right"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge(i.status)}`}>{i.status}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 text-xs text-slate-500">
+        Paid to date {formatCurrency(Number(est.paid_to_date))} · balance of tax due {formatDate(est.balance_due_date)} ·
+        record installments below as tax type <span className="font-mono">CIT-installment</span>.
+      </p>
     </div>
   );
 }
