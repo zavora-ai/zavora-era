@@ -61,7 +61,7 @@ function Hero() {
           <Bot className="w-3.5 h-3.5" /> Amos · the AI accountant inside Zavora ERP
         </div>
         <h1 className="mx-auto max-w-4xl text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.05]">
-          Hire an accountant who <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">never sleeps</span>.
+          The accountant that <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">never sleeps</span> — built into your books.
         </h1>
         <p className="mx-auto max-w-2xl mt-6 text-lg text-slate-300">
           Amos lives inside your live ledger. It raises invoices, books bills, reconciles the bank,

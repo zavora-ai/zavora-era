@@ -154,7 +154,7 @@ function AmosSpotlight() {
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Amos does the accounting. You run the business.</h2>
           <p className="mt-5 text-slate-300 text-lg">
             Amos lives inside your ledger — not a bolt-on chatbot. It sees every invoice, bill and payment, and
-            takes action with your approval. It's like hiring a qualified accountant who never sleeps.
+            takes action with your approval. A qualified accountant that never sleeps — already part of your ERP.
           </p>
           <ul className="mt-7 space-y-3">
             {bullets.map((b) => (
