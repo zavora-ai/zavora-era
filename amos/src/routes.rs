@@ -22,6 +22,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/snapshot", get(get_snapshot))
         .route("/api/skills", get(get_skills))
         .route("/api/memories", get(get_memories))
+        .route("/api/context", get(get_context))
         .route("/ws", get(ws_handler))
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
         .with_state(state)
@@ -45,6 +46,33 @@ async fn get_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 
 async fn get_memories(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(state.memory.recent(20).await)
+}
+
+/// Entity context for the UI header + entity-aware opening suggestions:
+/// the real company name, currency and current fiscal year/period-end from the
+/// served tenant's settings.
+async fn get_context(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    use chrono::Datelike;
+    let s = state.erp.settings().await.unwrap_or(serde_json::Value::Null);
+    let company = s["branding"]["company_name"].as_str().filter(|v| !v.is_empty()).unwrap_or("Your Company").to_string();
+    let currency = s["base_currency"].as_str().unwrap_or("KES").to_string();
+    let m = s["fiscal_year_end"]["month"].as_u64().unwrap_or(12) as u32;
+    let d = s["fiscal_year_end"]["day"].as_u64().unwrap_or(31) as u32;
+
+    let today = chrono::Utc::now().date_naive();
+    // The fiscal year the current date falls in: it ends on the first
+    // fiscal-year-end on or after today.
+    let mut end = chrono::NaiveDate::from_ymd_opt(today.year(), m, d).unwrap_or(today);
+    if end < today {
+        end = chrono::NaiveDate::from_ymd_opt(today.year() + 1, m, d).unwrap_or(end);
+    }
+    Json(serde_json::json!({
+        "company": company,
+        "currency": currency,
+        "fiscal_year": end.year(),
+        "period_end": end.to_string(),
+        "today": today.to_string(),
+    }))
 }
 
 /// Live business snapshot for the right-hand panel, straight from the ledger.
@@ -81,6 +109,20 @@ struct Handshake {
     plan: Option<String>,
 }
 
+/// A refused handshake: a machine-readable `code` (so the UI can show an honest,
+/// persistent gate for `wrong_tenant`/`portal_account` versus a transient
+/// connectivity notice) plus the human-readable reason.
+struct Refusal {
+    code: &'static str,
+    message: String,
+}
+
+impl Refusal {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self { code, message: message.into() }
+    }
+}
+
 /// Await the client's first `{type:"auth", token, timezone?, work_date?}` frame,
 /// verify the token against the served entity, and capture the user's timezone +
 /// work-as-of (posting) date preferences. Returns the handshake, or a refusal.
@@ -88,7 +130,7 @@ struct Handshake {
 /// Dev escape hatch: with `AMOS_DEV_ALLOW_UNAUTH=1` (never set in prod) an
 /// absent/blank token yields a synthetic owner principal for the served entity,
 /// so standalone `:8090` testing works without the parent ERP page.
-async fn authenticate<S>(ws_receiver: &mut S, state: &Arc<AppState>) -> Result<Handshake, String>
+async fn authenticate<S>(ws_receiver: &mut S, state: &Arc<AppState>) -> Result<Handshake, Refusal>
 where
     S: futures::Stream<Item = Result<ws::Message, axum::Error>> + Unpin,
 {
@@ -101,9 +143,11 @@ where
         Ok(Some(Ok(ws::Message::Text(text)))) => serde_json::from_str::<serde_json::Value>(&text)
             .ok()
             .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("auth")),
-        Ok(Some(Ok(ws::Message::Close(_)))) | Ok(None) => return Err("connection closed before authenticating".into()),
+        Ok(Some(Ok(ws::Message::Close(_)))) | Ok(None) => {
+            return Err(Refusal::new("no_auth", "connection closed before authenticating"));
+        }
         Ok(Some(Ok(_))) => None,             // first frame wasn't auth
-        Ok(Some(Err(e))) => return Err(format!("websocket error: {e}")),
+        Ok(Some(Err(e))) => return Err(Refusal::new("no_auth", format!("websocket error: {e}"))),
         Err(_) => None,                      // timeout
     };
     let str_field = |k: &str| frame.as_ref().and_then(|m| m.get(k)).and_then(|v| v.as_str()).map(String::from);
@@ -113,7 +157,9 @@ where
     let plan = str_field("plan");
 
     let principal = match token {
-        Some(t) if !t.trim().is_empty() => state.verifier.verify(&t).map_err(|e| e.to_string())?,
+        Some(t) if !t.trim().is_empty() => {
+            state.verifier.verify(&t).map_err(|e| Refusal::new(e.code, e.message))?
+        }
         _ if dev_allow => {
             warn!("AMOS_DEV_ALLOW_UNAUTH set — accepting an unauthenticated dev session");
             crate::auth::Principal {
@@ -122,7 +168,7 @@ where
                 role: "Owner".into(),
             }
         }
-        _ => return Err("Sign in to the ERP to use Amos.".into()),
+        _ => return Err(Refusal::new("no_auth", "Sign in to the ERP to use Amos.")),
     };
     Ok(Handshake { principal, timezone, work_date, plan })
 }
@@ -136,8 +182,11 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     let send_error = |msg: String| serde_json::json!({"type": "error", "message": msg}).to_string();
-    let send_fatal =
-        |msg: String| serde_json::json!({"type": "error", "fatal": true, "message": msg}).to_string();
+    // `code` lets the UI tell "not provisioned for your tenant" (a persistent,
+    // honest gate) apart from a transient connectivity failure.
+    let send_fatal = |code: &str, msg: String| {
+        serde_json::json!({"type": "error", "fatal": true, "code": code, "message": msg}).to_string()
+    };
 
     // ── Identity gate ────────────────────────────────────────────────────────
     // Before ANY tool or model turn, the connection must prove it belongs to a
@@ -147,14 +196,16 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // frame ⇒ the session is refused. No runner, no tools, no data, no memory.
     let handshake = match authenticate(&mut ws_receiver, &state).await {
         Ok(h) => h,
-        Err(reason) => {
-            warn!("session refused: {reason}");
+        Err(refusal) => {
+            warn!("session refused [{}]: {}", refusal.code, refusal.message);
             if let Some(sink) = &state.audit {
                 let _ = sink
                     .log(adk_auth::AuditEvent::authentication("unknown", adk_auth::AuditOutcome::Denied))
                     .await;
             }
-            let _ = ws_sender.send(ws::Message::Text(send_fatal(reason).into())).await;
+            let _ = ws_sender
+                .send(ws::Message::Text(send_fatal(refusal.code, refusal.message).into()))
+                .await;
             let _ = ws_sender.send(ws::Message::Close(None)).await;
             return;
         }
@@ -399,6 +450,21 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                             )
                                             .await;
                                         let _ = runner.create_response().await;
+                                    }
+                                });
+                            } else if std::env::var("AMOS_FOLLOWUPS").map(|v| v != "0").unwrap_or(true) {
+                                // The turn is genuinely finished (nothing left to
+                                // auto-continue) — offer 2-3 contextual next-step
+                                // chips generated from the conversation so far.
+                                let tx = tx_events.clone();
+                                let transcript = transcript_recv.clone();
+                                tokio::spawn(async move {
+                                    let ctx = transcript.lock().await.0.clone();
+                                    let items = crate::subagents::generate_followups(&ctx).await;
+                                    if !items.is_empty() {
+                                        let _ = tx.send(ws::Message::Text(
+                                            serde_json::json!({"type": "suggestions", "items": items}).to_string().into(),
+                                        )).await;
                                     }
                                 });
                             }

@@ -64,6 +64,21 @@ impl ErpClient {
             .await?)
     }
 
+    /// Entity settings (company name, base currency, fiscal-year end) used to
+    /// label the UI and build entity-aware opening suggestions.
+    pub async fn settings(&self) -> Result<Value> {
+        let token = self.token().await?;
+        Ok(self
+            .http
+            .get(format!("{}/settings", self.base))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
     /// The entity this Amos serves — the service account's own tenant. Logs in
     /// and reads `user.entity_id` from the response.
     pub async fn resolve_entity(&self) -> Result<uuid::Uuid> {

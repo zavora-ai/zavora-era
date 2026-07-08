@@ -90,6 +90,45 @@ fn client() -> anyhow::Result<Gemini> {
     Gemini::with_model(api_key, model).map_err(|e| anyhow::anyhow!("gemini client: {e}"))
 }
 
+// ─── Contextual follow-up suggestions ───────────────────────────────────────
+
+/// Propose up to 3 short follow-up actions from the recent conversation, as
+/// `{label, prompt}` objects the UI renders as tappable chips. Best-effort and
+/// cheap (a single flash call); returns empty on any error.
+pub async fn generate_followups(context: &str) -> Vec<serde_json::Value> {
+    if context.trim().is_empty() {
+        return Vec::new();
+    }
+    let client = match client() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let prompt = format!(
+        "You assist the owner of a Kenyan business inside their accounting system (Zavora ERP). \
+         Based on the recent conversation below, propose EXACTLY 3 short, specific follow-up \
+         actions the user is likely to want next. Return ONLY a JSON array of objects with keys \
+         \"label\" (2-4 words, Title Case) and \"prompt\" (a full first-person question or \
+         instruction to send). No markdown, no prose.\n\nConversation:\n{}",
+        context.chars().rev().take(2400).collect::<String>().chars().rev().collect::<String>(),
+    );
+    let text = match client.generate_content().with_user_message(prompt).execute().await {
+        Ok(resp) => resp.text(),
+        Err(e) => { warn!("followups failed: {e}"); return Vec::new(); }
+    };
+    // Tolerate ```json fences and surrounding prose — extract the JSON array.
+    let slice = match (text.find('['), text.rfind(']')) {
+        (Some(a), Some(b)) if b > a => &text[a..=b],
+        _ => return Vec::new(),
+    };
+    serde_json::from_str::<Vec<serde_json::Value>>(slice)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|v| v.get("label").and_then(|l| l.as_str()).is_some_and(|s| !s.is_empty())
+            && v.get("prompt").and_then(|p| p.as_str()).is_some_and(|s| !s.is_empty()))
+        .take(3)
+        .collect()
+}
+
 // ─── analyze_attachment (document / vision sub-agent) ────────────────────────
 
 pub fn analyze_attachment_def() -> ToolDefinition {

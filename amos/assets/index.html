@@ -179,6 +179,15 @@
   .composer-hint { font-size: 11px; color: var(--ink-4); text-align: center; padding-top: 9px; }
   .attach-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 7px; }
   .attach-tray:empty { display: none; }
+  .followups { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 2px 9px; animation: fadeInUp .25s ease; }
+  .followups:empty { display: none; }
+  .followup {
+    font-size: 12.5px; line-height: 1; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 6px; transition: border-color .12s, background .12s, color .12s;
+  }
+  .followup:hover { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+  .followup::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .6; }
   .attach-chip {
     display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
@@ -268,6 +277,26 @@
   .lightbox img { max-width: 100%; max-height: 88vh; border-radius: 10px; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
   .lightbox figcaption { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; color: #d7dae0; font-size: 13px; }
 
+  /* ══ Honest gate (Amos not provisioned for this tenant) ═══ */
+  .gate {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; padding: 32px; z-index: 70;
+  }
+  .gate[hidden] { display: none; }
+  .gate-card {
+    max-width: 460px; text-align: center; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 16px; padding: 40px 36px;
+    box-shadow: var(--shadow-2);
+  }
+  .gate-icon {
+    width: 52px; height: 52px; margin: 0 auto 20px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .gate-icon svg { width: 28px; height: 28px; }
+  .gate-card h2 { font-size: 19px; font-weight: 680; color: var(--ink); margin-bottom: 12px; letter-spacing: -.01em; }
+  .gate-card p { font-size: 14px; line-height: 1.6; color: var(--ink-3); }
+
   /* ══ Embed mode (inside the ERP shell, which provides branding) ═══ */
   body.embed header { display: none; }
   body.embed .embed-bar {
@@ -291,7 +320,7 @@
     <div class="brand-name">Amos <span>· AI Accountant</span></div>
   </div>
   <div class="divider"></div>
-  <div class="entity"><strong>Zavora Technologies Ltd</strong> · FY 2025 · KES</div>
+  <div class="entity" id="entityInfo"><strong>Zavora ERP</strong></div>
   <div class="header-right">
     <div class="conn" id="conn"><span class="conn-dot"></span><span id="connText">Offline</span></div>
     <button class="btn btn-primary" id="sessionBtn">Start voice session</button>
@@ -309,14 +338,14 @@
       <div class="thread-inner" id="threadInner">
         <div class="welcome" id="welcome">
           <h2>Your books, on demand.</h2>
-          <p>I'm Amos, the AI accountant for Zavora Technologies. Ask me anything about the
+          <p id="welcomeIntro">I'm Amos, your AI accountant. Ask me anything about the
              company's finances, or hand me work — I'll lay out a plan, carry it out in
              Zavora ERA, and document every step with evidence you can review.</p>
-          <div class="suggestions">
+          <div class="suggestions" id="suggestions">
             <button class="suggestion" data-q="What is our cash position right now?">Cash position</button>
             <button class="suggestion" data-q="Which supplier bills are unpaid, and which are overdue?">Outstanding bills</button>
-            <button class="suggestion" data-q="Run the profit and loss for 2025 and walk me through it.">P&amp;L for FY 2025</button>
-            <button class="suggestion" data-q="Show me the trial balance as at 31 December 2025 and confirm it balances.">Trial balance</button>
+            <button class="suggestion" data-q="Run the profit and loss and walk me through it.">Profit &amp; loss</button>
+            <button class="suggestion" data-q="Show me the trial balance and confirm it balances.">Trial balance</button>
           </div>
         </div>
       </div>
@@ -329,6 +358,7 @@
           <span id="voiceText">Listening</span>
           <span class="interrupt-link" id="interruptLink" style="display:none">Interrupt</span>
         </div>
+        <div class="followups" id="followups"></div>
         <div class="attach-tray" id="attachTray"></div>
         <div class="composer">
           <button class="icon-btn" id="micBtn" title="Toggle microphone">
@@ -388,6 +418,23 @@
       <div class="log" id="log"><div class="panel-empty">A timestamped record of every action Amos takes.</div></div>
     </div>
   </aside>
+</div>
+
+<!-- Honest gate: shown when this Amos deployment doesn't serve the signed-in
+     user's organisation (or a portal account tries to open it). Replaces a dead
+     "Offline" with a clear, branded explanation. -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <div class="gate-icon" id="gateIcon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5h.01"/>
+      </svg>
+    </div>
+    <h2 id="gateTitle">Amos is being set up for your workspace</h2>
+    <p id="gateBody">Your AI accountant isn't enabled for this organisation yet.
+       We're provisioning it — check back shortly, or contact your Zavora
+       administrator to have it switched on.</p>
+  </div>
 </div>
 
 <figure class="lightbox" id="lightbox">
@@ -605,7 +652,7 @@ function connect() {
       if (event.data instanceof ArrayBuffer) { playAudio(event.data); return; }
       const msg = JSON.parse(event.data);
       if (msg.type === 'connected') { if (msg.entitlements) { entitlements = msg.entitlements; applyEntitlements(); } if (!settled) { settled = true; onLive(); resolve(); } }
-      if (msg.type === 'error' && msg.fatal && !settled) { settled = true; reject(new Error(msg.message || 'refused')); }
+      if (msg.type === 'error' && msg.fatal && !settled) { settled = true; const err = new Error(msg.message || 'refused'); err.code = msg.code || ''; reject(err); }
       handleServer(msg);
     };
     ws.onclose = () => { onEnded(); if (!settled) { settled = true; reject(new Error('closed')); } };
@@ -630,6 +677,38 @@ function onEnded() {
   ws = null;
 }
 
+// Refusals the user can't fix by retrying — Amos isn't provisioned for their
+// tenant, or a portal account tried to open it. We show a calm, honest gate
+// instead of a dead "Offline"/"couldn't reach the service" loop.
+const GATE_COPY = {
+  wrong_tenant: {
+    title: 'Amos is being set up for your workspace',
+    body: "Your AI accountant isn't enabled for this organisation yet. We're provisioning it — check back shortly, or contact your Zavora administrator to have it switched on.",
+  },
+  portal_account: {
+    title: "Amos isn't available for this account",
+    body: 'Amos is a back-office tool for your finance team. Portal accounts (suppliers, employee self-service) don\'t have access.',
+  },
+};
+function showGate(code) {
+  const copy = GATE_COPY[code];
+  if (!copy) return false;
+  $('gateTitle').textContent = copy.title;
+  $('gateBody').textContent = copy.body;
+  $('gate').hidden = false;
+  setConn(false, 'Unavailable');
+  $('sessionBtn').disabled = true;
+  return true;
+}
+// Route a failed connect(): a persistent gate reason → the gate; anything else
+// (network, service down) → a transient notice. Returns true if handled by the
+// gate so callers can stop resetting their own UI.
+function handleConnectError(e) {
+  if (e && e.code && showGate(e.code)) return true;
+  addNotice('Could not reach the Amos service. Check that it is running on this machine.');
+  return false;
+}
+
 function handleServer(msg) {
   switch (msg.type) {
     case 'input_transcript': appendPending('user', msg.content); break;
@@ -648,6 +727,7 @@ function handleServer(msg) {
     case 'memory':           addMemory({kind: msg.kind, text: msg.text, at: new Date().toISOString()}, true); break;
     case 'error':            addNotice(msg.message); break;
     case 'notice':           addNotice(msg.message); break;
+    case 'suggestions':      renderFollowups(msg.items); break;
   }
 }
 
@@ -803,9 +883,9 @@ $('sessionBtn').onclick = async () => {
   try {
     await connect();
     await startMic().catch(() => addNotice('Microphone unavailable — you can still work with Amos by typing.'));
-  } catch (_) {
+  } catch (e) {
     $('sessionBtn').textContent = 'Start voice session';
-    addNotice('Could not reach the Amos service. Check that it is running on this machine.');
+    handleConnectError(e);
   }
 };
 
@@ -814,8 +894,8 @@ $('micBtn').onclick = async () => {
   try {
     if (!sessionActive) await connect();
     await startMic();
-  } catch (_) {
-    addNotice('Could not start the microphone session.');
+  } catch (e) {
+    if (!(e && e.code && showGate(e.code))) addNotice('Could not start the microphone session.');
   }
 };
 
@@ -823,10 +903,11 @@ async function sendText() {
   const input = $('textInput');
   const text = input.value.trim();
   if (!text) return;
+  clearFollowups();
   if (!sessionActive) {
     $('sendBtn').disabled = true;
     try { await connect(); }
-    catch (_) { addNotice('Could not reach the Amos service. Check that it is running on this machine.'); $('sendBtn').disabled = false; return; }
+    catch (e) { handleConnectError(e); $('sendBtn').disabled = false; return; }
     $('sendBtn').disabled = false;
   }
   finalizePending();
@@ -857,7 +938,7 @@ $('attachInput').addEventListener('change', async (e) => {
   if (!files.length) return;
   if (!sessionActive) {
     try { await connect(); }
-    catch (_) { addNotice('Could not reach the Amos service. Check that it is running on this machine.'); return; }
+    catch (e) { handleConnectError(e); return; }
   }
   for (const file of files) {
     if (file.size > MAX_ATTACH_BYTES) { addNotice(`"${file.name}" is too large to attach (max 18 MB).`); continue; }
@@ -896,6 +977,20 @@ document.querySelectorAll('.suggestion').forEach(btn => {
   btn.onclick = () => { $('textInput').value = btn.dataset.q; sendText(); };
 });
 
+// ─── Contextual follow-up chips (server-generated after each answer) ───
+function clearFollowups() { const c = $('followups'); if (c) c.innerHTML = ''; }
+function renderFollowups(items) {
+  const c = $('followups'); if (!c || !Array.isArray(items)) return;
+  c.innerHTML = '';
+  for (const it of items.slice(0, 3)) {
+    if (!it || !it.label || !it.prompt) continue;
+    const b = document.createElement('button');
+    b.className = 'followup'; b.type = 'button'; b.textContent = it.label; b.title = it.prompt;
+    b.onclick = () => { $('textInput').value = it.prompt; sendText(); };
+    c.appendChild(b);
+  }
+}
+
 // ─── Boot ────────────────────────────────────────────────
 // Embed mode: the ERP shell provides branding; relocate the live status and
 // session control into a slim toolbar and hide Amos's own header.
@@ -906,8 +1001,39 @@ if (new URLSearchParams(location.search).get('embed') === '1') {
   bar.appendChild($('sessionBtn'));
 }
 
+// Entity-aware header + opening suggestions from the served tenant's real
+// company name, currency and current fiscal year.
+async function loadContext() {
+  try {
+    const c = await fetch(`${BASE}/api/context`).then(r => r.json());
+    if (c && c.company) {
+      $('entityInfo').innerHTML = `<strong>${esc(c.company)}</strong> · FY ${c.fiscal_year} · ${esc(c.currency || '')}`;
+      const intro = $('welcomeIntro');
+      if (intro) intro.textContent = `I'm Amos, the AI accountant for ${c.company}. Ask me anything about the company's finances, or hand me work — I'll lay out a plan, carry it out in Zavora ERA, and document every step with evidence you can review.`;
+      const fy = c.fiscal_year, end = c.period_end;
+      const openers = [
+        { label: 'Cash position', q: 'What is our cash position right now?' },
+        { label: 'Outstanding bills', q: 'Which supplier bills are unpaid, and which are overdue?' },
+        { label: `P&L for FY ${fy}`, q: `Run the profit and loss for FY ${fy} and walk me through it.` },
+        { label: 'Trial balance', q: `Show me the trial balance as at ${end} and confirm it balances.` },
+      ];
+      const box = $('suggestions');
+      if (box) {
+        box.innerHTML = '';
+        for (const o of openers) {
+          const b = document.createElement('button');
+          b.className = 'suggestion'; b.textContent = o.label; b.dataset.q = o.q;
+          b.onclick = () => { $('textInput').value = o.q; sendText(); };
+          box.appendChild(b);
+        }
+      }
+    }
+  } catch (_) { /* keep the static fallback openers */ }
+}
+
 async function boot() {
   loadSnapshot();
+  loadContext();
   try {
     const [tasks, shots, mems] = await Promise.all([
       fetch(`${BASE}/api/tasks`).then(r => r.json()),
