@@ -1,0 +1,20 @@
+# Corporation-tax installment check — the 10th of every month, ahead of any
+# 20th-of-month installment. Read-only estimate; recording/remitting happens
+# with the live Amos after the owner confirms.
+name = "installment-tax"
+title = "CIT installment check"
+cron = "0 0 9 10 * *"
+skill = "tax-filing"
+tools = ["cit_estimate", "list_tax_filings", "list_fiscal_periods", "run_report"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Check whether a corporation-tax installment falls due this month. Steps:
+1. cit_estimate — the fiscal year's estimate and the installment schedule.
+2. If NO installment is due by the 20th of THIS month: reply with exactly one line ("No CIT installment due this month; next: <label> on <date>.") and stop.
+3. If one IS due: report (max ~10 lines):
+   - The installment (label, due date, amount) and the year-to-date position (estimated tax, cumulative due, paid so far, shortfall).
+   - The estimate's makeup in one line each: accounting profit, depreciation add-back, capital allowances.
+   - Close with: "This is an estimate — confirm with your tax agent, pay on iTax by the 20th, then ask Amos to record it as a CIT-installment filing."
+"""

@@ -1,0 +1,21 @@
+# Thursday payment-run proposal — a cash-flow-aware batch the owner approves
+# (or trims) with the live Amos, which then records what was actually paid.
+name = "payment-run-prep"
+title = "Weekly payment-run proposal"
+cron = "0 30 8 * * Thu"
+skill = "payment-run"
+tools = ["get_dashboard", "run_report", "list_bills", "list_bank_accounts", "list_tax_filings"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Prepare this week's supplier payment-run proposal (PROPOSE only — never record).
+Follow the payment-run playbook's Propose workflow: cash per account, the
+payable universe with ageing, statutory items first, then the prioritised batch
+within available cash minus a stated buffer.
+
+Report (max ~16 lines): the batch table (vendor · bill · due · amount ·
+priority), total vs cash remaining, and close with: "Approve the batch (or name
+the ones to pay) with Amos, make the payments, and it will record them."
+If there is nothing due and no statutory item outstanding, say so in two lines.
+"""

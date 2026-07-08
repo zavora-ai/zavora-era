@@ -471,6 +471,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/wht-rates", get(routes::wht::list).put(routes::wht::update))
         .route("/api/v1/tax-filings", get(routes::tax_filings::list).post(routes::tax_filings::file))
         .route("/api/v1/tax-filings/{id}/remit", post(routes::tax_filings::remit))
+        .route("/api/v1/tax/cit/estimate", get(routes::tax_filings::cit_estimate))
         .route("/api/v1/opening-balances", post(routes::onboarding::post_opening_balances))
         .route("/api/v1/recurring-journals", get(routes::recurring_journals::list).post(routes::recurring_journals::save))
         .route("/api/v1/recurring-journals/run", post(routes::recurring_journals::run_now))

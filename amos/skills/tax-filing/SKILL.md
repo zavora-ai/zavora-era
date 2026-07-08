@@ -3,7 +3,7 @@ name: tax-filing
 description: Kenyan statutory tax workflow in Zavora ERA — prepare VAT/PAYE/WHT figures from the ledger, record returns as filed, and record the remittance to KRA. Knows the KRA calendar (VAT & PAYE due the 20th of the following month, WHT the 20th). Use when the user asks about VAT/PAYE/WHT due, preparing or filing a return, or paying KRA.
 license: Proprietary
 compatibility: Requires mcp-erp (zavora backend) and the Playwright browser tools.
-allowed-tools: [run_report, list_tax_filings, file_tax_return, remit_tax_filing, list_fiscal_periods, list_bank_accounts, record_payment, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
+allowed-tools: [run_report, list_tax_filings, file_tax_return, remit_tax_filing, cit_estimate, list_fiscal_periods, list_bank_accounts, record_payment, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
 metadata:
   author: Zavora AI
   category: tax
@@ -18,6 +18,7 @@ metadata:
 Zavora ERA records what was filed and paid; the actual submission happens on KRA iTax. Your job: produce accurate figures from the ledger, record the filing, and record the remittance — with a clean trail from report → return → payment.
 
 ## KRA calendar (quote these, don't guess)
+- **Corporation tax installments**: the **20th of the 4th, 6th, 9th and 12th months** of the fiscal year (25% cumulative each); balance of tax by the **end of the 4th month after year end**. Use `cit_estimate` for the figures and schedule.
 - **VAT**: monthly; return + payment due by the **20th of the following month**.
 - **PAYE**: monthly; remit by the **9th of the following month** for employers under standard rules — confirm the company's applicable date if unsure (many SMEs use the 9th; iTax shows the exact obligation).
 - **WHT**: remit by the **20th of the month after deduction**; issue certificates to payees.
@@ -31,6 +32,7 @@ User mentions tax
 ├── "PAYE for the payroll run" → run_report PayeP (or PayrollSummary) for the period
 ├── "WHT certificates" → run_report WhtCertificate
 ├── "did we file/pay?" → list_tax_filings → status per period
+├── "corporation tax / installment tax?" → cit_estimate → walk through: accounting profit, depreciation add-back, capital allowances, taxable estimate, the installment schedule and what's paid. It is an ESTIMATE — say so; record payments as tax_type 'CIT-installment'
 └── "pay KRA" → WORKFLOW: Remit
 ```
 

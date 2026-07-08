@@ -17,5 +17,6 @@ Report (max ~14 lines), most-overdue customer first:
 - Per customer: total owed, worst bucket, the invoice numbers to chase.
 - One-line suggested action each ("statement + call" for 60+, "reminder" for 30+).
 - Finish with the single total: "KES X overdue across N customers."
+- Close with: "Tell Amos 'send the statements' and it will email each overdue customer their statement of account (after you confirm the list)."
 If nothing is overdue, say exactly that in one line.
 """

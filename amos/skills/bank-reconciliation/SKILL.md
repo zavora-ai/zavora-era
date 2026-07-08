@@ -3,7 +3,7 @@ name: bank-reconciliation
 description: Reconcile a bank account in Zavora ERA against a bank statement — compute the GL vs cleared position, tick off cleared entries, investigate differences, and complete-and-lock the reconciliation. Use when the user asks to reconcile a bank/M-Pesa account, check why the bank balance differs from the books, or review reconciliation status at month end.
 license: Proprietary
 compatibility: Requires mcp-erp (zavora backend) and the Playwright browser tools.
-allowed-tools: [list_bank_accounts, list_reconciliations, compute_reconciliation, complete_reconciliation, get_journal_entries, list_payments, run_report, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
+allowed-tools: [list_bank_accounts, list_reconciliations, compute_reconciliation, complete_reconciliation, import_bank_statement, get_journal_entries, list_payments, run_report, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
 metadata:
   author: Zavora AI
   category: banking
@@ -23,8 +23,14 @@ User mentions the bank
 ├── "reconcile <account> for <month>" → WORKFLOW: Reconcile (need the statement closing balance + date)
 ├── "why doesn't the bank match the books?" → compute_reconciliation, explain the uncleared items
 ├── "are we reconciled?" → list_reconciliations + run_report BankReconSummary
-└── Statement attached (PDF/image)? → analyze_attachment first to read closing balance + transactions
+└── Statement attached? → WORKFLOW: Ingest first
 ```
+
+## WORKFLOW: Ingest (statement attached)
+1. `analyze_attachment` → extract: statement date, closing balance, and EVERY transaction line (date, description, amount signed from the account's view). For CSV attachments, extract the raw rows.
+2. `import_bank_statement {bank_account_id, filename, content}` with the lines as CSV (`date,description,amount,reference`) — idempotent, duplicates skipped; they land in the bank feed for categorisation.
+3. Continue with WORKFLOW: Reconcile using the extracted closing balance + date — match the statement lines you just read against the uncleared entries.
+
 
 ## WORKFLOW: Reconcile
 1. `list_bank_accounts` → resolve the account id. Ask for the **statement date** and **closing balance** if not given (or read them from an attached statement).

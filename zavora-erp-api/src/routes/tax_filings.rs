@@ -1,4 +1,4 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Path, Query, State}, Json};
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -115,4 +115,32 @@ pub async fn remit(
         .execute(state.engine.pool()).await.ok();
 
     Ok(Json(serde_json::json!({ "journal_entry_id": entry.id })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct CitParams {
+    pub fiscal_year: Option<i32>,
+    /// Manual taxable-profit adjustment (± — disallowables, investment
+    /// deductions, loss carry-forwards the ledger can't see).
+    pub adjustments: Option<Decimal>,
+}
+
+/// GET /tax/cit/estimate — corporation-tax estimate + the installment-tax
+/// calendar for a fiscal year (decision support; iTax is the filing of record).
+pub async fn cit_estimate(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<CitParams>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match zavora_erp_core::services::cit::estimate(
+        &state.engine,
+        ctx.entity_id,
+        params.fiscal_year,
+        params.adjustments.unwrap_or_default(),
+    )
+    .await
+    {
+        Ok(est) => Ok(Json(serde_json::to_value(est).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
 }
