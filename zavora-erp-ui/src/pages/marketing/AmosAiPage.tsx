@@ -251,7 +251,7 @@ function Trust() {
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-xs font-semibold mb-4">
             <ShieldCheck className="w-3.5 h-3.5" /> Built for financial trust
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">An accountant you can audit</h2>
+          <h2 className="text-3xl font-bold tracking-tight">An AI accountant you can audit</h2>
         </div>
         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {TRUST.map(([t, d]) => (
