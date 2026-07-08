@@ -18,18 +18,31 @@ You run reports with `run_report` and translate them for a non-accountant. Numbe
 
 ## Report catalog (report_type → when to use → parameters)
 ```
-TrialBalance     → "does everything balance?", period-end checks   → as_at
-BalanceSheet     → "what do we own and owe?"                       → as_at
-ProfitAndLoss    → "how did we do?", income/expenses               → from + to
-CashFlow         → "where did the money go?"                       → from + to
-ArAgeing         → "who owes us and how late?"                     → as_at
-ApAgeing         → "who do we owe and how late?"                   → as_at
-GlDetail         → "show me activity on account X"                 → from + to
-IncomeByCustomer → "who is our best customer?"                     → from + to
-ExpenseByVendor  → "where do we spend the most?"                   → from + to
-VatReturn        → VAT period figures (Zavora is NOT VAT-registered — usually nil)
-EquityChanges    → "what happened to the owners' money?"           → from + to
+TrialBalance        → "does everything balance?", period-end checks   → as_at
+BalanceSheet        → "what do we own and owe?"                       → as_at
+ProfitAndLoss       → "how did we do?", income/expenses               → from + to
+CashFlow            → "where did the money go?" (indirect)            → from + to
+CashFlowDirect      → cash flow by actual receipts/payments           → from + to
+ArAgeing            → "who owes us and how late?"                     → as_at
+ApAgeing            → "who do we owe and how late?"                   → as_at
+GlDetail            → "show me activity on account X"                 → from + to (+ account_code)
+IncomeByCustomer    → "who is our best customer?"                     → from + to
+ExpenseByVendor     → "where do we spend the most?"                   → from + to
+BudgetVsActual      → "how are we doing against budget?"              → from + to
+DimensionalAnalysis → P&L split by department/branch/project          → from + to
+InventoryValuation  → "what is our stock worth?"                      → as_at
+FixedAssetRegister  → assets: cost, depreciation, net book value      → as_at
+BankReconSummary    → reconciliation status across bank accounts      → as_at
+CustomerStatement   → one customer's documented position              → as_at (+ customer_id)
+VendorStatement     → one vendor's documented position                → as_at (+ vendor_id)
+CustomerPaymentHistory → how a customer actually pays                 → from + to (+ customer_id)
+EquityChanges       → "what happened to the owners' money?"           → from + to
+VatReturn / SalesTaxSummary → VAT period figures                      → from + to
+PayrollRegister / PayrollSummary / PayeP / PayrollBankFile / StatutorySchedule → payroll packs → period
+WhtCertificate      → withholding certificates for payees             → from + to
 ```
+Comparatives: run the SAME report twice (this period, prior period / same
+month last year) and present the movement — never guess a prior figure.
 Quick glance instead of a full report: `get_dashboard` (cash, receivables, payables, overdue counts).
 
 ## Decision Tree

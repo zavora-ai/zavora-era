@@ -8,6 +8,38 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-08 — Management accounting: the monthly pack, KPIs and a 13-week cash forecast
+
+The finance-manager tier. The report engine already had the raw materials
+(BudgetVsActual, DimensionalAnalysis, comparatives); this adds the assembly
+and judgment layer.
+
+#### Added
+- **`management-accounts` skill**: the monthly pack — P&L vs budget vs prior
+  month vs same month last year, margins, KPIs with formulas and Kenyan-SME
+  context (DSO/DPO/stock turns/current ratio/cash cover), department split,
+  and **commentary rules** (every variance >10% or >KES 100k explained by its
+  driver via GlDetail/IncomeByCustomer/ExpenseByVendor; one-offs labelled;
+  unexplained flagged, never invented). Budget maintenance included: propose
+  next year from actuals, `set_budget` per account × period after confirmation.
+- **`cash-forecast` skill**: a 13-week rolling forecast assembled from open
+  AR/AP due dates (haircut by observed payment behaviour), committed POs, the
+  payroll cycle and the statutory calendar (PAYE 9th, VAT/WHT 20th, CIT
+  installments) — negative weeks flagged first, assumptions printed,
+  "can we afford X?" answered by insertion.
+- **`management-pack` routine** (5th of the month): the pack + a 4-week cash
+  outlook, delivered to the notification inbox after the close pack (3rd).
+- **Budget tools** (`list_budgets`/`set_budget`, mcp-erp) and the **full
+  27-type report catalog** taught to the financial-reporting skill —
+  BudgetVsActual, DimensionalAnalysis, InventoryValuation, FixedAssetRegister,
+  statements and payroll packs were previously invisible to Amos.
+- Skill pack 14 → 16; routine calendar 10 → 11 (registry tests updated).
+
+#### Verified
+- Live run against the real ledger: the pack produced a headline with all
+  three comparatives (including a real same-month-last-year figure), honoured
+  the "no budget loaded" rule, and wrote driver-based commentary.
+
 ### 2026-07-08 — Closing the accountant gap: corporation tax, payment runs, statement ingestion, asset/FX + AR outreach for Amos
 
 Follow-through on the "Amos vs a Kenyan accountant" capability review — the six

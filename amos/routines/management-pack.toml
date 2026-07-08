@@ -1,0 +1,29 @@
+# Monthly management accounts — the 5th, after the close pack (3rd) has had
+# its issues resolved. The finance-manager deliverable: variance, KPIs,
+# commentary, and a 13-week cash outlook, in the inbox.
+name = "management-pack"
+title = "Monthly management accounts"
+cron = "0 0 9 5 * *"
+skill = "management-accounts"
+tools = ["get_dashboard", "run_report", "list_budgets", "list_fiscal_periods", "list_invoices", "list_bills", "list_bank_accounts", "list_pay_runs", "list_tax_filings", "cit_estimate"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Produce LAST month's management accounts pack per the playbook, then append a
+condensed cash outlook. Steps:
+1. The pack: headline (revenue, GP%, NP% — vs budget via BudgetVsActual, vs
+   prior month and vs same month last year via two more ProfitAndLoss runs),
+   KPIs (DSO, DPO, current ratio, cash cover — formulas from the playbook),
+   department split if DimensionalAnalysis returns dimensions, and variance
+   commentary per the rules (drivers named, one-offs labelled, unexplained
+   flagged). If NO budget is loaded, say so in one line and continue without
+   the budget column.
+2. Cash outlook: from open invoices/bills due dates, the payroll cycle and the
+   statutory calendar, give the next 4 weeks' expected in/out/closing and flag
+   any week that goes negative.
+
+Format (max ~24 lines): headline block · variance lines with commentary ·
+KPI line · department line · 4-week cash outlook · the 2–3 suggested
+decisions. Numbers only from this run's tool results.
+"""
