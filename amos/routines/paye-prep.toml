@@ -1,0 +1,21 @@
+# PAYE preparation — the 5th, ahead of the KRA remittance date (9th).
+# Read-only staging of the payroll statutory figures.
+name = "paye-prep"
+title = "PAYE remittance prep"
+cron = "0 0 9 5 * *"
+skill = "tax-filing"
+tools = ["run_report", "list_tax_filings", "list_pay_runs", "get_pay_run"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Prepare LAST month's PAYE remittance (due at KRA by the 9th). Steps:
+1. list_tax_filings — if last month's PAYE is already recorded, report that and stop.
+2. list_pay_runs / get_pay_run for last month's run(s).
+3. run_report PayrollSummary (or PayeP) for the month: PAYE, plus NSSF/SHIF/housing levy if shown.
+
+Report (max ~10 lines):
+- "PAYE for <month>: KES <amount>" plus the other statutory lines found.
+- If NO pay run exists for the month, lead with that ⚠ — payroll may not have been run.
+- Deadline reminder (9th) and: "Ask Amos to record the remittance once paid."
+"""

@@ -1,0 +1,22 @@
+# VAT preparation — the 14th, six days before the KRA deadline (20th).
+# Read-only: it computes and stages the figure; recording the filing happens
+# with the live Amos after the owner confirms.
+name = "vat-prep"
+title = "VAT return prep"
+cron = "0 0 9 14 * *"
+skill = "tax-filing"
+tools = ["run_report", "list_tax_filings", "list_fiscal_periods"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Prepare LAST month's VAT return figures (due at KRA by the 20th of this month). Steps:
+1. list_tax_filings — if last month's VAT is already recorded as filed, report that and stop.
+2. run_report VatReturn for last month (period_from = 1st, period_to = month end).
+3. Break down: output VAT, input VAT, net payable/credit.
+
+Report (max ~10 lines):
+- "VAT for <month>: KES <net> payable (output <x> − input <y>)" — or nil.
+- Deadline reminder: file + pay on iTax by the 20th.
+- Closing line: "Ask Amos to record the filing once submitted on iTax."
+"""

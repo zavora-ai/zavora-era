@@ -87,6 +87,9 @@ pub struct AppState {
     /// Optional session-transcript store (Postgres) — the durable record of
     /// past conversations.
     pub history: Option<std::sync::Arc<crate::history::SessionHistory>>,
+    /// Ambient operations: scheduled routine sub-agents + the ops ledger.
+    /// `None` when no routines are configured.
+    pub ops: Option<std::sync::Arc<crate::ops::Ops>>,
     /// Tenant-wide JSON messages pushed to every connected UI websocket.
     /// Memory events only — memory is shared across the tenant's sessions;
     /// per-session data (tasks, showcase, skill) goes over `SessionState.push`.
@@ -104,6 +107,7 @@ impl AppState {
         served_entity: uuid::Uuid,
         audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
         history: Option<std::sync::Arc<crate::history::SessionHistory>>,
+        ops: Option<std::sync::Arc<crate::ops::Ops>>,
     ) -> Result<Self> {
         let api_key = std::env::var("GOOGLE_API_KEY")
             .map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY environment variable must be set"))?;
@@ -129,6 +133,7 @@ impl AppState {
             served_entity,
             audit,
             history,
+            ops,
             push,
             showcase_dir,
             erp_ui_url: std::env::var("ERP_UI_URL").unwrap_or_else(|_| "http://localhost:3000".into()),

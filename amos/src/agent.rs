@@ -23,8 +23,13 @@ pub async fn build_runner(
     clock: crate::clock::SharedClock,
     entitlements: crate::plan::Entitlements,
 ) -> Result<RealtimeRunner> {
+    let ops_block = match &state.ops {
+        Some(ops) => ops.prompt_block().await,
+        None => "(ambient operations are not configured)".to_string(),
+    };
     let instruction = persona::system_instruction(state)
         .replace("{memories}", &state.memory.profile_block(6).await)
+        .replace("{ops}", &ops_block)
         .replace("{now}", &clock.read().await.instruction_block());
 
     // Voice is the expensive path (audio output ~$12/1M tokens). On a plan
@@ -90,6 +95,8 @@ pub async fn build_runner(
         .tool_arc(remember_def(), Arc::new(Remember { state: state.clone() }))
         .tool_arc(recall_def(), Arc::new(Recall { state: state.clone() }))
         .tool_arc(forget_def(), Arc::new(Forget { state: state.clone() }))
+        .tool_arc(ops_status_def(), Arc::new(OpsStatus { state: state.clone() }))
+        .tool_arc(run_routine_def(), Arc::new(RunRoutine { state: state.clone() }))
         .tool_arc(erp_login_def(), Arc::new(ErpLoginTool { state: state.clone(), factory: factory.clone() }))
         .tool_arc(showcase_def(), Arc::new(ShowcaseStepTool { state: state.clone(), session: session.clone(), factory: factory.clone() }))
         // Specialist sub-agents: read attached PDFs/images (every plan).
@@ -522,6 +529,79 @@ impl ToolHandler for Forget {
 }
 
 // ─── erp_login ───────────────────────────────────────────────────────────────
+
+// ─── ambient ops: ops_status / run_routine ──────────────────────────────────
+
+fn ops_status_def() -> ToolDefinition {
+    ToolDefinition {
+        name: "ops_status".into(),
+        description: Some(
+            "Your practice calendar: the scheduled background routines (morning briefing, \
+             eTIMS sweep, month-end pack, ...), when each next fires, and how recent runs \
+             went. Use when the user asks what's scheduled, whether something ran, or what \
+             happened while they were away."
+                .into(),
+        ),
+        parameters: Some(json!({"type": "object", "properties": {}})),
+    }
+}
+
+struct OpsStatus {
+    state: Arc<AppState>,
+}
+
+#[async_trait]
+impl ToolHandler for OpsStatus {
+    async fn execute(&self, _call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
+        match &self.state.ops {
+            Some(ops) => Ok(ops.status().await),
+            None => Ok(json!({"error": "ambient operations are not configured"})),
+        }
+    }
+}
+
+fn run_routine_def() -> ToolDefinition {
+    ToolDefinition {
+        name: "run_routine".into(),
+        description: Some(
+            "Trigger a scheduled routine NOW instead of waiting for its cron (e.g. 'run the \
+             month-end pack', 'send me the briefing now'). The routine runs in the background; \
+             its report arrives as a notification and you'll see it in ops_status. Get routine \
+             names from ops_status."
+                .into(),
+        ),
+        parameters: Some(json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Routine name from ops_status, e.g. morning-briefing"},
+                "context": {"type": "string", "description": "Optional: extra context for this run (e.g. 'focus on the Equity USD account')"}
+            },
+            "required": ["name"]
+        })),
+    }
+}
+
+struct RunRoutine {
+    state: Arc<AppState>,
+}
+
+#[async_trait]
+impl ToolHandler for RunRoutine {
+    async fn execute(&self, call: &ToolCall) -> adk_realtime::error::Result<serde_json::Value> {
+        let name = call.arguments["name"].as_str().unwrap_or("");
+        let context = call.arguments["context"].as_str().map(String::from);
+        match &self.state.ops {
+            Some(ops) => match ops.run_now(&self.state, name, "manual", context).await {
+                Ok(msg) => {
+                    info!("🗓️ manual routine trigger: {name}");
+                    Ok(json!({"status": "started", "message": msg}))
+                }
+                Err(e) => Ok(json!({"error": e.to_string()})),
+            },
+            None => Ok(json!({"error": "ambient operations are not configured"})),
+        }
+    }
+}
 
 fn erp_login_def() -> ToolDefinition {
     ToolDefinition {

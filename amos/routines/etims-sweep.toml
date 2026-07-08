@@ -1,0 +1,20 @@
+# Evening KRA eTIMS sweep — every posted invoice must reach KRA. Retrying a
+# failed transmission is a safe, idempotent write, so this runs unattended.
+name = "etims-sweep"
+title = "eTIMS compliance sweep"
+cron = "0 0 18 * * *"
+tools = ["etims_status", "list_invoices", "get_invoice", "etims_transmit_invoice"]
+scopes = ["erp:read", "erp:write"]
+notify = true
+enabled = true
+prompt = """
+Run the daily KRA eTIMS compliance sweep. Steps:
+1. etims_status — is the device enabled and initialised? If not, report that and STOP (nothing can transmit).
+2. list_invoices (recent, posted) — find posted invoices with NO eTIMS receipt (missing SCU/receipt fields; use get_invoice to confirm a suspect).
+3. For each untransmitted posted invoice: etims_transmit_invoice. Note success or the exact error.
+
+Report (max ~10 lines):
+- Device status.
+- "All N posted invoices transmitted ✓" or a list of retried invoices with outcome.
+- Any invoice that STILL failed after retry goes first, marked ⚠ — the owner must know.
+"""

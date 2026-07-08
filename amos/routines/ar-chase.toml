@@ -1,0 +1,21 @@
+# Monday AR chase list — who owes us, how late, and the suggested chasing
+# order. Read-only: statements/reminders are sent from the live session.
+name = "ar-chase"
+title = "AR chase list"
+cron = "0 0 8 * * Mon"
+skill = "financial-reporting"
+tools = ["run_report", "list_invoices", "list_customers", "get_customer"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Prepare the Monday receivables chase list. Steps:
+1. run_report ArAgeing as at today — buckets per customer.
+2. list_invoices — the specific overdue invoices behind the ageing (number, amount, days overdue).
+
+Report (max ~14 lines), most-overdue customer first:
+- Per customer: total owed, worst bucket, the invoice numbers to chase.
+- One-line suggested action each ("statement + call" for 60+, "reminder" for 30+).
+- Finish with the single total: "KES X overdue across N customers."
+If nothing is overdue, say exactly that in one line.
+"""

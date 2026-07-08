@@ -3,6 +3,36 @@
 version = 4
 
 [[package]]
+name = "adk-agent"
+version = "2.0.0"
+dependencies = [
+ "adk-core",
+ "adk-skill",
+ "adk-telemetry",
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "futures",
+ "jsonschema 0.28.3",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "adk-artifact"
+version = "2.0.0"
+dependencies = [
+ "adk-core",
+ "async-trait",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "adk-auth"
 version = "2.0.0"
 dependencies = [
@@ -67,7 +97,7 @@ dependencies = [
  "adk-core",
  "async-trait",
  "futures",
- "jsonschema",
+ "jsonschema 0.45.1",
  "regex",
  "serde",
  "serde_json",
@@ -86,6 +116,25 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tracing",
+]
+
+[[package]]
+name = "adk-model"
+version = "2.0.0"
+dependencies = [
+ "adk-core",
+ "adk-gemini",
+ "adk-telemetry",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64",
+ "chrono",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
  "tracing",
 ]
 
@@ -139,6 +188,27 @@ dependencies = [
  "tokio-tungstenite 0.28.0",
  "tracing",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "adk-runner"
+version = "2.0.0"
+dependencies = [
+ "adk-artifact",
+ "adk-core",
+ "adk-plugin",
+ "adk-session",
+ "adk-skill",
+ "async-stream",
+ "async-trait",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 
@@ -240,13 +310,17 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "amos"
 version = "0.1.0"
 dependencies = [
+ "adk-agent",
  "adk-auth",
  "adk-core",
  "adk-gemini",
  "adk-guardrail",
  "adk-memory",
+ "adk-model",
  "adk-rag",
  "adk-realtime",
+ "adk-runner",
+ "adk-session",
  "adk-skill",
  "adk-tool",
  "anyhow",
@@ -255,6 +329,7 @@ dependencies = [
  "base64",
  "chrono",
  "chrono-tz",
+ "cron",
  "dotenvy",
  "futures",
  "jsonwebtoken",
@@ -264,6 +339,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "toml",
  "tower-http",
  "tracing",
  "tracing-subscriber",
@@ -643,6 +719,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
+name = "cron"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5877d3fbf742507b66bc2a1945106bd30dd8504019d596901ddd012a4dd01740"
+dependencies = [
+ "chrono",
+ "once_cell",
+ "winnow 0.6.26",
+]
+
+[[package]]
 name = "crossbeam-queue"
 version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,6 +933,17 @@ dependencies = [
 
 [[package]]
 name = "fancy-regex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "fancy-regex"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
@@ -860,6 +958,17 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fluent-uri"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1918b65d96df47d3591bed19c5cca17e3fa5d0707318e4b5ef2eae01764df7e5"
+dependencies = [
+ "borrow-or-share",
+ "ref-cast",
+ "serde",
+]
 
 [[package]]
 name = "fluent-uri"
@@ -1462,6 +1571,30 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
+version = "0.28.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b8f66fe41fa46a5c83ed1c717b7e0b4635988f427083108c8cf0a882cc13441"
+dependencies = [
+ "ahash",
+ "base64",
+ "bytecount",
+ "email_address",
+ "fancy-regex 0.14.0",
+ "fraction",
+ "idna",
+ "itoa",
+ "num-cmp",
+ "once_cell",
+ "percent-encoding",
+ "referencing 0.28.3",
+ "regex-syntax",
+ "serde",
+ "serde_json",
+ "uuid-simd",
+]
+
+[[package]]
+name = "jsonschema"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "257eb0e588b76827bbddc9e73945a9743693dd2adeaee9da26420f93cfedb798"
@@ -1470,7 +1603,7 @@ dependencies = [
  "bytecount",
  "data-encoding",
  "email_address",
- "fancy-regex",
+ "fancy-regex 0.17.0",
  "fraction",
  "getrandom 0.3.4",
  "idna",
@@ -1478,7 +1611,7 @@ dependencies = [
  "num-cmp",
  "num-traits",
  "percent-encoding",
- "referencing",
+ "referencing 0.45.1",
  "regex",
  "regex-syntax",
  "serde",
@@ -2162,12 +2295,25 @@ dependencies = [
 
 [[package]]
 name = "referencing"
+version = "0.28.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0dcb5ab28989ad7c91eb1b9531a37a1a137cc69a0499aee4117cae4a107c464"
+dependencies = [
+ "ahash",
+ "fluent-uri 0.3.2",
+ "once_cell",
+ "percent-encoding",
+ "serde_json",
+]
+
+[[package]]
+name = "referencing"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2f38748ceca8d0b0013e60f534d94a6e23dfd89fd2a88318fc5a2d04fda1010"
 dependencies = [
  "ahash",
- "fluent-uri",
+ "fluent-uri 0.4.1",
  "getrandom 0.3.4",
  "hashbrown 0.16.1",
  "parking_lot",
@@ -2534,6 +2680,15 @@ dependencies = [
  "itoa",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "serde_spanned"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -3156,6 +3311,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
+dependencies = [
+ "serde",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_edit",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.22.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_write",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3414,6 +3610,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b082222b4f6619906941c17eb2297fff4c2fb96cb60164170522942a200bd8"
 dependencies = [
  "outref",
+ "uuid",
  "vsimd",
 ]
 
@@ -3863,6 +4060,24 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "winnow"
+version = "0.6.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e90edd2ac1aa278a5c4599b1d89cf03074b610800f866d4026dc199d7929a28"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "winnow"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "wit-bindgen"
