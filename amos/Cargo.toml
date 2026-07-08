@@ -20,6 +20,13 @@ adk-memory = { path = "../../adk-rust/adk-memory", features = ["database-memory"
 adk-rag = { path = "../../adk-rust/adk-rag", features = ["gemini"] }
 adk-auth = { path = "../../adk-rust/adk-auth", features = ["postgres-audit"] }
 adk-guardrail = { path = "../../adk-rust/adk-guardrail" }
+# Ambient ops: scheduled routine sub-agents (non-realtime text agents).
+adk-agent = { path = "../../adk-rust/adk-agent" }
+adk-model = { path = "../../adk-rust/adk-model", features = ["gemini"] }
+adk-runner = { path = "../../adk-rust/adk-runner" }
+adk-session = { path = "../../adk-rust/adk-session" }
+cron = "0.15"
+toml = "0.8"
 jsonwebtoken = "9"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 

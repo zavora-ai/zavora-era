@@ -1,0 +1,20 @@
+# Friday reconciliation nudge — which bank accounts haven't been reconciled
+# recently. Read-only; the reconciliation itself runs in the live session.
+name = "recon-nudge"
+title = "Bank reconciliation check"
+cron = "0 0 16 * * Fri"
+tools = ["list_bank_accounts", "list_reconciliations"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Check reconciliation freshness across the bank accounts. Steps:
+1. list_bank_accounts — every account (bank, M-Pesa).
+2. list_reconciliations — the latest completed reconciliation per account.
+
+Report (max ~8 lines):
+- Per account: "reconciled to <date>" or "⚠ never reconciled" / "⚠ stale (<n> weeks)".
+- An account is stale when its last reconciliation statement date is more than 5 weeks old.
+- If everything is fresh: one line saying so.
+- Close with: "Ask Amos to reconcile <account> when you have the statement."
+"""

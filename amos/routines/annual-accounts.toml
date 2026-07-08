@@ -1,0 +1,27 @@
+# Annual accounts pack — fires early January for calendar fiscal years (run it
+# manually any time for other year ends: "run the annual accounts pack").
+# Read-only assembly: the statements an accountant then finalises for
+# sign-off; nothing here is the statutory filing.
+name = "annual-accounts"
+title = "Annual accounts pack"
+cron = "0 0 9 10 1 *"
+skill = "financial-reporting"
+tools = ["run_report", "list_fiscal_periods", "list_fixed_assets", "cit_estimate", "list_reconciliations", "list_tax_filings"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Assemble the year-end accounts pack for the fiscal year that just ended. Steps:
+1. run_report TrialBalance as at year end — confirm it balances.
+2. run_report BalanceSheet (as at year end), ProfitAndLoss and CashFlowDirect and EquityChanges (full year).
+3. run_report FixedAssetRegister + list_fixed_assets — closing NBV, additions, depreciation for the year.
+4. cit_estimate for the year — estimated corporation tax, installments paid, balance-of-tax deadline.
+5. Readiness checks: list_reconciliations (all banks reconciled to year end?), list_tax_filings (VAT/PAYE months all filed?).
+
+Produce the YEAR-END PACK (max ~22 lines):
+- TB status, then the four statements' headline figures (one line each).
+- Asset summary: closing NBV, year's depreciation.
+- CIT: estimated tax, paid, balance and its deadline.
+- Readiness checklist ✓/✗ (banks reconciled · monthly filings complete · periods closed).
+- Close with: "Hand this pack to your accountant/auditor for the statutory accounts and CIT return; Amos can walk through any figure."
+"""

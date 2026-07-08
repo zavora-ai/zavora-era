@@ -19,6 +19,7 @@ mod guard;
 mod history;
 mod mcp;
 mod memory;
+mod ops;
 mod scope;
 mod persona;
 mod plan;
@@ -76,10 +77,19 @@ async fn main() -> Result<()> {
         .await
         .map(Arc::new);
 
-    let state = Arc::new(AppState::new(manager, memory, served_entity, audit, history)?);
-    info!("✓ Memory online ({}) · audit {} · history {}", state.memory.backend,
+    // Ambient operations: the routine registry + ops ledger (None = disabled).
+    let ops = ops::Ops::init(served_entity).await;
+
+    let state = Arc::new(AppState::new(manager, memory, served_entity, audit, history, ops)?);
+    info!("✓ Memory online ({}) · audit {} · history {} · ops {}", state.memory.backend,
         if state.audit.is_some() { "on" } else { "off" },
-        if state.history.is_some() { "on" } else { "off" });
+        if state.history.is_some() { "on" } else { "off" },
+        if state.ops.is_some() { "on" } else { "off" });
+
+    // Start the routine scheduler (cron, business timezone, Skip concurrency).
+    if let Some(ops) = &state.ops {
+        ops.spawn_scheduler(state.clone());
+    }
     let app = routes::create_router(state.clone());
 
     let port = std::env::var("AMOS_PORT").unwrap_or_else(|_| "8090".to_string());

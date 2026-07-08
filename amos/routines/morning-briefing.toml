@@ -1,0 +1,23 @@
+# Daily morning briefing — the owner opens the day knowing exactly where the
+# business stands. Read-only; delivered to the in-app notification inbox.
+name = "morning-briefing"
+title = "Morning briefing"
+# 6-field cron (sec min hour dom month dow), evaluated in the business timezone.
+cron = "0 0 7 * * *"
+skill = "financial-reporting"
+tools = ["get_dashboard", "run_report", "list_bank_accounts", "list_invoices", "list_bills"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Prepare the daily morning briefing for the business owner. Steps:
+1. get_dashboard — cash & bank, receivables, payables, overdue counts.
+2. list_invoices and list_bills — anything DUE TODAY or newly OVERDUE (name, number, amount, days overdue).
+3. If anything looks unusual (negative cash trend, large new overdue), flag it plainly.
+
+Write the briefing as a short, skimmable digest (max ~12 lines):
+- Opening line: cash & bank position.
+- "Due today" and "Newly overdue" bullets (or "nothing due today").
+- One-line health note.
+Numbers only from tool results. No advice unless a figure demands attention.
+"""

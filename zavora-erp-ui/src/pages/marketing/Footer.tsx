@@ -12,6 +12,7 @@ const PRODUCT: L[] = [
 ];
 const COMPANY: L[] = [
   { label: 'About', to: '/about' },
+      { label: "What's new", to: '/updates' },
   { label: 'Careers', to: '/careers' },
   { label: 'Contact', to: '/contact' },
 ];

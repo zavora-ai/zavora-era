@@ -17,11 +17,17 @@ const ERP_TOOLS: &[&str] = &[
     "list_accounts",
     "list_customers",
     "get_customer",
+    "create_customer",
+    "update_customer",
     "list_vendors",
     "get_vendor",
     "list_products",
+    // AR — an accountant must be able to raise an invoice, not just read them.
     "list_invoices",
     "get_invoice",
+    "create_invoice_draft",
+    "submit_invoice",
+    "post_invoice",
     "list_bills",
     "get_bill",
     "create_bill_draft",
@@ -41,6 +47,9 @@ const ERP_TOOLS: &[&str] = &[
     "approve_pay_run",
     "post_pay_run",
     "mark_pay_run_paid",
+    // KRA eTIMS — referenced by system.md; must be visible to the session.
+    "etims_status",
+    "etims_transmit_invoice",
 ];
 
 /// Browser tools for the showcase. Everything needed to log in, navigate and
@@ -197,6 +206,20 @@ pub async fn agent_tools(
                 || skill_allowed.contains(t.name())
         })
         .collect())
+}
+
+/// Exactly the named MCP tools — for routine sub-agents, whose surface is the
+/// routine spec's own (browser-free) list, not the session allowlists.
+pub async fn named_tools(
+    manager: &McpServerManager,
+    names: &std::collections::HashSet<String>,
+) -> Result<Vec<Arc<dyn Tool>>> {
+    let ctx: Arc<dyn ReadonlyContext> = Arc::new(AmosContext::new());
+    let all = manager
+        .tools(ctx)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to list MCP tools: {e}"))?;
+    Ok(all.into_iter().filter(|t| names.contains(t.name())).collect())
 }
 
 /// Look up a single tool by name (used by the native showcase_step tool to

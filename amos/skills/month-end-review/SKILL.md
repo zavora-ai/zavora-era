@@ -3,7 +3,7 @@ name: month-end-review
 description: Run a month-end (or year-end) health check — cash position, overdue receivables and payables, trial balance integrity, and recent journal scan, ending in a plain-language findings summary. Use when the user asks for a month-end close, a books review, a health check, or "anything I should worry about?".
 license: Proprietary
 compatibility: Requires mcp-erp (zavora backend); browser tools optional for evidence.
-allowed-tools: [get_dashboard, run_report, list_bills, list_invoices, list_payments, get_journal_entries, list_bank_accounts, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
+allowed-tools: [get_dashboard, run_report, list_bills, list_invoices, list_payments, get_journal_entries, list_bank_accounts, list_reconciliations, list_tax_filings, list_fiscal_periods, close_period, reopen_period, list_fixed_assets, run_depreciation, run_fx_revaluation, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
 metadata:
   author: Zavora AI
   category: period-end

@@ -27,6 +27,7 @@ pub mod expense_claims;
 pub mod pos;
 pub mod parties;
 pub mod catalog;
+pub mod cit;
 pub mod fx;
 pub mod assets;
 pub mod inventory;
