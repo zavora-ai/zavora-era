@@ -40,7 +40,7 @@ function Nav({ menu, setMenu }: { menu: boolean; setMenu: (v: boolean) => void }
           <Logo />
         </a>
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-          <a href="#amos" className="hover:text-slate-900">Amos AI</a>
+          <Link to="/amos-ai" className="hover:text-slate-900">Amos AI</Link>
           <a href="#modules" className="hover:text-slate-900">Modules</a>
           <a href="#compliance" className="hover:text-slate-900">Kenya-ready</a>
           <a href="#pricing" className="hover:text-slate-900">Pricing</a>
@@ -53,7 +53,7 @@ function Nav({ menu, setMenu }: { menu: boolean; setMenu: (v: boolean) => void }
       </div>
       {menu && (
         <div className="md:hidden border-t border-slate-100 px-5 py-4 space-y-3 bg-white">
-          <a href="#amos" className="block text-slate-700" onClick={() => setMenu(false)}>Amos AI</a>
+          <Link to="/amos-ai" className="block text-slate-700" onClick={() => setMenu(false)}>Amos AI</Link>
           <a href="#modules" className="block text-slate-700" onClick={() => setMenu(false)}>Modules</a>
           <a href="#pricing" className="block text-slate-700" onClick={() => setMenu(false)}>Pricing</a>
           <Link to="/login" className="block font-semibold text-indigo-600">Sign in →</Link>
