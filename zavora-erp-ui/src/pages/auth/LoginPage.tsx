@@ -129,7 +129,7 @@ export default function LoginPage() {
         {mode === 'signin' ? (
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="email"
@@ -141,7 +141,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">Password <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="password"
@@ -185,7 +185,7 @@ export default function LoginPage() {
               </button>
             </div>
             <div>
-              <label className="label">Organization name</label>
+              <label className="label">Organization name <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 autoFocus
@@ -196,7 +196,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Type of organization</label>
+              <label className="label">Type of organization <span className="text-red-500">*</span></label>
               <select
                 className="input"
                 required
@@ -220,7 +220,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Full name</label>
+              <label className="label">Full name <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 required
@@ -230,7 +230,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="email"
@@ -241,7 +241,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">Password <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="password"
