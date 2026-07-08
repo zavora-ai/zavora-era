@@ -7,6 +7,8 @@ import Logo from '../../components/brand/Logo';
 /// Prefilled organisation name used when the user chooses to explore with
 /// sample data — saves them typing to get straight into a populated demo.
 const SAMPLE_ORG_NAME = 'Sample Traders Ltd';
+/// Plausible-format sample KRA PIN prefilled alongside the sample org name.
+const SAMPLE_KRA_PIN = 'P051234567M';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -16,18 +18,20 @@ export default function LoginPage() {
   const [displayName, setDisplayName] = useState('');
   const [orgName, setOrgName] = useState(SAMPLE_ORG_NAME);
   const [orgType, setOrgType] = useState('limited_company');
-  const [kraPin, setKraPin] = useState('');
+  const [kraPin, setKraPin] = useState(SAMPLE_KRA_PIN);
   const [withSampleData, setWithSampleData] = useState(true);
 
-  // Choosing "explore" prefills the org name (unless the user typed their own);
-  // choosing "real business" clears the sample prefill so they start fresh.
+  // Choosing "explore" prefills the org name + KRA PIN (unless the user typed
+  // their own); choosing "real business" clears the sample prefills.
   const chooseExplore = () => {
     setWithSampleData(true);
     if (!orgName.trim() || orgName === SAMPLE_ORG_NAME) setOrgName(SAMPLE_ORG_NAME);
+    if (!kraPin.trim() || kraPin === SAMPLE_KRA_PIN) setKraPin(SAMPLE_KRA_PIN);
   };
   const chooseReal = () => {
     setWithSampleData(false);
     if (orgName === SAMPLE_ORG_NAME) setOrgName('');
+    if (kraPin === SAMPLE_KRA_PIN) setKraPin('');
   };
   // "Start free" CTAs deep-link here with ?signup=1 to open create-organization.
   const [mode, setMode] = useState<'signin' | 'signup'>(
