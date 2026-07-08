@@ -8,6 +8,42 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-08 — Closing the accountant gap: corporation tax, payment runs, statement ingestion, asset/FX + AR outreach for Amos
+
+Follow-through on the "Amos vs a Kenyan accountant" capability review — the six
+highest-value gaps, closed.
+
+#### Added
+- **Corporation tax (Kenya)** (`services/cit.rs`, `GET /tax/cit/estimate`):
+  a ledger-true CIT **estimate** — accounting profit (P&L) + book-depreciation
+  add-back − capital allowances from the fixed-asset register (Second-Schedule
+  default straight-line rates by category) ± a manual adjustment — with the
+  statutory **installment calendar** (20th of the 4th/6th/9th/12th months;
+  balance of tax by the end of the 4th month after year end), payments read
+  back from tax filings (`tax_type` `CIT*`). Explicitly decision-support;
+  iTax remains the filing of record. Calendar math unit-tested (calendar and
+  June year-ends, ITA s.12 dates, straight-line write-down cap).
+- **Amos payment runs**: a `payment-run` skill (cash per account → payable
+  universe → statutory first → prioritised batch within cash minus a stated
+  buffer → record only what the user approves) plus a Thursday
+  `payment-run-prep` routine that delivers the proposal to the inbox.
+- **Statement ingestion into reconciliation**: the bank-reconciliation skill
+  now ingests an attached statement (read via the document sub-agent →
+  `import_bank_statement` into the existing bank feed, idempotent) before
+  matching; recon completion stays balance-guarded.
+- **AR outreach**: `send_customer_statement` (email/WhatsApp/SMS channel) —
+  the Monday chase list ends with "tell Amos 'send the statements'";
+  sending is always list-confirmed first.
+- **Native asset/FX tools**: `list_fixed_assets`, `run_depreciation`,
+  `run_fx_revaluation` join month-end-review — two browser-only workflows
+  become one-liners.
+- **Annual accounts pack**: a year-end routine assembling TB proof, BS, P&L,
+  direct cash flow, equity changes, the asset register, the CIT estimate and
+  a readiness checklist — the pack an accountant/auditor finalises.
+- Amos routine calendar grows to **10** (adds `installment-tax` on the 10th,
+  `payment-run-prep` Thursdays, `annual-accounts` at year end); skill pack to
+  **14**; the registry/safety tests pin both.
+
 ### 2026-07-08 — Amos Ambient Ops, full domain coverage, longevity hardening + sample-company onboarding
 
 Amos graduates from a chat-only assistant to a **scheduled + reactive practice**

@@ -3,7 +3,7 @@ name: record-customer-invoice
 description: Raise a customer (sales) invoice in Zavora ERA — customer lookup, duplicate check, draft with correct lines and VAT, user confirmation, posting, KRA eTIMS transmission check, and browser evidence. Use when the user asks to invoice a customer, bill a client, raise/create/send a sales invoice, or re-invoice recurring work.
 license: Proprietary
 compatibility: Requires mcp-erp (zavora backend) and the Playwright browser tools.
-allowed-tools: [list_customers, get_customer, create_customer, list_products, get_product, list_invoices, get_invoice, create_invoice_draft, submit_invoice, post_invoice, etims_status, etims_transmit_invoice, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
+allowed-tools: [list_customers, get_customer, create_customer, list_products, get_product, list_invoices, get_invoice, create_invoice_draft, submit_invoice, post_invoice, etims_status, etims_transmit_invoice, send_customer_statement, browser_navigate, browser_snapshot, browser_click, showcase_step, plan_tasks, update_task]
 metadata:
   author: Zavora AI
   category: accounts-receivable

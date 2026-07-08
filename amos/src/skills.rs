@@ -117,6 +117,7 @@ mod tests {
             "manual-journal",
             "hr-payroll",
             "crm",
+            "payment-run",
             "erp-showcase",
         ] {
             assert!(names.iter().any(|n| n == expected), "skill '{expected}' missing from catalog: {names:?}");
@@ -130,6 +131,9 @@ mod tests {
             // Banking / period-end / statutory
             "compute_reconciliation", "complete_reconciliation", "close_period",
             "list_tax_filings", "file_tax_return", "remit_tax_filing",
+            // Gap-closure: CIT, statement ingestion, AR outreach, assets/FX, payment runs
+            "cit_estimate", "import_bank_statement", "send_customer_statement",
+            "list_fixed_assets", "run_depreciation", "run_fx_revaluation",
         ] {
             assert!(tools.contains(expected), "tool '{expected}' not unlocked by any skill");
         }

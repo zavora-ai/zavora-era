@@ -47,7 +47,7 @@ pub enum ReportType {
 }
 
 /// Parameters for report generation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReportParameters {
     pub as_at: Option<NaiveDate>,
     pub period_from: Option<NaiveDate>,
