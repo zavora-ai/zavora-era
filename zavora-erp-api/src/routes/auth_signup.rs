@@ -137,6 +137,10 @@ pub struct SignupRequest {
     /// to false (a clean, empty workspace).
     #[serde(default)]
     pub with_sample_data: bool,
+    /// Selected pricing plan key ("starter" | "business" | "scale"). Recorded on
+    /// the tenant; billing is not enforced here.
+    #[serde(default)]
+    pub plan: Option<String>,
 }
 
 const REFRESH_COOKIE: &str = "era_refresh";
@@ -287,6 +291,7 @@ pub async fn signup(
     // 2. Validate + normalise before any persistence (Req 7.4). A failure names
     //    exactly one offending field and reveals no identifiers.
     let with_sample_data = req.with_sample_data;
+    let plan = req.plan.clone().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
     let provision_req = tenant::validate_signup(SignupInput {
         organization_name: req.organization_name,
         organization_type: req.organization_type,
@@ -302,6 +307,21 @@ pub async fn signup(
     let provisioned = tenant::provision_tenant(state.engine.pool(), provision_req)
         .await
         .map_err(er)?;
+
+    // 3a. Record the selected pricing plan on the tenant (in branding JSON).
+    //     Best-effort; a failure here must not fail signup.
+    if let Some(plan) = &plan {
+        if let Err(e) = sqlx::query(
+            "UPDATE entity_settings SET branding = COALESCE(branding, '{}'::jsonb) || jsonb_build_object('plan', $1::text) WHERE entity_id = $2",
+        )
+        .bind(plan)
+        .bind(provisioned.entity_id)
+        .execute(state.engine.pool())
+        .await
+        {
+            tracing::warn!(entity_id = %provisioned.entity_id, "failed to record plan (continuing): {e}");
+        }
+    }
 
     // 3b. Optional sample-company seed (best-effort; never fails signup). Runs
     //     after the tenant + COA are committed so the new user lands on a

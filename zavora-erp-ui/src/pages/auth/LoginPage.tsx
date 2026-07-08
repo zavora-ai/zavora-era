@@ -3,10 +3,13 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { login, signup, storeSession } from '../../api/client';
 import Logo from '../../components/brand/Logo';
+import { PRICING_PLANS, DEFAULT_PLAN_KEY } from '../../config/pricing';
 
 /// Prefilled organisation name used when the user chooses to explore with
 /// sample data — saves them typing to get straight into a populated demo.
 const SAMPLE_ORG_NAME = 'Sample Traders Ltd';
+/// Plausible-format sample KRA PIN prefilled alongside the sample org name.
+const SAMPLE_KRA_PIN = 'P051234567M';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -14,20 +17,25 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [orgName, setOrgName] = useState(SAMPLE_ORG_NAME);
+  const [orgName, setOrgName] = useState('');
   const [orgType, setOrgType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
-  const [withSampleData, setWithSampleData] = useState(true);
+  const [withSampleData, setWithSampleData] = useState(false);
+  const [plan, setPlan] = useState<string>(
+    PRICING_PLANS.some((p) => p.key === params.get('plan')) ? params.get('plan')! : DEFAULT_PLAN_KEY,
+  );
 
-  // Choosing "explore" prefills the org name (unless the user typed their own);
-  // choosing "real business" clears the sample prefill so they start fresh.
+  // Choosing "explore" prefills the org name + KRA PIN (unless the user typed
+  // their own); choosing "real business" clears the sample prefills.
   const chooseExplore = () => {
     setWithSampleData(true);
     if (!orgName.trim() || orgName === SAMPLE_ORG_NAME) setOrgName(SAMPLE_ORG_NAME);
+    if (!kraPin.trim() || kraPin === SAMPLE_KRA_PIN) setKraPin(SAMPLE_KRA_PIN);
   };
   const chooseReal = () => {
     setWithSampleData(false);
     if (orgName === SAMPLE_ORG_NAME) setOrgName('');
+    if (kraPin === SAMPLE_KRA_PIN) setKraPin('');
   };
   // "Start free" CTAs deep-link here with ?signup=1 to open create-organization.
   const [mode, setMode] = useState<'signin' | 'signup'>(
@@ -74,6 +82,7 @@ export default function LoginPage() {
         display_name: displayName.trim(),
         password,
         with_sample_data: withSampleData,
+        plan,
       });
       storeAndGo(data);
     } catch (err: any) {
@@ -125,7 +134,7 @@ export default function LoginPage() {
         {mode === 'signin' ? (
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="email"
@@ -137,7 +146,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">Password <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="password"
@@ -181,7 +190,7 @@ export default function LoginPage() {
               </button>
             </div>
             <div>
-              <label className="label">Organization name</label>
+              <label className="label">Organization name <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 autoFocus
@@ -192,7 +201,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Type of organization</label>
+              <label className="label">Type of organization <span className="text-red-500">*</span></label>
               <select
                 className="input"
                 required
@@ -216,7 +225,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Full name</label>
+              <label className="label">Full name <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 required
@@ -226,7 +235,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="email"
@@ -237,7 +246,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">Password <span className="text-red-500">*</span></label>
               <input
                 className="input"
                 type="password"
@@ -247,6 +256,24 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
               />
+            </div>
+            <div>
+              <label className="label">Choose your plan</label>
+              <div className="grid grid-cols-2 gap-2">
+                {PRICING_PLANS.map((p) => (
+                  <button
+                    type="button"
+                    key={p.key}
+                    onClick={() => setPlan(p.key)}
+                    className={`relative text-left rounded-lg border px-3 py-2 transition-colors ${plan === p.key ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-200' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {p.highlight && <span className="absolute -top-2 right-2 text-[10px] font-semibold bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">Popular</span>}
+                    <span className="block text-sm font-semibold text-gray-900">{p.name}</span>
+                    <span className="block text-xs text-gray-500">{p.price}{p.per}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Start on any plan free — change or cancel anytime.</p>
             </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
               {busy ? 'Creating…' : 'Create organization & sign in'}
