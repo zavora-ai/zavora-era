@@ -8,6 +8,7 @@ import SetPasswordPage from './pages/auth/SetPasswordPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import LandingPage from './pages/marketing/LandingPage';
 import InfoPage from './pages/marketing/InfoPage';
+import AmosAiPage from './pages/marketing/AmosAiPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import AmosPage from './pages/amos/AmosPage';
 import InvoicesPage from './pages/invoicing/InvoicesPage';
@@ -68,6 +69,7 @@ import TaxFilingsPage from './pages/settings/TaxFilingsPage';
 import OpeningBalancesPage from './pages/settings/OpeningBalancesPage';
 import ImportPage from './pages/settings/ImportPage';
 import ReconciliationPage from './pages/banking/ReconciliationPage';
+import CashForecastPage from './pages/banking/CashForecastPage';
 import PeriodsPage from './pages/settings/PeriodsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import ReportPage from './pages/reports/ReportPage';
@@ -131,6 +133,7 @@ export default function App() {
           <Route path="/set-password" element={<SetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* Public marketing sub-pages (footer links). */}
+          <Route path="/amos-ai" element={<AmosAiPage />} />
           <Route path="/about" element={<InfoPage />} />
           <Route path="/updates" element={<InfoPage />} />
           <Route path="/careers" element={<InfoPage />} />
@@ -189,6 +192,7 @@ export default function App() {
             <Route path="vendors/:id" element={<VendorDetailPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="banking" element={<BankingPage />} />
+            <Route path="cash-forecast" element={<CashForecastPage />} />
             <Route path="reconciliation" element={<ReconciliationPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="payroll" element={<PayrollPage />} />

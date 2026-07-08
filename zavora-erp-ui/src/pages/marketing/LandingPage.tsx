@@ -164,9 +164,14 @@ function AmosSpotlight() {
               </li>
             ))}
           </ul>
-          <Link to={SIGNUP} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white text-slate-900 font-semibold px-6 py-3 hover:bg-slate-100 transition">
-            Try Amos free <ArrowRight className="w-4 h-4" />
-          </Link>
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <Link to={SIGNUP} className="inline-flex items-center gap-2 rounded-full bg-white text-slate-900 font-semibold px-6 py-3 hover:bg-slate-100 transition">
+              Try Amos free <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link to="/amos-ai" className="inline-flex items-center gap-2 font-semibold text-indigo-300 hover:text-indigo-200 transition">
+              Everything Amos can do <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
         </div>
         <div className="relative">
           <div className="absolute -inset-3 bg-gradient-to-tr from-indigo-600/40 to-fuchsia-600/30 blur-2xl rounded-3xl" />

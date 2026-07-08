@@ -284,6 +284,7 @@ pub const ROUTE_PERMISSIONS: &[(&str, &str, Access)] = &[
     ("POST", "/api/v1/tax-filings", Access::Perm("tax_filing.create")),
     ("POST", "/api/v1/tax-filings/{id}/remit", Access::Perm("tax_filing.remit")),
     ("GET", "/api/v1/tax/cit/estimate", Access::Perm("tax_filing.read")),
+    ("GET", "/api/v1/forecasts/cash", Access::Perm("report.read")),
     ("POST", "/api/v1/opening-balances", Access::Perm("opening_balance.create")),
     ("GET", "/api/v1/recurring-journals", Access::Perm("recurring_journal.read")),
     ("POST", "/api/v1/recurring-journals", Access::Perm("recurring_journal.create")),

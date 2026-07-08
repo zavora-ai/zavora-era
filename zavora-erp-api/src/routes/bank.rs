@@ -1,4 +1,4 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Path, Query, State}, Json};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -242,6 +242,24 @@ pub async fn confirm_match(
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
     match svc::confirm_match(&state.engine, ctx.entity_id, req).await {
         Ok(()) => Ok(Json(serde_json::json!({ "status": "confirmed" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct ForecastParams {
+    pub weeks: Option<usize>,
+}
+
+/// GET /forecasts/cash — deterministic 13-week rolling cash forecast from
+/// open AR/AP, unremitted statutory filings and the payroll cycle.
+pub async fn cash_forecast(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ForecastParams>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match zavora_erp_core::services::forecast::cash_forecast(&state.engine, ctx.entity_id, params.weeks.unwrap_or(13)).await {
+        Ok(f) => Ok(Json(serde_json::to_value(f).unwrap_or_default())),
         Err(e) => Err(err_response(e)),
     }
 }
