@@ -13,17 +13,28 @@ export default function AmosAiPage() {
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-indigo-200/60">
       <header className="sticky top-0 z-50 backdrop-blur-lg bg-white/80 border-b border-slate-100">
+        {/* Main site navigation — identical to the landing page's. */}
         <div className="mx-auto max-w-7xl px-5 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5"><Logo /></Link>
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-            <a href="#capabilities" className="hover:text-slate-900">Capabilities</a>
-            <a href="#routines" className="hover:text-slate-900">Works while you sleep</a>
-            <a href="#trust" className="hover:text-slate-900">Trust &amp; control</a>
+            <Link to="/amos-ai" className="text-slate-900 font-semibold">Amos AI</Link>
+            <a href="/#modules" className="hover:text-slate-900">Modules</a>
+            <a href="/#compliance" className="hover:text-slate-900">Kenya-ready</a>
+            <a href="/#pricing" className="hover:text-slate-900">Pricing</a>
           </nav>
-          <div className="hidden md:flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <Link to="/login" className="text-sm font-semibold text-slate-700 hover:text-slate-900">Sign in</Link>
             <Link to={SIGNUP} className="text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-full px-4 py-2 transition">Start free</Link>
           </div>
+        </div>
+        {/* Amos page sections — a slim sub-nav under the main one. */}
+        <div className="border-t border-slate-100 bg-white/60">
+          <nav className="mx-auto max-w-7xl px-5 h-10 flex items-center gap-6 text-[13px] font-medium text-slate-500 overflow-x-auto">
+            <span className="text-slate-400 uppercase tracking-wider text-[11px] shrink-0">Amos</span>
+            <a href="#capabilities" className="hover:text-slate-900 whitespace-nowrap">Capabilities</a>
+            <a href="#routines" className="hover:text-slate-900 whitespace-nowrap">Works while you sleep</a>
+            <a href="#trust" className="hover:text-slate-900 whitespace-nowrap">Trust &amp; control</a>
+          </nav>
         </div>
       </header>
 
