@@ -179,7 +179,7 @@ function Routines() {
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 text-indigo-300 px-3 py-1 text-xs font-semibold mb-5">
             <CalendarClock className="w-3.5 h-3.5" /> Ambient operations
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">It doesn't wait to be asked.</h2>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Amos AI doesn't wait to be asked.</h2>
           <p className="mt-5 text-slate-300 text-lg">
             Amos moves first: it runs your accounting calendar — eleven scheduled routines — and
             reacts the moment something needs attention, delivering every report to your
