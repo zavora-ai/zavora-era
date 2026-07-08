@@ -16,6 +16,7 @@ mod clock;
 mod config;
 mod erp;
 mod guard;
+mod history;
 mod mcp;
 mod memory;
 mod scope;
@@ -54,6 +55,7 @@ async fn main() -> Result<()> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("showcase"));
     std::fs::create_dir_all(&showcase_dir)?;
+    sweep_showcase(&showcase_dir);
 
     // Resolve the single tenant this Amos serves — the only entity any user is
     // allowed to access here. Explicit env wins; otherwise derive from the
@@ -69,9 +71,15 @@ async fn main() -> Result<()> {
     // Optional Postgres audit trail (auth + tool-access), sharing the ERP DB.
     let audit = build_audit_sink(served_entity).await;
 
-    let state = Arc::new(AppState::new(manager, memory, served_entity, audit)?);
-    info!("✓ Memory online ({}) · audit {}", state.memory.backend,
-        if state.audit.is_some() { "on" } else { "off" });
+    // Optional session-transcript history, same database as the audit trail.
+    let history = history::SessionHistory::connect(&sink_db_url(), served_entity)
+        .await
+        .map(Arc::new);
+
+    let state = Arc::new(AppState::new(manager, memory, served_entity, audit, history)?);
+    info!("✓ Memory online ({}) · audit {} · history {}", state.memory.backend,
+        if state.audit.is_some() { "on" } else { "off" },
+        if state.history.is_some() { "on" } else { "off" });
     let app = routes::create_router(state.clone());
 
     let port = std::env::var("AMOS_PORT").unwrap_or_else(|_| "8090".to_string());
@@ -99,15 +107,49 @@ async fn resolve_served_entity() -> Result<uuid::Uuid> {
     erp::ErpClient::from_env()?.resolve_entity().await
 }
 
+/// The Postgres URL shared by the audit trail and session history.
+fn sink_db_url() -> String {
+    std::env::var("AMOS_MEMORY_DATABASE_URL")
+        .or_else(|_| std::env::var("AMOS_AUDIT_DATABASE_URL"))
+        .unwrap_or_else(|_| "postgres://zavora:zavora@localhost:5433/zavora_era".to_string())
+}
+
 /// Amos audit sink over the ERP database, if reachable. Best-effort: a missing
 /// sink just means no audit rows, never a boot failure.
 async fn build_audit_sink(served_entity: uuid::Uuid) -> Option<Arc<dyn adk_auth::AuditSink>> {
-    let url = std::env::var("AMOS_MEMORY_DATABASE_URL")
-        .or_else(|_| std::env::var("AMOS_AUDIT_DATABASE_URL"))
-        .unwrap_or_else(|_| "postgres://zavora:zavora@localhost:5433/zavora_era".to_string());
-    audit::AmosAuditSink::connect(&url, served_entity)
+    audit::AmosAuditSink::connect(&sink_db_url(), served_entity)
         .await
         .map(|s| Arc::new(s) as Arc<dyn adk_auth::AuditSink>)
+}
+
+/// Retention sweep for the showcase directory: screenshots (and any stray
+/// Playwright console logs written alongside them) older than
+/// `AMOS_SHOWCASE_RETENTION_DAYS` (default 14) are deleted at startup, so
+/// months of sessions don't accumulate an unbounded evidence archive on disk.
+fn sweep_showcase(dir: &std::path::Path) {
+    let days: u64 = std::env::var("AMOS_SHOWCASE_RETENTION_DAYS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(14);
+    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 24 * 3600);
+    let mut removed = 0usize;
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|m| m < cutoff)
+            .unwrap_or(false);
+        if old && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        info!("🧹 showcase retention: removed {removed} files older than {days} days");
+    }
 }
 
 async fn shutdown_signal() {

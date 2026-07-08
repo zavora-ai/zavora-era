@@ -36,6 +36,42 @@ pub struct ShowcaseStep {
     pub at: chrono::DateTime<chrono::Utc>,
 }
 
+/// State scoped to ONE realtime session (one browser connection). Tasks,
+/// evidence, and the active skill belong to the conversation that created
+/// them — process-global versions bled between concurrent sessions (one
+/// user's workplan overwrote another's, and evidence pushed to every UI).
+pub struct SessionState {
+    /// The skill last loaded via use_skill — failed tasks auto-file lessons
+    /// under it.
+    pub active_skill: RwLock<Option<String>>,
+    pub tasks: RwLock<Vec<AmosTask>>,
+    pub showcase: RwLock<Vec<ShowcaseStep>>,
+    /// JSON messages pushed to THIS session's UI websocket only.
+    pub push: broadcast::Sender<String>,
+}
+
+impl SessionState {
+    pub fn new() -> Self {
+        let (push, _) = broadcast::channel(256);
+        Self {
+            active_skill: RwLock::new(None),
+            tasks: RwLock::new(Vec::new()),
+            showcase: RwLock::new(Vec::new()),
+            push,
+        }
+    }
+
+    /// Push a JSON message to this session's UI (ignores "no receivers").
+    pub fn push_json(&self, value: serde_json::Value) {
+        let _ = self.push.send(value.to_string());
+    }
+
+    pub async fn push_tasks(&self) {
+        let tasks = self.tasks.read().await.clone();
+        self.push_json(serde_json::json!({"type": "tasks", "tasks": tasks}));
+    }
+}
+
 pub struct AppState {
     pub model: Arc<GeminiRealtimeModel>,
     pub manager: Arc<McpServerManager>,
@@ -48,12 +84,12 @@ pub struct AppState {
     pub served_entity: uuid::Uuid,
     /// Optional audit sink (Postgres) — logs auth + tool-access events.
     pub audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
-    /// The skill last loaded via use_skill — failed tasks auto-file lessons
-    /// under it. Cleared when a fresh workplan is created.
-    pub active_skill: RwLock<Option<String>>,
-    pub tasks: RwLock<Vec<AmosTask>>,
-    pub showcase: RwLock<Vec<ShowcaseStep>>,
-    /// JSON messages pushed to every connected UI websocket.
+    /// Optional session-transcript store (Postgres) — the durable record of
+    /// past conversations.
+    pub history: Option<std::sync::Arc<crate::history::SessionHistory>>,
+    /// Tenant-wide JSON messages pushed to every connected UI websocket.
+    /// Memory events only — memory is shared across the tenant's sessions;
+    /// per-session data (tasks, showcase, skill) goes over `SessionState.push`.
     pub push: broadcast::Sender<String>,
     pub showcase_dir: PathBuf,
     pub erp_ui_url: String,
@@ -67,6 +103,7 @@ impl AppState {
         memory: crate::memory::AmosMemory,
         served_entity: uuid::Uuid,
         audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
+        history: Option<std::sync::Arc<crate::history::SessionHistory>>,
     ) -> Result<Self> {
         let api_key = std::env::var("GOOGLE_API_KEY")
             .map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY environment variable must be set"))?;
@@ -91,9 +128,7 @@ impl AppState {
             verifier: crate::auth::TokenVerifier::new(served_entity)?,
             served_entity,
             audit,
-            active_skill: RwLock::new(None),
-            tasks: RwLock::new(Vec::new()),
-            showcase: RwLock::new(Vec::new()),
+            history,
             push,
             showcase_dir,
             erp_ui_url: std::env::var("ERP_UI_URL").unwrap_or_else(|_| "http://localhost:3000".into()),
@@ -108,13 +143,9 @@ impl AppState {
         })
     }
 
-    /// Push a JSON message to all connected UIs (ignores "no receivers").
+    /// Push a tenant-wide JSON message (memory events) to all connected UIs
+    /// (ignores "no receivers").
     pub fn push_json(&self, value: serde_json::Value) {
         let _ = self.push.send(value.to_string());
-    }
-
-    pub async fn push_tasks(&self) {
-        let tasks = self.tasks.read().await.clone();
-        self.push_json(serde_json::json!({"type": "tasks", "tasks": tasks}));
     }
 }

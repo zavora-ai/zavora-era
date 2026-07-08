@@ -4,15 +4,31 @@ import { Check } from 'lucide-react';
 import { login, signup, storeSession } from '../../api/client';
 import Logo from '../../components/brand/Logo';
 
+/// Prefilled organisation name used when the user chooses to explore with
+/// sample data — saves them typing to get straight into a populated demo.
+const SAMPLE_ORG_NAME = 'Sample Traders Ltd';
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [orgName, setOrgName] = useState('');
+  const [orgName, setOrgName] = useState(SAMPLE_ORG_NAME);
   const [orgType, setOrgType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
+  const [withSampleData, setWithSampleData] = useState(true);
+
+  // Choosing "explore" prefills the org name (unless the user typed their own);
+  // choosing "real business" clears the sample prefill so they start fresh.
+  const chooseExplore = () => {
+    setWithSampleData(true);
+    if (!orgName.trim() || orgName === SAMPLE_ORG_NAME) setOrgName(SAMPLE_ORG_NAME);
+  };
+  const chooseReal = () => {
+    setWithSampleData(false);
+    if (orgName === SAMPLE_ORG_NAME) setOrgName('');
+  };
   // "Start free" CTAs deep-link here with ?signup=1 to open create-organization.
   const [mode, setMode] = useState<'signin' | 'signup'>(
     params.get('signup') === '1' || params.get('mode') === 'signup' ? 'signup' : 'signin',
@@ -57,6 +73,7 @@ export default function LoginPage() {
         email: email.trim(),
         display_name: displayName.trim(),
         password,
+        with_sample_data: withSampleData,
       });
       storeAndGo(data);
     } catch (err: any) {
@@ -145,6 +162,24 @@ export default function LoginPage() {
           </form>
         ) : (
           <form onSubmit={handleSignup} className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={chooseReal}
+                className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${!withSampleData ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-200' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Set up my business</span>
+                <span className="block text-xs text-gray-500">Start with an empty workspace</span>
+              </button>
+              <button
+                type="button"
+                onClick={chooseExplore}
+                className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${withSampleData ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-200' : 'border-gray-200 hover:bg-gray-50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Explore with sample data</span>
+                <span className="block text-xs text-gray-500">Prefilled demo company to try</span>
+              </button>
+            </div>
             <div>
               <label className="label">Organization name</label>
               <input
