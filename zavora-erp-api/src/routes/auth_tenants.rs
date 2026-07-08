@@ -221,6 +221,10 @@ pub struct CreateTenantRequest {
     pub organization_type: String,
     #[serde(default)]
     pub kra_pin: Option<String>,
+    /// Opt-in: seed a sample company (customers/vendors/products/invoices) into
+    /// the new tenant so it has data to explore.
+    #[serde(default)]
+    pub with_sample_data: bool,
 }
 
 /// POST /api/v1/auth/tenants — create a new tenant owned by the current user and
@@ -273,6 +277,19 @@ pub async fn create_tenant(
     )
     .await
     .map_err(er)?;
+
+    // Optional sample-company seed (best-effort; never fails tenant creation).
+    if req.with_sample_data {
+        match zavora_erp_core::services::sample_data::seed_sample_company(
+            &state.engine,
+            provisioned.entity_id,
+        )
+        .await
+        {
+            Ok(summary) => tracing::info!(entity_id = %provisioned.entity_id, "seeded sample company: {summary:?}"),
+            Err(e) => tracing::warn!(entity_id = %provisioned.entity_id, "sample company seed failed (continuing): {e}"),
+        }
+    }
 
     // Issue a session for the new tenant and switch into it.
     let pair = auth::issue_token_pair(

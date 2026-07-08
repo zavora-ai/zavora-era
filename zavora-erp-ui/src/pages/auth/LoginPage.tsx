@@ -16,10 +16,10 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [orgName, setOrgName] = useState(SAMPLE_ORG_NAME);
+  const [orgName, setOrgName] = useState('');
   const [orgType, setOrgType] = useState('limited_company');
-  const [kraPin, setKraPin] = useState(SAMPLE_KRA_PIN);
-  const [withSampleData, setWithSampleData] = useState(true);
+  const [kraPin, setKraPin] = useState('');
+  const [withSampleData, setWithSampleData] = useState(false);
 
   // Choosing "explore" prefills the org name + KRA PIN (unless the user typed
   // their own); choosing "real business" clears the sample prefills.

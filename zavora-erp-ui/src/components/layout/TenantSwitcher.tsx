@@ -296,8 +296,16 @@ function CreateTenantModal({
   const [name, setName] = useState('');
   const [type, setType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
+  const [withSample, setWithSample] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const SAMPLE_NAME = 'Sample Traders Ltd';
+
+  const toggleSample = (on: boolean) => {
+    setWithSample(on);
+    if (on) { if (!name.trim() || name === SAMPLE_NAME) setName(SAMPLE_NAME); }
+    else if (name === SAMPLE_NAME) setName('');
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +317,7 @@ function CreateTenantModal({
         organization_name: name.trim(),
         organization_type: type,
         kra_pin: kraPin.trim() || undefined,
+        with_sample_data: withSample,
       });
       onCreated(resp.data);
     } catch (err: any) {
@@ -347,10 +356,17 @@ function CreateTenantModal({
             <label className="label">KRA PIN <span className="text-gray-400 font-normal">(optional)</span></label>
             <input className="input" value={kraPin} onChange={(e) => setKraPin(e.target.value)} placeholder="P051234567X" />
           </div>
+          <label className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${withSample ? 'border-indigo-400 bg-indigo-50/70' : 'border-gray-200 hover:bg-gray-50'}`}>
+            <input type="checkbox" className="mt-0.5" checked={withSample} onChange={(e) => toggleSample(e.target.checked)} />
+            <span className="text-sm">
+              <span className="font-medium text-gray-900">Create as a sample company</span>
+              <span className="block text-xs text-gray-500">Seed demo customers, vendors, products and invoices to explore. Safe to delete later.</span>
+            </span>
+          </label>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? 'Creating…' : 'Create & switch'}
+              {busy ? 'Creating…' : withSample ? 'Create sample company' : 'Create & switch'}
             </button>
           </div>
         </form>
