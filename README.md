@@ -2,7 +2,8 @@
 
 A full-featured double-entry accounting engine built in Rust, targeting Kenyan
 SMEs with modern cloud-accounting feature parity plus Kenya-specific compliance
-(KRA iTax, M-Pesa, PAYE/NSSF/SHA/HELB, WHT). Ships an immutable double-entry ledger, a
+(**KRA eTIMS** real-time invoice transmission, iTax, M-Pesa, PAYE/NSSF/SHA/HELB,
+WHT). Ships an immutable double-entry ledger, a
 multi-tenant REST API, a React web UI, and **Amos** — a realtime voice + chat
 AI accountant that works the books for you.
 
@@ -25,10 +26,19 @@ scripts/migrate/    — external-ledger import/replay/compare tooling
 
 Amos is the agentic layer on top of the ERP: a Gemini Live–powered voice + chat
 agent for non-accountant business owners. Ask it anything about the books or
-hand it multi-step work — it loads a matching **skill playbook**, shows a live
-**workplan**, executes through MCP tools against the real ledger, drives a
-headed browser through the ERP to **showcase** results, and files screenshot
-**evidence cards**. Postings always require explicit confirmation.
+hand it multi-step work — it loads one of **13 skill playbooks** (AR/AP,
+payments, journals, reconciliation, inventory, tax filing, payroll,
+procurement, …), shows a live **workplan**, executes through MCP tools against
+the real ledger, drives a headed browser through the ERP to **showcase**
+results, and files screenshot **evidence cards**. Postings always require
+explicit confirmation.
+
+Amos also works **while you're away**: scheduled routines (morning cash
+briefing, daily eTIMS compliance sweep, Monday AR chase, VAT/PAYE prep on the
+KRA calendar, a month-end close pack) run as scoped, audited sub-agents and
+deliver their reports to the in-app notification inbox — and the ERP fires
+Amos **reactively** when something needs attention (e.g. an eTIMS transmission
+fails). See [`docs/AMOS.md`](docs/AMOS.md) §2.7.
 
 ![Amos embedded in the Zavora ERP shell](docs/assets/amos-embedded.png)
 

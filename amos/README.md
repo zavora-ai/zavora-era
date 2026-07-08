@@ -59,6 +59,14 @@ Requires the ERP API (`:8080`) and UI (`:3000`) running, Node (for
 | `ERP_UI_URL` | ERP web UI (default `http://localhost:3000`) |
 | `AMOS_PORT` | Listen port (default `8090`) |
 | `AMOS_BROWSER_HEADLESS` | `1` to hide the showcase browser window |
+| `JWT_ACCESS_SECRET` | Shared HS256 secret for verifying user tokens (same as the ERP API) |
+| `AMOS_SERVED_ENTITY_ID` | Tenant this Amos serves (default: derived from the service account) |
+| `AMOS_DEFAULT_TIMEZONE` | Business timezone for the session clock + routine crons (default `Africa/Nairobi`) |
+| `AMOS_PLAN` | Default plan tier when the handshake carries none (`starter`/`business`/`scale`) |
+| `AMOS_FOLLOWUPS` | `0` disables contextual follow-up chips (default on) |
+| `AMOS_OPS_MODEL` | Model for routine sub-agents (default `gemini-flash-latest`) |
+| `AMOS_WEBHOOK_SECRET` | Shared secret letting the ERP fire `POST /api/ops/run/*` (unset = webhook path off) |
+| `AMOS_SHOWCASE_RETENTION_DAYS` | Evidence-screenshot retention sweep at startup (default `14`) |
 
 ## Configuration surface (edit files, restart — no recompiling)
 
@@ -68,6 +76,7 @@ Requires the ERP API (`:8080`) and UI (`:3000`) running, Node (for
 | **`AGENTS.md`** | Operating rules appended into the prompt: financial guardrails, skill protocol, communication style, escalation. Override with `AMOS_AGENTS_MD`. |
 | **`mcp.json`** | MCP servers (Kiro `mcpServers` format). `${VAR}` placeholders expand from the environment, so the file stays secret-free. Override with `AMOS_MCP_JSON`. |
 | **`skills/`** | Skill packs (see below). Override directory with `AMOS_SKILLS_DIR`. |
+| **`routines/`** | Ambient-ops routine specs — name, `cron` (6-field, business tz), optional `skill`, explicit `tools`, `scopes` (write is opt-in), `prompt`, `notify`. Override with `AMOS_ROUTINES_DIR`. |
 
 Embedded copies of `system.md`/`AGENTS.md` are compiled in as fallbacks, so the
 binary still runs if the files are missing.
@@ -139,7 +148,23 @@ Every `/api/*` endpoint and `/showcase/*` requires the user's ERP access token
 (`Authorization: Bearer …`, or `?token=` for image loads); requests without a
 valid token for the served entity get `401`. `AMOS_DEV_ALLOW_UNAUTH=1` (dev
 only) skips this. Tasks and evidence are per-session — they arrive over the
-session's own websocket, not REST.
+session's own websocket, not REST. Ambient-ops routes: `GET /api/ops`
+(schedule + recent runs), `POST /api/ops/run/{name}` (trigger; optional
+`{"context": ...}` body; accepts the user JWT **or** `X-Amos-Webhook-Secret`),
+`PATCH /api/ops/routines/{name}` (`{"paused": bool}`).
+
+## Ambient operations (routines)
+
+`routines/*.toml` define scheduled accounting jobs run by one-shot sub-agents
+(Gemini Flash text agents over the routine's declared tool subset — same scope
+checks + audit trail as live sessions, never the browser). Seven ship: daily
+morning briefing + eTIMS sweep, Monday AR chase, Friday recon check, PAYE prep
+(5th), VAT prep (14th), month-end close pack (3rd). Runs are recorded in
+`amos_runs`, delivered to the ERP's in-app notification inbox, and pushed live
+to open sessions; the Routines panel offers Run-now and pause/resume. The ERP
+fires the trigger webhook automatically when an eTIMS auto-transmit fails
+(set `AMOS_WEBHOOK_URL` + `AMOS_WEBHOOK_SECRET` on the ERP side). Prep
+routines stop at a report — posting/filing/closing happens with the live Amos.
 
 WS JSON from the client: `{"type":"text"|"interrupt"|"commit_audio"|"create_response", ...}`.
 From the server: `connected`, `text_delta`, `transcript`, `input_transcript`,

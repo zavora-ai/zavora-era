@@ -132,6 +132,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* Public marketing sub-pages (footer links). */}
           <Route path="/about" element={<InfoPage />} />
+          <Route path="/updates" element={<InfoPage />} />
           <Route path="/careers" element={<InfoPage />} />
           <Route path="/contact" element={<InfoPage />} />
           <Route path="/privacy" element={<InfoPage />} />

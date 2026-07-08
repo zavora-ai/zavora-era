@@ -10,6 +10,29 @@ const UPDATED = 'July 2026';
 const CONTACT_EMAIL = 'hello@zavora.ai';
 
 const PAGES: Record<string, Page> = {
+  updates: {
+    title: 'What’s new in Zavora ERP',
+    subtitle: 'Recent releases, straight from the changelog.',
+    updated: UPDATED,
+    sections: [
+      { h: 'July 2026 — Amos works while you sleep', list: [
+        'Ambient Ops: Amos now runs your accounting calendar — a morning cash briefing, a daily eTIMS compliance sweep, a Monday receivables chase list, Friday reconciliation checks, VAT & PAYE prep on the KRA deadline calendar, and a month-end close pack. Reports arrive in your notification inbox; anything that posts still waits for your say-so.',
+        'Run-now and pause controls for every routine, right inside Amos — and the ERP alerts Amos the moment an eTIMS transmission fails so it retries within minutes.',
+        'Amos now covers the full accountant job: raising customer invoices (with eTIMS checks), stock adjustments and transfers, bank reconciliation, period close, and VAT/PAYE/WHT filing workflows.',
+        'Attach a photo or PDF of any invoice, receipt or statement — Amos reads it and books it. Ask about live KRA/CBK rates and it searches the web with cited sources.' ] },
+      { h: 'July 2026 — KRA eTIMS, built in', list: [
+        'Real-time eTIMS (OSCU/VSCU) invoice transmission: posted invoices and POS sales go to KRA automatically, with the signed SCU receipt and verification QR on every fiscal document.',
+        'Credit notes transmit as credit/refund receipts referencing the original invoice; items register with KRA automatically.',
+        'Every conversation with Amos is kept as an auditable record, and its memory of your business is yours to inspect and correct.' ] },
+      { h: 'Earlier in 2026', list: [
+        'Full procure-to-pay: requisitions, approvals, LPOs, goods receipt with 3-way match, debit notes and expense claims — plus a supplier portal.',
+        'Point of Sale with shift sessions and Z-reports, mobile selling on M-Pesa, and stock operations from the shop floor.',
+        'Enterprise payroll: effective-dated PAYE/NSSF/SHA/Housing Levy config, batch runs, department-split GL postings, payslips and statutory reports.',
+        'Optional CRM with a sales pipeline and a customer self-service portal.',
+        'Granular role-based access control with custom roles.',
+        'Explore with sample data: new workspaces can start with a realistic Kenyan-SME dataset to click around before entering real books.' ] },
+    ],
+  },
   about: {
     title: 'About Zavora ERP',
     subtitle: 'The AI-native business platform built for Kenyan SMEs, by Zavora Technologies Ltd.',
