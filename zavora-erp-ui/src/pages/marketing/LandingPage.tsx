@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Logo from '../../components/brand/Logo';
 import MarketingFooter from './Footer';
+import { PRICING_PLANS } from '../../config/pricing';
 
 /** Where every "Start free" CTA points — the create-organization flow. */
 const SIGNUP = '/login?signup=1';
@@ -509,7 +510,7 @@ function Comparison() {
               ))}
               <tr className="border-t-2 border-slate-200">
                 <td className="px-5 py-4 text-slate-700 font-semibold">Typical SME price / month</td>
-                <td className="px-4 py-4 text-center bg-indigo-50/60 border-x border-indigo-100 font-bold text-indigo-700">KSh 4,900</td>
+                <td className="px-4 py-4 text-center bg-indigo-50/60 border-x border-indigo-100 font-bold text-indigo-700">KSh 6,900</td>
                 <td className="px-4 py-4 text-center text-slate-500">~KSh 6,500</td>
                 <td className="px-4 py-4 text-center text-slate-500">~KSh 5,900</td>
                 <td className="px-4 py-4 text-center text-slate-500">KSh 7,500+</td>
@@ -525,11 +526,7 @@ function Comparison() {
 
 /* ──────────────────────────  PRICING  ─────────────────────────── */
 function Pricing() {
-  const tiers = [
-    { name: 'Starter', price: 'Free', tag: 'For getting started', features: ['Invoicing & expenses', 'Basic reports', '1 user', 'Amos — text chat (20 tasks/mo)'], cta: 'Start free', highlight: false },
-    { name: 'Business', price: 'KSh 4,900', per: '/mo', tag: 'Most popular', features: ['Everything in Starter', 'POS, inventory & procurement', 'Kenya statutory payroll', 'eTIMS & M-Pesa', 'Amos — voice + unlimited chat', 'Document & web-search AI', '5 users'], cta: 'Start free trial', highlight: true },
-    { name: 'Scale', price: "Let's talk", tag: 'Multi-branch & groups', features: ['Everything in Business', 'Consolidation', 'Approval limits & DoA', 'Priority support', 'Unlimited users'], cta: 'Contact sales', highlight: false },
-  ];
+  const tiers = PRICING_PLANS;
   return (
     <section id="pricing" className="bg-slate-50">
       <div className="mx-auto max-w-7xl px-5 py-24">
@@ -537,9 +534,9 @@ function Pricing() {
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Simple pricing that scales with you</h2>
           <p className="mt-3 text-slate-600 text-lg">Start free. Upgrade when you're ready. Cancel anytime.</p>
         </div>
-        <div className="grid lg:grid-cols-3 gap-6 items-start">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
           {tiers.map((t) => (
-            <div key={t.name} className={`rounded-3xl p-8 border ${t.highlight ? 'border-indigo-600 bg-white shadow-2xl shadow-indigo-200/60 relative lg:-mt-4' : 'border-slate-200 bg-white'}`}>
+            <div key={t.name} className={`rounded-3xl p-7 border ${t.highlight ? 'border-indigo-600 bg-white shadow-2xl shadow-indigo-200/60 relative lg:-mt-4' : 'border-slate-200 bg-white'}`}>
               {t.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-semibold px-3 py-1 rounded-full">Most popular</span>}
               <p className="text-sm font-semibold text-slate-500">{t.tag}</p>
               <h3 className="mt-1 text-xl font-bold">{t.name}</h3>
@@ -547,7 +544,7 @@ function Pricing() {
               <ul className="mt-6 space-y-3">
                 {t.features.map((f) => <li key={f} className="flex items-start gap-2.5 text-sm text-slate-700"><Check className="w-4 h-4 text-indigo-600 mt-0.5 shrink-0" /> {f}</li>)}
               </ul>
-              <Link to={t.cta === 'Contact sales' ? '/contact' : SIGNUP} className={`mt-8 block text-center rounded-full font-semibold py-3 transition ${t.highlight ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>{t.cta}</Link>
+              <Link to={t.cta === 'Contact sales' ? '/contact' : `${SIGNUP}&plan=${t.key}`} className={`mt-8 block text-center rounded-full font-semibold py-3 transition ${t.highlight ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>{t.cta}</Link>
             </div>
           ))}
         </div>

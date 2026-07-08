@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { login, signup, storeSession } from '../../api/client';
 import Logo from '../../components/brand/Logo';
+import { PRICING_PLANS, DEFAULT_PLAN_KEY } from '../../config/pricing';
 
 /// Prefilled organisation name used when the user chooses to explore with
 /// sample data — saves them typing to get straight into a populated demo.
@@ -20,6 +21,9 @@ export default function LoginPage() {
   const [orgType, setOrgType] = useState('limited_company');
   const [kraPin, setKraPin] = useState('');
   const [withSampleData, setWithSampleData] = useState(false);
+  const [plan, setPlan] = useState<string>(
+    PRICING_PLANS.some((p) => p.key === params.get('plan')) ? params.get('plan')! : DEFAULT_PLAN_KEY,
+  );
 
   // Choosing "explore" prefills the org name + KRA PIN (unless the user typed
   // their own); choosing "real business" clears the sample prefills.
@@ -78,6 +82,7 @@ export default function LoginPage() {
         display_name: displayName.trim(),
         password,
         with_sample_data: withSampleData,
+        plan,
       });
       storeAndGo(data);
     } catch (err: any) {
@@ -251,6 +256,24 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
               />
+            </div>
+            <div>
+              <label className="label">Choose your plan</label>
+              <div className="grid grid-cols-2 gap-2">
+                {PRICING_PLANS.map((p) => (
+                  <button
+                    type="button"
+                    key={p.key}
+                    onClick={() => setPlan(p.key)}
+                    className={`relative text-left rounded-lg border px-3 py-2 transition-colors ${plan === p.key ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-200' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {p.highlight && <span className="absolute -top-2 right-2 text-[10px] font-semibold bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">Popular</span>}
+                    <span className="block text-sm font-semibold text-gray-900">{p.name}</span>
+                    <span className="block text-xs text-gray-500">{p.price}{p.per}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Start on any plan free — change or cancel anytime.</p>
             </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
               {busy ? 'Creating…' : 'Create organization & sign in'}
