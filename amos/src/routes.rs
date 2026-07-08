@@ -26,6 +26,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/memories", get(get_memories))
         .route("/api/memories/forget", delete(delete_memories))
         .route("/api/context", get(get_context))
+        .route("/api/ops", get(get_ops))
+        .route("/api/ops/run/{name}", axum::routing::post(post_ops_run))
         .route("/api/sessions", get(get_sessions))
         .route("/api/sessions/{id}", get(get_session_transcript))
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
@@ -93,6 +95,29 @@ async fn delete_memories(
     match state.memory.forget(&params.query, None).await {
         Ok(n) => Json(serde_json::json!({"removed": n})).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Ambient-ops status: routine schedule + recent runs (for the panel/UI).
+async fn get_ops(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match &state.ops {
+        Some(ops) => Json(ops.status().await).into_response(),
+        None => Json(serde_json::json!({"routines": [], "recent_runs": []})).into_response(),
+    }
+}
+
+/// Manual routine trigger (the UI's "Run now" button; same Skip-concurrency
+/// guard as the chat tool and the cron).
+async fn post_ops_run(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match &state.ops {
+        Some(ops) => match ops.run_now(&state, &name, "manual").await {
+            Ok(msg) => Json(serde_json::json!({"status": "started", "message": msg})).into_response(),
+            Err(e) => (StatusCode::CONFLICT, e.to_string()).into_response(),
+        },
+        None => (StatusCode::NOT_FOUND, "ambient operations are not configured").into_response(),
     }
 }
 

@@ -208,6 +208,20 @@ pub async fn agent_tools(
         .collect())
 }
 
+/// Exactly the named MCP tools — for routine sub-agents, whose surface is the
+/// routine spec's own (browser-free) list, not the session allowlists.
+pub async fn named_tools(
+    manager: &McpServerManager,
+    names: &std::collections::HashSet<String>,
+) -> Result<Vec<Arc<dyn Tool>>> {
+    let ctx: Arc<dyn ReadonlyContext> = Arc::new(AmosContext::new());
+    let all = manager
+        .tools(ctx)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to list MCP tools: {e}"))?;
+    Ok(all.into_iter().filter(|t| names.contains(t.name())).collect())
+}
+
 /// Look up a single tool by name (used by the native showcase_step tool to
 /// drive the browser screenshot internally).
 pub async fn find_tool(manager: &McpServerManager, name: &str) -> Option<Arc<dyn Tool>> {

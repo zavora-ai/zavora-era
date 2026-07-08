@@ -1,0 +1,26 @@
+# Month-end close pack — on the 3rd, assemble everything the owner needs to
+# close the PRIOR month. Read-only: it prepares and flags; closing the period
+# stays a human decision made with live Amos.
+name = "month-end-pack"
+title = "Month-end close pack"
+cron = "0 0 8 3 * *"
+skill = "month-end-review"
+tools = ["get_dashboard", "run_report", "list_bills", "list_invoices", "list_payments", "get_journal_entries", "list_bank_accounts", "list_reconciliations", "list_tax_filings", "list_fiscal_periods"]
+scopes = ["erp:read"]
+notify = true
+enabled = true
+prompt = """
+Assemble the month-end close pack for LAST month (the month before today's date). Steps:
+1. run_report TrialBalance as at last month's end — confirm it balances.
+2. run_report ProfitAndLoss and BalanceSheet for the month — headline figures.
+3. list_reconciliations — is every bank account reconciled to a statement date on/after month end? List any that are not.
+4. list_bills / list_invoices — drafts still unposted that belong to the month.
+5. list_tax_filings — is the month's VAT (due the 20th) prepared/filed?
+6. list_fiscal_periods — is the period still open?
+
+Produce the CLOSE PACK (max ~18 lines):
+- TB status (balanced / discrepancy).
+- P&L: revenue, expenses, net. BS: assets, liabilities, equity.
+- Checklist with ✓/✗: banks reconciled · no unposted drafts · VAT prepared · period open.
+- End with: what must be resolved before closing, or "Ready to close — ask Amos to close the period when you are."
+"""
