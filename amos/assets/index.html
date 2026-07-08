@@ -321,6 +321,11 @@
   }
   .ops-run:hover { border-color: var(--accent); color: var(--accent); }
   .ops-run:disabled { opacity: .5; cursor: default; }
+  .ops-pause {
+    border: none; background: transparent; color: var(--ink-4); cursor: pointer;
+    font-size: 11px; padding: 3px 4px; flex-shrink: 0;
+  }
+  .ops-pause:hover { color: var(--accent); }
 
   /* ══ Markdown in Amos's replies ═══ */
   .row-body :is(h1,h2,h3) { font-size: 13.5px; font-weight: 680; margin: 10px 0 4px; }
@@ -744,10 +749,22 @@ async function loadOps() {
       const outcome = lr
         ? ` · last <span class="${lr.status === 'ok' ? 'ok' : 'fail'}">${lr.status === 'ok' ? '✓' : '✗'}</span>`
         : '';
+      const schedule = r.paused ? '<span class="fail">paused</span>' : `next ${esc(fmtDue(r.next_due))}`;
       row.innerHTML = `<div class="ops-main"><div class="ops-title"></div>
-        <div class="ops-sub">next ${esc(fmtDue(r.next_due))}${outcome}</div></div>
+        <div class="ops-sub">${schedule}${outcome}</div></div>
+        <button class="ops-pause" title="${r.paused ? 'Resume the schedule' : 'Pause the schedule (Run now still works)'}">${r.paused ? '▶' : '⏸'}</button>
         <button class="ops-run" title="Run this routine now">Run now</button>`;
       row.querySelector('.ops-title').textContent = r.title;
+      row.querySelector('.ops-pause').onclick = async () => {
+        try {
+          await authFetch(`${BASE}/api/ops/routines/${encodeURIComponent(r.name)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paused: !r.paused }),
+          });
+          loadOps();
+        } catch (_) { /* leave as-is */ }
+      };
       const btn = row.querySelector('.ops-run');
       btn.onclick = async () => {
         btn.disabled = true; btn.textContent = 'Running…';

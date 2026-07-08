@@ -28,6 +28,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/context", get(get_context))
         .route("/api/ops", get(get_ops))
         .route("/api/ops/run/{name}", axum::routing::post(post_ops_run))
+        .route("/api/ops/routines/{name}", axum::routing::patch(patch_ops_routine))
         .route("/api/sessions", get(get_sessions))
         .route("/api/sessions/{id}", get(get_session_transcript))
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
@@ -62,6 +63,22 @@ async fn require_auth(
             .find(|(k, _)| *k == "token")
             .map(|(_, v)| v.to_string())
     });
+    // Service-to-service path: the ERP (or another trusted system) may fire
+    // routine triggers with a shared secret instead of a user token — but ONLY
+    // the trigger endpoint, nothing that reads data.
+    let webhook_ok = req.method() == axum::http::Method::POST
+        && req.uri().path().starts_with("/api/ops/run/")
+        && std::env::var("AMOS_WEBHOOK_SECRET").is_ok_and(|expected| {
+            !expected.is_empty()
+                && req
+                    .headers()
+                    .get("x-amos-webhook-secret")
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|got| got == expected)
+        });
+    if webhook_ok {
+        return next.run(req).await;
+    }
     match bearer.or(query_token) {
         Some(token) if state.verifier.verify(&token).is_ok() => next.run(req).await,
         _ if dev_allow => next.run(req).await,
@@ -126,6 +143,24 @@ async fn post_ops_run(
         Some(ops) => match ops.run_now(&state, &name, fired_by, context).await {
             Ok(msg) => Json(serde_json::json!({"status": "started", "message": msg})).into_response(),
             Err(e) => (StatusCode::CONFLICT, e.to_string()).into_response(),
+        },
+        None => (StatusCode::NOT_FOUND, "ambient operations are not configured").into_response(),
+    }
+}
+
+/// Pause/resume a routine's cron (manual Run-now still works while paused).
+async fn patch_ops_routine(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let Some(paused) = body.get("paused").and_then(|v| v.as_bool()) else {
+        return (StatusCode::BAD_REQUEST, "body must be {\"paused\": true|false}").into_response();
+    };
+    match &state.ops {
+        Some(ops) => match ops.set_paused(&name, paused).await {
+            Ok(()) => Json(serde_json::json!({"name": name, "paused": paused})).into_response(),
+            Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
         },
         None => (StatusCode::NOT_FOUND, "ambient operations are not configured").into_response(),
     }

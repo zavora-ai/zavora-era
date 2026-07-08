@@ -532,10 +532,46 @@ pub async fn try_auto_transmit(engine: &ErpEngine, entity_id: Uuid, invoice_id: 
         Ok(dev) if dev.enabled && dev.initialized => {
             if let Err(e) = transmit_invoice(engine, entity_id, invoice_id).await {
                 tracing::warn!("eTIMS auto-transmit failed for invoice {invoice_id}: {e}");
+                // Reactive trigger: tell Amos what just failed so its eTIMS
+                // sweep can retry and report — the owner hears about a
+                // compliance gap minutes after it happens, not at 18:00.
+                notify_amos_webhook(
+                    "etims-sweep",
+                    format!("Event: eTIMS auto-transmit failed for invoice {invoice_id}: {e}. Check the device status, retry this invoice, and report the outcome."),
+                );
             }
         }
         _ => {}
     }
+}
+
+/// Best-effort fire-and-forget notification to the Amos ambient-ops trigger
+/// endpoint. No-op unless AMOS_WEBHOOK_URL (+ AMOS_WEBHOOK_SECRET) are set;
+/// never blocks or fails the calling posting path.
+fn notify_amos_webhook(routine: &str, context: String) {
+    let (Ok(base), Ok(secret)) = (std::env::var("AMOS_WEBHOOK_URL"), std::env::var("AMOS_WEBHOOK_SECRET")) else {
+        return;
+    };
+    let url = format!("{}/api/ops/run/{routine}", base.trim_end_matches('/'));
+    tokio::spawn(async move {
+        let client = reqwest::Client::new();
+        match client
+            .post(&url)
+            .header("X-Amos-Webhook-Secret", secret)
+            .json(&serde_json::json!({ "context": context }))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!("amos webhook: triggered {url}");
+            }
+            // 409 = the routine is already running (Skip policy) — fine.
+            Ok(resp) if resp.status() == reqwest::StatusCode::CONFLICT => {}
+            Ok(resp) => tracing::warn!("amos webhook: {url} returned {}", resp.status()),
+            Err(e) => tracing::warn!("amos webhook: {url} unreachable: {e}"),
+        }
+    });
 }
 
 #[cfg(test)]

@@ -62,6 +62,9 @@ pub struct Ops {
     entity: String,
     /// Skip-concurrency guard: a routine never runs twice at once.
     running: Mutex<HashSet<String>>,
+    /// Runtime pause overlay: paused routines skip their cron (manual runs
+    /// still work — pausing expresses "stop the schedule", not "forbid it").
+    paused: tokio::sync::RwLock<HashSet<String>>,
 }
 
 impl Ops {
@@ -138,7 +141,29 @@ impl Ops {
             tz.name(),
             if pool.is_some() { "on" } else { "off" },
         );
-        Some(Arc::new(Self { routines, tz, pool, entity: entity.to_string(), running: Mutex::new(HashSet::new()) }))
+        Some(Arc::new(Self {
+            routines,
+            tz,
+            pool,
+            entity: entity.to_string(),
+            running: Mutex::new(HashSet::new()),
+            paused: tokio::sync::RwLock::new(HashSet::new()),
+        }))
+    }
+
+    /// Pause or resume a routine's schedule at runtime.
+    pub async fn set_paused(&self, name: &str, paused: bool) -> Result<()> {
+        if self.spec(name).is_none() {
+            return Err(anyhow!("unknown routine '{name}'"));
+        }
+        let mut set = self.paused.write().await;
+        if paused {
+            set.insert(name.to_string());
+        } else {
+            set.remove(name);
+        }
+        info!("🗓️ ops: routine {name} {}", if paused { "paused" } else { "resumed" });
+        Ok(())
     }
 
     fn spec(&self, name: &str) -> Option<&RoutineSpec> {
@@ -158,8 +183,13 @@ impl Ops {
     /// from data.
     pub async fn prompt_block(&self) -> String {
         let mut lines = vec![];
+        let paused = self.paused.read().await.clone();
         for spec in &self.routines {
             if !spec.enabled {
+                continue;
+            }
+            if paused.contains(&spec.name) {
+                lines.push(format!("- {} ({}): PAUSED", spec.title, spec.name));
                 continue;
             }
             let due = self
@@ -192,6 +222,7 @@ impl Ops {
 
     /// Routine schedule + recent runs, for the `ops_status` tool and `/api/ops`.
     pub async fn status(&self) -> serde_json::Value {
+        let paused = self.paused.read().await.clone();
         let routines: Vec<_> = self
             .routines
             .iter()
@@ -201,6 +232,7 @@ impl Ops {
                     "title": spec.title,
                     "cron": spec.cron,
                     "enabled": spec.enabled,
+                    "paused": paused.contains(&spec.name),
                     "notify": spec.notify,
                     "next_due": self.next_due(spec).map(|d| d.to_rfc3339()),
                 })
@@ -254,7 +286,8 @@ impl Ops {
             loop {
                 tick.tick().await;
                 let now = Utc::now().with_timezone(&ops.tz);
-                for spec in ops.routines.iter().filter(|s| s.enabled) {
+                let paused = ops.paused.read().await.clone();
+                for spec in ops.routines.iter().filter(|s| s.enabled && !paused.contains(&s.name)) {
                     let Ok(schedule) = cron::Schedule::from_str(&spec.cron) else { continue };
                     if schedule.after(&last).next().is_some_and(|due| due <= now) {
                         info!("🗓️ ops: cron fired for {}", spec.name);
