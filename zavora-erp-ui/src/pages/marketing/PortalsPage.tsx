@@ -90,7 +90,7 @@ function Hero() {
         <p className="mx-auto max-w-2xl mt-6 text-lg text-slate-300">
           Three dedicated portals write straight into your books — suppliers bid and lodge invoices,
           customers see their statements and raise tickets, employees request leave and pick up payslips.
-          No email ping-pong, no re-keying, no extra seats to buy.
+          Everything lands in your books in real time — and portal users are free.
         </p>
         <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link to={SIGNUP} className="group inline-flex items-center gap-2 rounded-full bg-white text-slate-900 font-semibold px-6 py-3.5 hover:bg-slate-100 transition">
@@ -112,7 +112,7 @@ function Suppliers() {
         <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-xs font-semibold mb-4">
           <Gavel className="w-3.5 h-3.5" /> Supplier portal
         </div>
-        <h2 className="text-3xl font-bold tracking-tight">Procurement without the paperwork chase</h2>
+        <h2 className="text-3xl font-bold tracking-tight">From tender to paid invoice — one connected flow</h2>
         <p className="mt-4 text-slate-600">
           Suppliers register themselves, bid on your tenders, receive LPOs the moment you issue them,
           lodge invoices against those LPOs, and check their own statement — every step landing directly
@@ -144,7 +144,7 @@ function Customers() {
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 text-indigo-700 px-3 py-1 text-xs font-semibold mb-4">
             <Receipt className="w-3.5 h-3.5" /> Customer portal
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">"Can you resend that invoice?" — never again</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Customers help themselves — and pay you faster</h2>
           <p className="mt-4 text-slate-600">
             Every customer gets a sign-in to their own slice of your books: live invoices and balances,
             a statement of account that always matches yours, and a support thread your team answers
@@ -169,7 +169,7 @@ function Employees() {
         <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 text-amber-700 px-3 py-1 text-xs font-semibold mb-4">
           <Users className="w-3.5 h-3.5" /> Employee self-service
         </div>
-        <h2 className="text-3xl font-bold tracking-tight">HR stops being the middleman</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Leave and payslips, self-served in seconds</h2>
         <p className="mt-4 text-slate-600">
           Staff get their own portal for the things they'd otherwise queue at the office for —
           requesting leave against a live balance, and picking up payslips the moment payroll commits.
@@ -200,7 +200,7 @@ function Security() {
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1 text-xs font-semibold mb-4">
             <ShieldCheck className="w-3.5 h-3.5" /> Isolation by design
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Outside users never touch the inside</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Everyone sees exactly what's theirs — securely</h2>
           <p className="mt-4 text-slate-400 max-w-2xl mx-auto">
             Each portal is a separate class of account with its own sign-in — not a restricted view of your back office.
           </p>
@@ -225,7 +225,7 @@ function Security() {
 function Cta() {
   return (
     <section className="mx-auto max-w-4xl px-5 py-20 text-center">
-      <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">One ledger. Everyone on it. Nobody in it.</h2>
+      <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">One ledger, working for everyone you do business with.</h2>
       <p className="mt-4 text-slate-600">Portals are included — suppliers, customers and staff don't count against your seats.</p>
       <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
         <Link to={SIGNUP} className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white font-semibold px-7 py-3.5 hover:bg-slate-800 transition">
