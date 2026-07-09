@@ -62,10 +62,20 @@ pub async fn run_fx_revaluation(
     // Get the period to determine date range
     let period = crate::services::periods::get_period(engine, entity_id, period_id).await?;
 
-    // Find all accounts with foreign currency balances as of the rate_date.
-    // We look at journal lines where currency != base currency and sum their transaction amounts.
+    // Find MONETARY accounts with foreign currency balances as of the rate_date.
+    // IAS 21 retranslates monetary items only (cash, receivables, payables):
+    // restricting to balance-sheet account types keeps P&L lines out (an FCY
+    // expense is settled history, not an open exposure), and the explicit
+    // exclusions keep the non-monetary balance-sheet accounts (stock, fixed
+    // assets, accumulated depreciation) at their historical rates.
+    let posting = engine.posting_for(entity_id).await?;
+    let non_monetary = vec![
+        posting.inventory_asset.clone(),
+        posting.fixed_asset.clone(),
+        posting.accumulated_depreciation.clone(),
+    ];
     let fcy_balances = sqlx::query_as::<_, FcyBalanceRow>(
-        r#"SELECT 
+        r#"SELECT
                jl.account_code,
                a.name as account_name,
                jl.currency,
@@ -74,16 +84,19 @@ pub async fn run_fx_revaluation(
            FROM journal_lines jl
            JOIN journal_entries je ON je.id = jl.entry_id
            JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
-           WHERE je.entity_id = $1 
+           WHERE je.entity_id = $1
              AND je.status = 'posted'
              AND je.date <= $2
              AND jl.currency != $3
+             AND a.account_type IN ('Asset', 'Liability', 'ContraAsset', 'ContraLiability')
+             AND NOT (jl.account_code = ANY($4))
            GROUP BY jl.account_code, a.name, jl.currency
            HAVING COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0) != 0"#,
     )
     .bind(entity_id)
     .bind(rate_date)
     .bind(&base_ccy)
+    .bind(&non_monetary)
     .fetch_all(engine.pool())
     .await?;
 

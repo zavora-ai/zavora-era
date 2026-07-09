@@ -196,14 +196,21 @@ pub async fn enforce_period_status(
             // Year-end close/opening entries are permitted into a hard-closed period.
         }
         PeriodStatus::SoftClosed => {
-            if *source != JournalSource::Manual {
+            let docs_ok = is_document_source(source)
+                && engine
+                    .config_for(entity_id)
+                    .await
+                    .map(|c| c.period_controls.soft_close_allow_documents)
+                    .unwrap_or(false);
+            if *source != JournalSource::Manual && !docs_ok {
                 return Err(ErpError::PeriodClosedDetailed {
                     period_name: period.name.clone(),
                     status: "SoftClosed".to_string(),
                     period_id: period.id,
                 });
             }
-            // Manual entries (prior-period adjustments) are allowed in SoftClosed
+            // Manual entries (prior-period adjustments) are always allowed in
+            // SoftClosed; document postings only when the tenant opted in.
         }
         PeriodStatus::Open | PeriodStatus::Future => {
             // All entries allowed
@@ -211,6 +218,20 @@ pub async fn enforce_period_status(
     }
 
     Ok(())
+}
+
+/// Operational DOCUMENT sources — the subsystem postings a tenant can opt to
+/// admit into soft-closed periods (manual JEs can't touch the AR/AP control
+/// accounts, so late documents were otherwise un-enterable without a reopen).
+fn is_document_source(source: &JournalSource) -> bool {
+    matches!(
+        source,
+        JournalSource::Invoice
+            | JournalSource::CreditNote
+            | JournalSource::Bill
+            | JournalSource::SupplierCreditNote
+            | JournalSource::Payment
+    )
 }
 
 /// Create and immediately post a journal entry in its own transaction.
@@ -249,7 +270,40 @@ pub async fn create_and_post_in_tx(
     period_id: Uuid,
     posted_by: AgentOrUserId,
 ) -> ErpResult<JournalEntry> {
-    enforce_period_status_in_tx(tx, entity_id, period_id, &req.source).await?;
+    enforce_period_status_in_tx(tx, engine, entity_id, period_id, &req.source).await?;
+
+    // Every line must hit an existing, active account. Subsystem postings used
+    // to skip this (only the manual-JE path ran validate_entry), so a typo'd
+    // posting-setup code inserted lines against a code no account owns — a
+    // balance the chart of accounts couldn't see.
+    {
+        let codes: Vec<String> = {
+            let mut c: Vec<String> = req.lines.iter().map(|l| l.account_code.clone()).collect();
+            c.sort();
+            c.dedup();
+            c
+        };
+        let known = sqlx::query_as::<_, (String, bool)>(
+            "SELECT code, is_active FROM accounts WHERE entity_id = $1 AND code = ANY($2)",
+        )
+        .bind(entity_id)
+        .bind(&codes)
+        .fetch_all(&mut **tx)
+        .await?;
+        let mut problems: Vec<String> = Vec::new();
+        for code in &codes {
+            match known.iter().find(|(c, _)| c == code) {
+                None => problems.push(format!("{code} (not found)")),
+                Some((_, false)) => problems.push(format!("{code} (inactive)")),
+                Some((_, true)) => {}
+            }
+        }
+        if !problems.is_empty() {
+            return Err(ErpError::ValidationFailed {
+                message: format!("Journal lines reference invalid accounts: {}", problems.join(", ")),
+            });
+        }
+    }
 
     let now = Utc::now();
     let entry_id = Uuid::new_v4();
@@ -468,6 +522,7 @@ async fn generate_journal_number_in_tx(
 /// Period-status enforcement against a transaction (see [`enforce_period_status`]).
 pub async fn enforce_period_status_in_tx(
     tx: &mut PgTx<'_>,
+    engine: &ErpEngine,
     entity_id: Uuid,
     period_id: Uuid,
     source: &JournalSource,
@@ -493,11 +548,23 @@ pub async fn enforce_period_status_in_tx(
             })
         }
         PeriodStatus::SoftClosed if *source != JournalSource::Manual => {
-            Err(ErpError::PeriodClosedDetailed {
-                period_name: period.name.clone(),
-                status: "SoftClosed".to_string(),
-                period_id: period.id,
-            })
+            // Document postings are admitted when the tenant opted in (see
+            // PeriodControls::soft_close_allow_documents).
+            let docs_ok = is_document_source(source)
+                && engine
+                    .config_for(entity_id)
+                    .await
+                    .map(|c| c.period_controls.soft_close_allow_documents)
+                    .unwrap_or(false);
+            if docs_ok {
+                Ok(())
+            } else {
+                Err(ErpError::PeriodClosedDetailed {
+                    period_name: period.name.clone(),
+                    status: "SoftClosed".to_string(),
+                    period_id: period.id,
+                })
+            }
         }
         _ => Ok(()),
     }
@@ -610,6 +677,14 @@ pub async fn reverse_journal_entry(
 
     let mut tx = engine.pool().begin().await?;
     let entry = create_and_post_in_tx(&mut tx, engine, entity_id, entry_req, period.id, reversed_by.clone()).await?;
+    // Mark the original reversed IN THE SAME transaction — reference-based
+    // idempotency alone left the original looking live in every report and
+    // allowed status drift if the update was forgotten (it always was).
+    sqlx::query("UPDATE journal_entries SET status = 'reversed' WHERE id = $1 AND entity_id = $2")
+        .bind(entry_id)
+        .bind(entity_id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
 
     // Best-effort audit event linking the reversal to the original.

@@ -129,6 +129,26 @@ impl TestHarness {
         let today = Utc::now().date_naive();
         seed_fiscal_period(&pool, entity_id, today, period_status).await;
 
+        // Seed the Kenya-standard chart of accounts: journal posting now
+        // validates that every line account exists and is active, so tests
+        // must post against a real chart like production tenants do.
+        for a in zavora_erp_core::ledger::coa_template::kenya_standard_coa() {
+            sqlx::query(
+                "INSERT INTO accounts (entity_id, code, name, account_type, parent_code, is_control)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (entity_id, code) DO NOTHING",
+            )
+            .bind(entity_id)
+            .bind(&a.code)
+            .bind(&a.name)
+            .bind(format!("{:?}", a.account_type))
+            .bind(&a.parent_code)
+            .bind(a.is_control)
+            .execute(&pool)
+            .await
+            .expect("seed chart of accounts");
+        }
+
         let engine = ErpEngine::new(pool.clone(), redis_conn, config)
             .await
             .expect("construct engine");
@@ -171,6 +191,10 @@ impl TestHarness {
             .execute(&self.pool)
             .await;
         let _ = sqlx::query("DELETE FROM fiscal_periods WHERE entity_id = $1")
+            .bind(self.entity_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM accounts WHERE entity_id = $1")
             .bind(self.entity_id)
             .execute(&self.pool)
             .await;

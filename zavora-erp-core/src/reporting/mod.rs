@@ -44,6 +44,9 @@ pub enum ReportType {
     StatutorySchedule,
     PayeP9,
     PayrollBankFile,
+    /// Subledger (open invoices/bills) vs GL control-account balances — the
+    /// AR/AP sign-off check.
+    ControlAccountRecon,
 }
 
 /// Parameters for report generation.
@@ -101,7 +104,43 @@ pub enum ReportContent {
     EquityChanges(EquityChangesReport),
     CashFlowDirect(CashFlowDirectReport),
     CustomerPaymentHistory(CustomerPaymentHistoryReport),
+    ControlAccountRecon(ControlAccountReconReport),
     Generic(serde_json::Value),
+}
+
+/// AR/AP control-account reconciliation: Σ open subledger documents (in
+/// functional currency) against the GL balance of the control account(s).
+/// A non-zero difference means the books need investigation before sign-off.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlAccountReconReport {
+    /// Reconciliation is of CURRENT open balances vs current GL — document
+    /// balances aren't reconstructable as-at an arbitrary past date.
+    pub as_at: NaiveDate,
+    pub sides: Vec<ControlReconSide>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlReconSide {
+    /// "AR" or "AP".
+    pub side: String,
+    /// Σ balance_due × fx_rate over open subledger documents (functional).
+    pub subledger_total: Decimal,
+    pub open_documents: i64,
+    /// Every control account feeding this side (flat setup + business-group
+    /// overrides), with its GL balance in the side's natural direction.
+    pub control_accounts: Vec<ControlReconAccount>,
+    pub control_total: Decimal,
+    /// subledger_total − control_total.
+    pub difference: Decimal,
+    /// |difference| ≤ 0.01.
+    pub in_balance: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlReconAccount {
+    pub code: String,
+    pub name: String,
+    pub balance: Decimal,
 }
 
 /// Trial balance report.

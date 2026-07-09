@@ -141,6 +141,10 @@ pub async fn generate_report(engine: &ErpEngine, req: ReportRequest) -> ErpResul
         ReportType::PayrollBankFile => {
             ReportContent::Generic(payroll_bank_file(engine, entity_id, req.parameters).await?)
         }
+        ReportType::ControlAccountRecon => {
+            let report = control_account_recon(engine, entity_id).await?;
+            ReportContent::ControlAccountRecon(report)
+        }
         // Any future report type without a generator fails loudly rather than
         // returning a fake-success body.
         #[allow(unreachable_patterns)]
@@ -192,8 +196,123 @@ fn title_for(report_type: &ReportType) -> String {
         ReportType::StatutorySchedule => "Statutory Deductions Schedule",
         ReportType::PayeP9 => "PAYE Deduction Card (P9)",
         ReportType::PayrollBankFile => "Net Pay Bank File (EFT)",
+        ReportType::ControlAccountRecon => "AR/AP Control Account Reconciliation",
     }
     .to_string()
+}
+
+/// AR/AP control-account reconciliation: Σ open subledger balances (functional)
+/// vs the GL balance of every control account each side posts to (flat setup
+/// plus business-group overrides). The month-end sign-off check.
+async fn control_account_recon(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<ControlAccountReconReport> {
+    let posting = engine.posting_for(entity_id).await?;
+
+    // Control-account sets: flat default + group overrides.
+    let group_accounts = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        "SELECT receivables_account, payables_account FROM general_business_groups WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+    let mut ar_accounts = vec![posting.accounts_receivable.clone()];
+    let mut ap_accounts = vec![posting.accounts_payable.clone()];
+    for (recv, pay) in group_accounts {
+        if let Some(a) = recv.filter(|a| !a.trim().is_empty()) {
+            ar_accounts.push(a);
+        }
+        if let Some(a) = pay.filter(|a| !a.trim().is_empty()) {
+            ap_accounts.push(a);
+        }
+    }
+    ar_accounts.sort();
+    ar_accounts.dedup();
+    ap_accounts.sort();
+    ap_accounts.dedup();
+
+    // Subledger side, in functional currency (balance_due is document
+    // currency; multiply by the document's fx_rate).
+    let (ar_subledger, ar_docs) = sqlx::query_as::<_, (Decimal, i64)>(
+        r#"SELECT COALESCE(SUM(balance_due * fx_rate), 0), COUNT(*)
+           FROM invoices
+           WHERE entity_id = $1
+             AND status NOT IN ('draft', 'paid', 'voided', 'cancelled', 'written_off')
+             AND invoice_type = 'invoice'
+             AND balance_due != 0"#,
+    )
+    .bind(entity_id)
+    .fetch_one(engine.pool())
+    .await?;
+    let (ap_subledger, ap_docs) = sqlx::query_as::<_, (Decimal, i64)>(
+        r#"SELECT COALESCE(SUM(balance_due * fx_rate), 0), COUNT(*)
+           FROM bills
+           WHERE entity_id = $1
+             AND status NOT IN ('draft', 'pending_approval', 'paid', 'cancelled')
+             AND balance_due != 0"#,
+    )
+    .bind(entity_id)
+    .fetch_one(engine.pool())
+    .await?;
+
+    // GL side: posted functional balance per control account, in the side's
+    // natural direction (AR debit-normal, AP credit-normal).
+    async fn gl_balances(
+        engine: &ErpEngine,
+        entity_id: Uuid,
+        codes: &[String],
+        credit_normal: bool,
+    ) -> ErpResult<Vec<ControlReconAccount>> {
+        let rows = sqlx::query_as::<_, (String, String, Decimal)>(
+            r#"SELECT jl.account_code, MAX(a.name),
+                      COALESCE(SUM(COALESCE(jl.functional_debit, 0) - COALESCE(jl.functional_credit, 0)), 0)
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.entry_id
+               JOIN accounts a ON a.code = jl.account_code AND a.entity_id = je.entity_id
+               WHERE je.entity_id = $1 AND je.status = 'posted' AND jl.account_code = ANY($2)
+               GROUP BY jl.account_code"#,
+        )
+        .bind(entity_id)
+        .bind(codes)
+        .fetch_all(engine.pool())
+        .await?;
+        Ok(codes
+            .iter()
+            .map(|code| {
+                let found = rows.iter().find(|(c, _, _)| c == code);
+                ControlReconAccount {
+                    code: code.clone(),
+                    name: found.map(|(_, n, _)| n.clone()).unwrap_or_default(),
+                    balance: found
+                        .map(|(_, _, b)| if credit_normal { -*b } else { *b })
+                        .unwrap_or(Decimal::ZERO),
+                }
+            })
+            .collect())
+    }
+
+    let ar_gl = gl_balances(engine, entity_id, &ar_accounts, false).await?;
+    let ap_gl = gl_balances(engine, entity_id, &ap_accounts, true).await?;
+
+    let build_side = |side: &str, subledger: Decimal, docs: i64, accounts: Vec<ControlReconAccount>| {
+        let control_total: Decimal = accounts.iter().map(|a| a.balance).sum();
+        let difference = (subledger - control_total).round_dp(2);
+        ControlReconSide {
+            side: side.to_string(),
+            subledger_total: subledger.round_dp(2),
+            open_documents: docs,
+            control_accounts: accounts,
+            control_total: control_total.round_dp(2),
+            difference,
+            in_balance: difference.abs() <= Decimal::new(1, 2),
+        }
+    };
+
+    Ok(ControlAccountReconReport {
+        as_at: Utc::now().date_naive(),
+        sides: vec![
+            build_side("AR", ar_subledger, ar_docs, ar_gl),
+            build_side("AP", ap_subledger, ap_docs, ap_gl),
+        ],
+    })
 }
 
 /// Generate dashboard summary.
@@ -1294,6 +1413,23 @@ pub fn export_to_csv(report: &ReportData) -> ErpResult<Vec<u8>> {
             output.extend_from_slice(format!("Input VAT (on purchases),{}\n", v.input_vat).as_bytes());
             let label = if v.is_payable { "Net VAT payable to KRA" } else { "Net VAT credit carried forward" };
             output.extend_from_slice(format!("{},{}\n", label, v.net_vat.abs()).as_bytes());
+        }
+        ReportContent::ControlAccountRecon(r) => {
+            output.extend_from_slice(b"Side,Item,Account,Amount\n");
+            for side in &r.sides {
+                output.extend_from_slice(
+                    format!("{},Subledger total ({} open docs),,{}\n", side.side, side.open_documents, side.subledger_total).as_bytes(),
+                );
+                for acct in &side.control_accounts {
+                    output.extend_from_slice(
+                        format!("{},Control account,{} {},{}\n", side.side, csv_escape(&acct.code), csv_escape(&acct.name), acct.balance).as_bytes(),
+                    );
+                }
+                output.extend_from_slice(format!("{},Control total,,{}\n", side.side, side.control_total).as_bytes());
+                output.extend_from_slice(
+                    format!("{},Difference{},,{}\n", side.side, if side.in_balance { " (in balance)" } else { " (INVESTIGATE)" }, side.difference).as_bytes(),
+                );
+            }
         }
         ReportContent::PartyStatement(s) => {
             output.extend_from_slice(format!("Statement for {} ({})\n", csv_escape(&s.party_name), s.party_kind).as_bytes());
@@ -3267,19 +3403,43 @@ async fn vat_return(engine: &ErpEngine, entity_id: Uuid, params: ReportParameter
     let period_from = params.period_from.unwrap_or(NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap());
     let period_to = params.period_to.unwrap_or(today);
 
+    // The return must cover EVERY account VAT posts to: the flat posting-setup
+    // accounts plus any routed by the VAT posting-group matrix — a tenant using
+    // group-routed VAT accounts would otherwise under-declare.
     let posting = engine.posting_for(entity_id).await?;
-    let vat_output_account = posting.vat_output.clone();
-    let vat_input_account = posting.vat_input.clone();
-
-    let (out_debit, out_credit) =
-        account_movement(engine, entity_id, &vat_output_account, period_from, period_to).await?;
-    let (in_debit, in_credit) =
-        account_movement(engine, entity_id, &vat_input_account, period_from, period_to).await?;
+    let mut output_accounts: Vec<String> = vec![posting.vat_output.clone()];
+    let mut input_accounts: Vec<String> = vec![posting.vat_input.clone()];
+    let matrix = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        "SELECT vat_output_account, vat_input_account FROM vat_posting_matrix WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .fetch_all(engine.pool())
+    .await?;
+    for (out, inp) in matrix {
+        if let Some(a) = out.filter(|a| !a.trim().is_empty()) {
+            output_accounts.push(a);
+        }
+        if let Some(a) = inp.filter(|a| !a.trim().is_empty()) {
+            input_accounts.push(a);
+        }
+    }
+    output_accounts.sort();
+    output_accounts.dedup();
+    input_accounts.sort();
+    input_accounts.dedup();
 
     // Output VAT is credit-natured; input VAT is debit-natured. Net the contra
     // direction so refunds/adjustments are reflected correctly.
-    let output_vat = out_credit - out_debit;
-    let input_vat = in_debit - in_credit;
+    let mut output_vat = Decimal::ZERO;
+    let mut input_vat = Decimal::ZERO;
+    for account in &output_accounts {
+        let (d, c) = account_movement(engine, entity_id, account, period_from, period_to).await?;
+        output_vat += c - d;
+    }
+    for account in &input_accounts {
+        let (d, c) = account_movement(engine, entity_id, account, period_from, period_to).await?;
+        input_vat += d - c;
+    }
     let net_vat = output_vat - input_vat;
 
     Ok(VatReturnReport {
@@ -3289,8 +3449,8 @@ async fn vat_return(engine: &ErpEngine, entity_id: Uuid, params: ReportParameter
         input_vat,
         net_vat,
         is_payable: net_vat > Decimal::ZERO,
-        vat_output_account,
-        vat_input_account,
+        vat_output_account: output_accounts.join(", "),
+        vat_input_account: input_accounts.join(", "),
     })
 }
 

@@ -77,6 +77,11 @@ pub struct ClosePeriodRequest {
     pub period_id: Uuid,
     pub close_type: PeriodCloseType,
     pub closed_by: AgentOrUserId,
+    /// Hard closes run a pre-close checklist (unposted documents dated in the
+    /// period, draft JEs, depreciation not caught up). Set to override the
+    /// blockers knowingly — the override is recorded in the audit event.
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

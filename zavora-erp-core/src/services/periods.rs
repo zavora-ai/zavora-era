@@ -122,6 +122,21 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
         }
     }
 
+    // Hard close is (near) irreversible — run the pre-close checklist and
+    // refuse while known work is unfinished, unless the caller forces it.
+    if req.close_type == PeriodCloseType::Hard && !req.force {
+        let blockers = pre_close_checklist(engine, entity_id, &period).await?;
+        if !blockers.is_empty() {
+            return Err(ErpError::ValidationFailed {
+                message: format!(
+                    "Pre-close checklist failed for '{}': {}. Resolve these or pass force=true to close anyway.",
+                    period.name,
+                    blockers.join("; ")
+                ),
+            });
+        }
+    }
+
     let new_status = match req.close_type {
         PeriodCloseType::Soft => "soft_closed",
         PeriodCloseType::Hard => "hard_closed",
@@ -181,6 +196,7 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
         "period_name": updated.name,
         "before_status": period.status,
         "after_status": new_status,
+        "checklist_forced": req.force,
         "timestamp": now,
     });
     let stream_key = format!("erp:audit:{}", entity_id);
@@ -194,6 +210,70 @@ pub async fn close_period(engine: &ErpEngine, entity_id: Uuid, req: ClosePeriodR
         .await;
 
     Ok(updated)
+}
+
+/// Pre-close checklist for a hard close: names the unfinished work that would
+/// be locked wrong forever. Each blocker is a human sentence; an empty list
+/// means the period is clean to close.
+pub async fn pre_close_checklist(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    period: &FiscalPeriod,
+) -> ErpResult<Vec<String>> {
+    let mut blockers = Vec::new();
+
+    let draft_invoices: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM invoices WHERE entity_id = $1 AND issue_date BETWEEN $2 AND $3 AND status = 'draft'",
+    )
+    .bind(entity_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .fetch_one(engine.pool())
+    .await?;
+    if draft_invoices > 0 {
+        blockers.push(format!("{draft_invoices} draft invoice(s) dated in the period (post or re-date them)"));
+    }
+
+    let unposted_bills: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bills WHERE entity_id = $1 AND issue_date BETWEEN $2 AND $3 AND status IN ('draft', 'pending_approval', 'approved')",
+    )
+    .bind(entity_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .fetch_one(engine.pool())
+    .await?;
+    if unposted_bills > 0 {
+        blockers.push(format!("{unposted_bills} unposted bill(s) dated in the period (post, cancel or re-date them)"));
+    }
+
+    let draft_journals: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE entity_id = $1 AND date BETWEEN $2 AND $3 AND status = 'draft'",
+    )
+    .bind(entity_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .fetch_one(engine.pool())
+    .await?;
+    if draft_journals > 0 {
+        blockers.push(format!("{draft_journals} draft journal entry(ies) dated in the period"));
+    }
+
+    // Depreciation not caught up through the period end for active assets that
+    // existed during the period.
+    let behind_assets: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fixed_assets
+         WHERE entity_id = $1 AND status = 'active' AND acquisition_date <= $2
+           AND (depreciated_through IS NULL OR depreciated_through < $2)",
+    )
+    .bind(entity_id)
+    .bind(period.end_date)
+    .fetch_one(engine.pool())
+    .await?;
+    if behind_assets > 0 {
+        blockers.push(format!("depreciation not run through {} for {behind_assets} active asset(s)", period.end_date));
+    }
+
+    Ok(blockers)
 }
 
 /// Reopen a soft-closed period.

@@ -43,6 +43,9 @@ pub async fn update_settings(
     if let Some(sequences) = &patch.sequences {
         config.sequences = sequences.clone();
     }
+    if let Some(period_controls) = &patch.period_controls {
+        config.period_controls = period_controls.clone();
+    }
 
     // Persist to database — update individual JSONB columns
     let branding_json = serde_json::to_value(&config.branding)?;
@@ -65,9 +68,10 @@ pub async fn update_settings(
                payment_config = $5,
                posting_setup = $6,
                sequences = $7,
-               updated_at = $8,
-               updated_by = $9
-           WHERE entity_id = $10"#,
+               period_controls = $8,
+               updated_at = $9,
+               updated_by = $10
+           WHERE entity_id = $11"#,
     )
     .bind(&config.base_currency)
     .bind(&fiscal_year_end_str)
@@ -76,6 +80,7 @@ pub async fn update_settings(
     .bind(&payment_config_json)
     .bind(&posting_json)
     .bind(&sequences_json)
+    .bind(serde_json::to_value(&config.period_controls)?)
     .bind(now)
     .bind(updated_by_id)
     .bind(entity_id)
