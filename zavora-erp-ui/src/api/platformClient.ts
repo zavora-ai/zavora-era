@@ -85,12 +85,20 @@ export const platformMe = () => platformApi.get('/me');
 export const platformListTenants = (params?: {
   q?: string;
   plan_status?: string;
+  hide_empty?: boolean;
+  hide_archived?: boolean;
   limit?: number;
   offset?: number;
 }) => platformApi.get('/tenants', { params });
 
+/** Tenant detail: summary + users + recent audit. */
 export const platformGetTenant = (entityId: string) =>
   platformApi.get(`/tenants/${entityId}`);
+
+export const platformUpdateTenant = (
+  entityId: string,
+  data: { plan_key?: string | null; plan_status?: string },
+) => platformApi.patch(`/tenants/${entityId}`, data);
 
 export const platformSuspendTenant = (entityId: string, reason?: string) =>
   platformApi.post(`/tenants/${entityId}/suspend`, reason ? { reason } : {});
@@ -98,8 +106,21 @@ export const platformSuspendTenant = (entityId: string, reason?: string) =>
 export const platformUnsuspendTenant = (entityId: string) =>
   platformApi.post(`/tenants/${entityId}/unsuspend`, {});
 
-/** Open a short-lived support session inside a tenant (as Owner / first active user). */
-export const platformImpersonateTenant = (entityId: string) =>
-  platformApi.post(`/tenants/${entityId}/impersonate`, {});
+export const platformArchiveTenant = (entityId: string) =>
+  platformApi.post(`/tenants/${entityId}/archive`, {});
+
+export const platformUnarchiveTenant = (entityId: string) =>
+  platformApi.post(`/tenants/${entityId}/unarchive`, {});
+
+/** Open a short-lived support session (optional user_id for a specific staff user). */
+export const platformImpersonateTenant = (entityId: string, userId?: string) =>
+  platformApi.post(`/tenants/${entityId}/impersonate`, userId ? { user_id: userId } : {});
+
+export const platformListAudit = (params?: {
+  entity_id?: string;
+  action?: string;
+  limit?: number;
+  offset?: number;
+}) => platformApi.get('/audit', { params });
 
 export default platformApi;

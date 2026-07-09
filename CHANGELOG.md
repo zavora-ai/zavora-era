@@ -8,6 +8,28 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-09 — Platform Super Admin (ops plane)
+
+Multi-tenant operator console, separate from tenant ERP identity and RBAC.
+
+#### Added
+- **Platform plane** (`migrations/056_platform_admin.sql`): `platform_users`,
+  `tenants` directory, `platform_audit_events`. Bootstrap via
+  `PLATFORM_BOOTSTRAP_EMAIL` / `PLATFORM_BOOTSTRAP_PASSWORD`.
+- **API** `/api/v1/platform/*`: ops login (refresh cookie
+  `era_platform_refresh`), tenant directory, detail (users + recent audit),
+  suspend/unsuspend (revokes tenant sessions; blocks login/refresh),
+  archive/unarchive, plan patch, global audit log, support impersonation
+  (short-lived Owner or targeted user session with `impersonator_id` claim).
+- **UI** `/platform/login`, `/platform` console: search/filter/pagination,
+  hide empty/archived, row detail drawer, plan controls, per-user Open,
+  audit tab, amber support-session banner with exit to platform.
+- Docs: [`docs/PLATFORM_ADMIN.md`](docs/PLATFORM_ADMIN.md).
+
+#### Security notes
+- `PlatformSuperAdmin` tokens are barred from tenant ERP routes.
+- Impersonation is audited; suspended tenants can still be opened for support.
+
 ### 2026-07-08 — Management accounting: the monthly pack, KPIs and a 13-week cash forecast
 
 The finance-manager tier. The report engine already had the raw materials

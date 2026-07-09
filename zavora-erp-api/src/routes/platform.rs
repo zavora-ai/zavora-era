@@ -1,6 +1,7 @@
 //! Platform super-admin API:
 //! - Phase 0: login + tenant directory
 //! - Phase 1: suspend / unsuspend + support impersonation
+//! - Phase 2: tenant detail, plan updates, archive, audit log, targeted impersonation
 
 use axum::{
     extract::{Path, Query, State},
@@ -279,6 +280,9 @@ pub async fn me(
 pub struct ListTenantsParams {
     pub q: Option<String>,
     pub plan_status: Option<String>,
+    /// Accepts "1"/"true"/"yes" via serde_json bool or string — use bool query.
+    pub hide_empty: Option<bool>,
+    pub hide_archived: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -286,7 +290,7 @@ pub struct ListTenantsParams {
 /// GET /api/v1/platform/tenants
 pub async fn list_tenants(
     State(state): State<Arc<AppState>>,
-    ctx: PlatformAuthContext,
+    _ctx: PlatformAuthContext,
     Query(params): Query<ListTenantsParams>,
 ) -> ApiResult {
     let (data, total) = svc::list_tenants(
@@ -294,21 +298,14 @@ pub async fn list_tenants(
         svc::ListTenantsQuery {
             q: params.q,
             plan_status: params.plan_status,
+            hide_empty: params.hide_empty.unwrap_or(false),
+            hide_archived: params.hide_archived.unwrap_or(false),
             limit: params.limit.unwrap_or(50),
             offset: params.offset.unwrap_or(0),
         },
     )
     .await
     .map_err(er)?;
-
-    let _ = svc::record_audit(
-        state.engine.pool(),
-        ctx.user_id,
-        "list_tenants",
-        None,
-        Some(serde_json::json!({ "total": total })),
-    )
-    .await;
 
     Ok(Json(serde_json::json!({
         "data": data,
@@ -318,12 +315,13 @@ pub async fn list_tenants(
 }
 
 /// GET /api/v1/platform/tenants/{entity_id}
+/// Returns tenant summary + users + recent audit for the ops drawer.
 pub async fn get_tenant(
     State(state): State<Arc<AppState>>,
-    ctx: PlatformAuthContext,
+    _ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
 ) -> ApiResult {
-    let tenant = svc::get_tenant(state.engine.pool(), entity_id)
+    let detail = svc::get_tenant_detail(state.engine.pool(), entity_id)
         .await
         .map_err(er)?
         .ok_or_else(|| {
@@ -333,16 +331,7 @@ pub async fn get_tenant(
             })
         })?;
 
-    let _ = svc::record_audit(
-        state.engine.pool(),
-        ctx.user_id,
-        "get_tenant",
-        Some(entity_id),
-        None,
-    )
-    .await;
-
-    Ok(Json(serde_json::json!({ "data": tenant })).into_response())
+    Ok(Json(serde_json::json!({ "data": detail })).into_response())
 }
 
 #[derive(Debug, Deserialize)]
@@ -405,15 +394,152 @@ pub async fn unsuspend_tenant(
     Ok(Json(serde_json::json!({ "data": tenant })).into_response())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateTenantRequest {
+    /// Set to a plan key string, or JSON null to clear.
+    pub plan_key: Option<serde_json::Value>,
+    pub plan_status: Option<String>,
+}
+
+/// PATCH /api/v1/platform/tenants/{entity_id}
+pub async fn update_tenant(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+    Path(entity_id): Path<Uuid>,
+    Json(req): Json<UpdateTenantRequest>,
+) -> ApiResult {
+    let plan_key = match &req.plan_key {
+        None => None,
+        Some(serde_json::Value::Null) => Some(None),
+        Some(serde_json::Value::String(s)) => {
+            let t = s.trim();
+            Some(if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            })
+        }
+        Some(_) => {
+            return Err(er(ErpError::ValidationFailed {
+                message: "plan_key must be a string or null".into(),
+            }));
+        }
+    };
+
+    let tenant = svc::update_tenant_plan(
+        state.engine.pool(),
+        entity_id,
+        plan_key,
+        req.plan_status,
+    )
+    .await
+    .map_err(er)?;
+
+    let _ = svc::record_audit(
+        state.engine.pool(),
+        ctx.user_id,
+        "update_tenant",
+        Some(entity_id),
+        Some(serde_json::json!({
+            "plan_key": tenant.plan_key,
+            "plan_status": tenant.plan_status,
+            "organization_name": tenant.organization_name,
+        })),
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "data": tenant })).into_response())
+}
+
+/// POST /api/v1/platform/tenants/{entity_id}/archive
+pub async fn archive_tenant(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+    Path(entity_id): Path<Uuid>,
+) -> ApiResult {
+    let tenant = svc::archive_tenant(state.engine.pool(), entity_id)
+        .await
+        .map_err(er)?;
+    let _ = svc::record_audit(
+        state.engine.pool(),
+        ctx.user_id,
+        "archive_tenant",
+        Some(entity_id),
+        Some(serde_json::json!({ "organization_name": tenant.organization_name })),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "data": tenant })).into_response())
+}
+
+/// POST /api/v1/platform/tenants/{entity_id}/unarchive
+pub async fn unarchive_tenant(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+    Path(entity_id): Path<Uuid>,
+) -> ApiResult {
+    let tenant = svc::unarchive_tenant(state.engine.pool(), entity_id)
+        .await
+        .map_err(er)?;
+    let _ = svc::record_audit(
+        state.engine.pool(),
+        ctx.user_id,
+        "unarchive_tenant",
+        Some(entity_id),
+        Some(serde_json::json!({ "organization_name": tenant.organization_name })),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "data": tenant })).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListAuditParams {
+    pub entity_id: Option<Uuid>,
+    pub action: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// GET /api/v1/platform/audit
+pub async fn list_audit(
+    State(state): State<Arc<AppState>>,
+    _ctx: PlatformAuthContext,
+    Query(params): Query<ListAuditParams>,
+) -> ApiResult {
+    let (data, total) = svc::list_audit_events(
+        state.engine.pool(),
+        svc::ListAuditQuery {
+            entity_id: params.entity_id,
+            action: params.action,
+            limit: params.limit.unwrap_or(50),
+            offset: params.offset.unwrap_or(0),
+        },
+    )
+    .await
+    .map_err(er)?;
+
+    Ok(Json(serde_json::json!({
+        "data": data,
+        "total_count": total,
+    }))
+    .into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImpersonateRequest {
+    /// Optional specific era_users.id; defaults to primary Owner.
+    pub user_id: Option<Uuid>,
+}
+
 /// POST /api/v1/platform/tenants/{entity_id}/impersonate
 ///
-/// Issues a short-lived tenant session as the primary Owner (or first active
-/// user). The JWT carries `impersonator_id` so the UI can show a support banner.
+/// Issues a short-lived tenant session as the primary Owner (or a specific
+/// active user). The JWT carries `impersonator_id` so the UI can show a support banner.
 /// Allowed even when the tenant is suspended so ops can still diagnose issues.
 pub async fn impersonate_tenant(
     State(state): State<Arc<AppState>>,
     ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
+    body: Option<Json<ImpersonateRequest>>,
 ) -> ApiResult {
     // Confirm tenant exists (and refresh counts).
     let tenant = svc::get_tenant(state.engine.pool(), entity_id)
@@ -426,9 +552,16 @@ pub async fn impersonate_tenant(
             })
         })?;
 
-    let target = svc::pick_impersonation_target(state.engine.pool(), entity_id)
-        .await
-        .map_err(er)?;
+    let user_id = body.and_then(|Json(b)| b.user_id);
+    let target = if let Some(uid) = user_id {
+        svc::get_impersonation_target(state.engine.pool(), entity_id, uid)
+            .await
+            .map_err(er)?
+    } else {
+        svc::pick_impersonation_target(state.engine.pool(), entity_id)
+            .await
+            .map_err(er)?
+    };
 
     let pair = auth::issue_impersonation_token_pair(
         jwt_config(),
