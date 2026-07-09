@@ -48,6 +48,18 @@ pub async fn checkout(
     }
 }
 
+/// POST /billing/cancel — cancel the caller tenant's subscription. Access
+/// continues until the paid-through date; renewal stops.
+pub async fn cancel(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match zavora_erp_core::services::billing::cancel(&state.engine, ctx.entity_id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "cancelled" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 /// GET /billing/subscription — the caller tenant's current subscription state.
 pub async fn get_subscription(ctx: AuthContext, State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let sub: Option<serde_json::Value> =

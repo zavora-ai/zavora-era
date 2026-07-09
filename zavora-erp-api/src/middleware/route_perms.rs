@@ -155,6 +155,7 @@ pub const ROUTE_PERMISSIONS: &[(&str, &str, Access)] = &[
     ("POST", "/api/v1/payments/paystack/initialize", Access::Perm("payment.create")),
     // Subscription billing — the tenant owner acting on their own tenant.
     ("POST", "/api/v1/billing/checkout", Access::SelfScoped),
+    ("POST", "/api/v1/billing/cancel", Access::SelfScoped),
     ("GET", "/api/v1/billing/subscription", Access::SelfScoped),
     ("GET", "/api/v1/transactions", Access::Perm("bank_transaction.read")),
     ("POST", "/api/v1/transactions/{id}/categorise", Access::Perm("bank_transaction.categorise")),
