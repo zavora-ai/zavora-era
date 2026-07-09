@@ -302,8 +302,9 @@ From [`Specs.md`](Specs.md) and marketing vs code:
   `products.inventory_item_id`, and books honest opening stock (qty **and**
   unit cost, both wired through from `ProductsPage.tsx`) as
   `DR inventory / CR 9300 Opening Balance Equity`. Verified live end-to-end.
-  (Enabling tracking on an *existing* product via edit still doesn't create the
-  item — follow-up.)  
+  Enabling tracking on an *existing* product via edit also creates + links the
+  item now (SKU required up front; stock arrives via receive/adjust so
+  quantities stay auditable).  
 - 🟡 POS: session sell + Z + mobile stock only; **no refund/void/hold/offline**
   (`services/pos.rs`, `pages/pos/*`).  
 - 🟡 POS nav split: Sell / Till Sessions / Stock (Mobile) as three sidebar items.
@@ -481,19 +482,31 @@ accounting/product roots of some UX failures.
   `erp:write`. A unit test pins every mutating tool name so an unclassified
   addition fails the build. “Viewer cannot post” is now true across the board.
 
-- ⬜ **P0 — Confirm-before-write is prompt-only.**  
-  `amos/AGENTS.md` + `amos/system.md` require confirmation; **no code gate**
-  blocking `post_*` / `record_payment` until a user-approved WS event. Model can
-  write immediately. (Ambient `etims-sweep` intentionally unattended —
-  `routines/etims-sweep.toml` — keep explicit.)
+- ✅ **P0 — Confirm-before-write is prompt-only.** *(Fixed 2026-07-09.)* Now a
+  code gate: in interactive sessions, every `ledger:post` tool call blocks
+  inside `ScopedTool` until the user clicks **Approve & post** on a card in the
+  chat (tool name + args preview). Decline or a 120s timeout returns a refusal
+  to the model and audits `Denied` — a spoken "yes" cannot post. Wire-up:
+  `SessionState::Confirmations` (oneshot broker) → `confirm_request`/`confirm`
+  WS frames → Approve/Decline card in `assets/index.html`. Ambient routines
+  pass no session handle and stay deliberately unattended (eTIMS sweep).
+  `AMOS_CONFIRM_WRITES=0` is the explicit demo/dev escape hatch.
 
 - ⬜ **P0 — Tool execution as service account bypasses human ERP RBAC.**  
   mcp-erp logs in as `ZAVORA_*` (`mcp.json` / `erp.rs`). Session scopes are a
   pre-filter only; API sees Accountant-class service user. Ledger actor ≠ human
   confirmer. Compliance relies on Amos transcript/`amos_audit_events`, not ERP
-  actor.  
-  **Fix direction:** forward user JWT (or exchange user-scoped token) into
-  mcp-erp so API enforces RBAC v2 and audit actor = human.
+  actor. *Mitigated 2026-07-09 by the confirm-before-write code gate above
+  (every posting now has a recorded human click behind it), but the ERP actor
+  is still the service user.*  
+  **Fix design (cross-repo, do as its own change):** amos retains the session
+  JWT from the WS handshake and injects it per tool call (`__user_token` arg
+  added AFTER the model turn, stripped from anything echoed back);
+  `mcp-erp/src/zavora.rs` uses it as the bearer for that request, falling back
+  to the service login. Open issue to solve first: access tokens live 15 min —
+  the embedded shell must push refreshed tokens over the existing `context`
+  WS frame or writes start 401ing mid-session. Needs coordinated releases of
+  amos + mcp-erp (`amos/Dockerfile` pins `MCP_ERP_REF`).
 
 ### 7.2 P1 — Roles, persona, multi-tenant product, plans
 
