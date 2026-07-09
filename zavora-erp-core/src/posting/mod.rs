@@ -26,8 +26,12 @@ pub struct PostingSetup {
     pub accounts_receivable: String,
     /// Accounts Payable control (Trade Creditors).
     pub accounts_payable: String,
-    /// Unapplied payments clearing account.
+    /// Unapplied customer receipts (overpayments held on account — a liability:
+    /// we owe the customer money or goods).
     pub unapplied_payments: String,
+    /// Unapplied vendor payments (overpayments to a vendor — an asset: the
+    /// vendor owes us the excess back, a prepayment in substance).
+    pub unapplied_vendor_credits: String,
 
     // --- Tax ---
     /// VAT Output (payable) — charged on sales.
@@ -100,8 +104,11 @@ impl Default for PostingSetup {
             // Unapplied customer receipts (overpayments / on-account) post here.
             // Must be a seeded account, else overpayments orphan and break the
             // trial balance — "9100 Unapplied Customer Payments" is the seeded
-            // liability for this. (Vendor side: "3600 Unapplied Vendor Credits".)
+            // liability for this.
             unapplied_payments: "9100".to_string(),
+            // Vendor overpayments are an asset (the vendor owes the excess
+            // back) — "9110 Unapplied Vendor Credits" is the seeded asset.
+            unapplied_vendor_credits: "9110".to_string(),
             vat_output: "3100".to_string(),
             vat_input: "1300".to_string(),
             wht_payable: "3210".to_string(),
@@ -121,11 +128,15 @@ impl Default for PostingSetup {
             default_sales: "5100".to_string(),
             default_purchase: "7350".to_string(),
             default_expense: "7900".to_string(),
-            inventory_asset: "1300".to_string(),
+            // Stock on hand. 1500 is the seeded Inventory asset (1300 is VAT
+            // Input — posting stock there understated inventory and corrupted
+            // the VAT control).
+            inventory_asset: "1500".to_string(),
             cost_of_goods_sold: "6000".to_string(),
-            // Goods received not invoiced — a current liability/accrual. Defaults
-            // to AP control; a tenant can point this at a dedicated GRNI account.
-            inventory_clearing: "3010".to_string(),
+            // Goods received not invoiced — the seeded GRNI accrual account.
+            // Must NOT be the AP control (3010): receipts credited there looked
+            // like vendor balances with no vendor subledger behind them.
+            inventory_clearing: "3020".to_string(),
             fixed_asset: "2500".to_string(),
             accumulated_depreciation: "2600".to_string(),
             depreciation_expense: "7600".to_string(),

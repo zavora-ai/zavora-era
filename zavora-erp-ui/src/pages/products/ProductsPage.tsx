@@ -92,6 +92,7 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
     track_inventory: product?.track_inventory ?? false,
     sku: '',
     opening_stock: '',
+    opening_unit_cost: '',
   });
   const [genGroup, setGenGroup] = useState(product?.general_product_group_id ?? '');
   const [vatGroup, setVatGroup] = useState(product?.vat_product_group_id ?? '');
@@ -148,6 +149,11 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
       purchase_account: form.purchase_account,
       vat_treatment: form.vat_treatment,
       track_inventory: form.track_inventory,
+      // Stock master details — the backend creates and links the inventory
+      // item (and posts opening stock) when track_inventory is on.
+      sku: form.track_inventory ? form.sku || undefined : undefined,
+      opening_stock: form.track_inventory && form.opening_stock ? parseFloat(form.opening_stock) : undefined,
+      opening_unit_cost: form.track_inventory && form.opening_unit_cost ? parseFloat(form.opening_unit_cost) : undefined,
     });
   };
 
@@ -270,9 +276,10 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
               </div>
             </label>
             {form.track_inventory && (
-              <div className="mt-3 grid grid-cols-2 gap-3 pl-8">
-                <div><label className="label text-xs">SKU</label><input className="input text-sm py-1.5 font-mono" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. PROD-001" /></div>
+              <div className="mt-3 grid grid-cols-3 gap-3 pl-8">
+                <div><label className="label text-xs">SKU {!isEdit && <span className="text-red-500">*</span>}</label><input className="input text-sm py-1.5 font-mono" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. PROD-001" required={!isEdit} /></div>
                 <div><label className="label text-xs">Opening Stock</label><input type="number" className="input text-sm py-1.5" value={form.opening_stock} onChange={(e) => setForm({ ...form, opening_stock: e.target.value })} placeholder="0" /></div>
+                <div><label className="label text-xs">Unit Cost{form.opening_stock && parseFloat(form.opening_stock) > 0 ? <span className="text-red-500"> *</span> : null}</label><input type="number" step="0.01" className="input text-sm py-1.5" value={form.opening_unit_cost} onChange={(e) => setForm({ ...form, opening_unit_cost: e.target.value })} placeholder="0.00" required={!!form.opening_stock && parseFloat(form.opening_stock) > 0} /></div>
               </div>
             )}
           </div>

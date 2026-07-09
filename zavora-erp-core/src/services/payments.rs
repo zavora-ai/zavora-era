@@ -14,8 +14,10 @@ use crate::types::AgentOrUserId;
 struct PaymentAccounts {
     ar: String,
     ap: String,
+    /// Customer overpayments held on account (liability).
     unapplied_payments: String,
-    wht_payable: String,
+    /// Vendor overpayments — excess paid out, recoverable (asset).
+    unapplied_vendor: String,
     wht_receivable: String,
     realised_fx_gain: String,
     realised_fx_loss: String,
@@ -50,7 +52,7 @@ impl PaymentAccounts {
             ar,
             ap,
             unapplied_payments: p.unapplied_payments.clone(),
-            wht_payable: p.wht_payable.clone(),
+            unapplied_vendor: p.unapplied_vendor_credits.clone(),
             wht_receivable: p.wht_receivable.clone(),
             realised_fx_gain: p.realised_fx_gain.clone(),
             realised_fx_loss: p.realised_fx_loss.clone(),
@@ -239,27 +241,13 @@ pub async fn record_payment(
         }
     }
 
-    // --- WHT handling for vendor payments (Requirements 11.4, 11.5) ---
-    // When paying a bill with WHT, we need to also clear the WHT Payable liability
-    // that was created when the bill was posted to GL.
-    // JE structure: DR AP (applied) / CR Bank (applied) + DR WHT Payable / CR Bank (wht)
-    let wht_total = if req.payment_type == PaymentType::VendorPayment {
-        let mut wht_sum = Decimal::ZERO;
-        for app in &applications {
-            if app.amount_applied == Decimal::ZERO {
-                continue;
-            }
-            let bill_wht = fetch_bill_wht_amount(engine, entity_id, app.document_id).await.unwrap_or(Decimal::ZERO);
-            wht_sum += bill_wht;
-        }
-        wht_sum
-    } else {
-        Decimal::ZERO
-    };
-
     // --- Post the payment journal entry ---
     // For customer payments: DR Bank / CR AR (applied) / CR Unapplied Payments (excess)
-    // For vendor payments: DR AP (applied) / CR Bank (applied) + DR WHT Payable / CR Bank (wht)
+    // For vendor payments: DR AP (applied) / DR Unapplied Vendor Credits (excess) / CR Bank.
+    // NOTE: the bill's WHT liability is NOT touched here — the bill posting
+    // credited WHT Payable and the payment clears the net AP only. Remittance
+    // to KRA happens through the tax-filings remit flow, which is when cash
+    // actually leaves for the withheld amount.
     let journal_entry_id = post_payment_journal_entry(
         &mut tx,
         engine,
@@ -274,7 +262,6 @@ pub async fn record_payment(
         unapplied,
         &bank_account_code,
         &req.payment_type,
-        wht_total,
         wht_amount,
         req.wht_account.clone(),
         recorded_by,
@@ -440,25 +427,6 @@ async fn fetch_document_balance(
     }
 }
 
-/// Fetch the WHT (Withholding Tax) amount from a bill.
-/// Returns Decimal::ZERO if the bill has no WHT or if the bill is not found.
-/// Used during vendor payment to determine how much WHT liability to clear.
-async fn fetch_bill_wht_amount(
-    engine: &ErpEngine,
-    entity_id: Uuid,
-    bill_id: Uuid,
-) -> ErpResult<Decimal> {
-    let wht = sqlx::query_scalar::<_, Decimal>(
-        "SELECT COALESCE(wht_amount, 0) FROM bills WHERE id = $1 AND entity_id = $2",
-    )
-    .bind(bill_id)
-    .bind(entity_id)
-    .fetch_optional(engine.pool())
-    .await?
-    .unwrap_or(Decimal::ZERO);
-
-    Ok(wht)
-}
 
 /// Resolve the GL account code for a bank account.
 /// Falls back to "1020" (default bank/cash account) if no bank_account_id is provided
@@ -494,16 +462,18 @@ async fn resolve_bank_account_code(
 /// - CR AR (applied portion — the amount that cleared document balances)
 /// - CR Unapplied Payments (excess portion — held as credit on the party's account)
 ///
-/// Journal structure for vendor payments (Requirements 11.4, 11.5):
+/// Journal structure for vendor payments:
 /// - DR AP (applied portion — the amount clearing the vendor's balance)
+/// - DR Unapplied Vendor Credits (excess portion — an asset: the vendor owes it back)
 /// - CR Bank (payment amount — what actually leaves the bank)
-/// - DR WHT Payable (WHT amount — clearing the WHT liability set up at bill posting)
-/// - CR Bank (WHT amount — if WHT is being remitted to KRA with this payment)
-/// - CR Unapplied Payments (excess portion, if any)
+///
+/// The bill's WHT liability is untouched here: bills post CR AP net of WHT and
+/// CR WHT Payable for the withheld slice, so paying the net AP is complete.
+/// WHT reaches KRA via the tax-filings remit flow, not the vendor payment.
 ///
 /// When payment has no applications (unapplied == full amount):
 /// - DR Bank / CR Unapplied Payments (entire amount) for customer payments
-/// - DR Unapplied Payments / CR Bank (entire amount) for vendor payments
+/// - DR Unapplied Vendor Credits / CR Bank (entire amount) for vendor payments
 #[allow(clippy::too_many_arguments)]
 async fn post_payment_journal_entry(
     tx: &mut crate::services::journal::PgTx<'_>,
@@ -519,7 +489,6 @@ async fn post_payment_journal_entry(
     unapplied_amount: Decimal,
     bank_account_code: &str,
     payment_type: &PaymentType,
-    wht_amount: Decimal,
     // WHT withheld by the CUSTOMER on a receipt (base currency, KES) → booked to
     // WHT Receivable. Zero for vendor payments / receipts with no withholding.
     wht_receivable_amount: Decimal,
@@ -643,38 +612,20 @@ async fn post_payment_journal_entry(
                 dimensions: None,
             });
 
-            // WHT handling (Requirements 11.4, 11.5):
-            // DR WHT Payable (clearing liability) / CR Bank (WHT remitted to KRA)
-            if wht_amount > Decimal::ZERO {
+            // DR Unapplied Vendor Credits (excess portion). Money that left the
+            // bank beyond the vendor's balance is an asset — the vendor owes it
+            // back (or it applies to a future bill). Crediting it (the old
+            // behaviour) double-counted the excess on the credit side and
+            // couldn't balance; a debit is the only shape that ties:
+            //   DR AP (applied) + DR excess = CR Bank (total).
+            if unapplied_amount > Decimal::ZERO {
                 lines.push(CreateJournalLineRequest {
-                    account_code: acct.wht_payable.clone(),
-                    debit: Some(wht_amount),
+                    account_code: acct.unapplied_vendor.clone(),
+                    debit: Some(unapplied_amount),
                     credit: None,
                     currency: currency.to_string(),
                     fx_rate: Some(fx_rate),
-                    description: Some(format!("WHT remitted to KRA: {}", payment_number)),
-                    dimensions: None,
-                });
-                lines.push(CreateJournalLineRequest {
-                    account_code: bank_account_code.to_string(),
-                    debit: None,
-                    credit: Some(wht_amount),
-                    currency: currency.to_string(),
-                    fx_rate: Some(fx_rate),
-                    description: Some(format!("WHT payment to KRA: {}", payment_number)),
-                    dimensions: None,
-                });
-            }
-
-            // CR Unapplied Payments (excess portion)
-            if unapplied_amount > Decimal::ZERO {
-                lines.push(CreateJournalLineRequest {
-                    account_code: acct.unapplied_payments.clone(),
-                    debit: None,
-                    credit: Some(unapplied_amount),
-                    currency: currency.to_string(),
-                    fx_rate: Some(fx_rate),
-                    description: Some(format!("Unapplied payment credit: {}", payment_number)),
+                    description: Some(format!("Vendor overpayment held on account: {}", payment_number)),
                     dimensions: None,
                 });
             }
@@ -695,12 +646,7 @@ async fn post_payment_journal_entry(
             }
         }
         PaymentType::VendorPayment => {
-            if wht_amount > Decimal::ZERO {
-                format!(
-                    "Payment {} — vendor payment {} + WHT {} remitted",
-                    payment_number, total_amount, wht_amount
-                )
-            } else if unapplied_amount > Decimal::ZERO {
+            if unapplied_amount > Decimal::ZERO {
                 format!(
                     "Payment {} — applied {} / unapplied {}",
                     payment_number, applied_amount, unapplied_amount

@@ -90,6 +90,18 @@ pub struct CreateProductRequest {
     pub purchase_account: Option<AccountCode>,
     pub vat_treatment: Option<VatTreatment>,
     pub track_inventory: Option<bool>,
+    /// Stock keeping unit — required when `track_inventory` is true; the
+    /// linked inventory item is created under this SKU.
+    #[serde(default)]
+    pub sku: Option<String>,
+    /// Opening stock quantity (with `opening_unit_cost`, posts an
+    /// opening-balance JE: DR inventory / CR opening-balance equity).
+    #[serde(default)]
+    pub opening_stock: Option<Decimal>,
+    /// Unit cost for the opening stock. Required if `opening_stock` > 0 —
+    /// stock without a cost would corrupt weighted-average costing.
+    #[serde(default)]
+    pub opening_unit_cost: Option<Decimal>,
 }
 
 /// Request to update a product.

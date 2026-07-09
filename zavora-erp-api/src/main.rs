@@ -508,10 +508,14 @@ async fn main() -> anyhow::Result<()> {
     let app = public
         .merge(protected)
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(cors_layer())
         .with_state(state);
 
     tracing::info!("Starting Zavora ERP API on {}", bind_addr);
+    tracing::info!(
+        "CORS: {}",
+        std::env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "localhost dev origins (default)".into())
+    );
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     axum::serve(
         listener,
@@ -520,6 +524,59 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
+}
+
+/// Build the CORS layer from `CORS_ALLOWED_ORIGINS` (comma-separated origins).
+///
+/// - Unset → localhost dev origins only (the Vite dev server); a production
+///   deployment that serves the SPA from the same origin needs no CORS at all.
+/// - `*` → explicitly opt back into permissive (NOT recommended; kept as an
+///   escape hatch, and incompatible with credentialed requests by spec).
+/// - Otherwise → exactly the listed origins, with credentials allowed so the
+///   refresh cookie works cross-origin.
+fn cors_layer() -> CorsLayer {
+    use axum::http::{HeaderValue, Method, header};
+    use tower_http::cors::AllowOrigin;
+
+    let configured = std::env::var("CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    let configured = configured.trim().to_string();
+    if configured == "*" {
+        return CorsLayer::permissive();
+    }
+
+    let origins: Vec<HeaderValue> = if configured.is_empty() {
+        ["http://localhost:3000", "http://127.0.0.1:3000"]
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect()
+    } else {
+        configured
+            .split(',')
+            .filter_map(|o| {
+                let o = o.trim();
+                match o.parse() {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        tracing::warn!("CORS_ALLOWED_ORIGINS: ignoring invalid origin {o:?}");
+                        None
+                    }
+                }
+            })
+            .collect()
+    };
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .allow_credentials(true)
 }
 
 /// Load JWT signing configuration.

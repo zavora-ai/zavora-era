@@ -103,17 +103,29 @@ pub async fn post_bill(
             }
             // GL determination from the entity's posting config (not hardcoded).
             let posting = state.engine.posting_for(ctx.entity_id).await.map_err(err_response)?;
-            let base_ccy = state.engine.config().base_currency.clone();
+            // Lines post in the BILL's currency at the bill's fx_rate — a USD
+            // bill previously posted with currency=KES + fx_rate, so functional
+            // amounts were rate-multiplied while the ledger claimed base
+            // currency (mirrors post_invoice, which got this right).
             use zavora_erp_core::ledger::journal::CreateJournalLineRequest as JLine;
             let zero = rust_decimal::Decimal::ZERO;
 
-            // Expense lines: one DR per bill line on its own account, carrying the
-            // line's analytical dimensions. Falls back to a single default-expense
-            // line if the bill has no captured lines.
-            let bill_lines = sqlx::query_as::<_, (String, rust_decimal::Decimal, serde_json::Value)>(
-                "SELECT account_code, line_total, dimensions FROM bill_lines WHERE bill_id = $1 ORDER BY id",
+            // Debit lines: one DR per bill line on its own account, carrying the
+            // line's analytical dimensions. Lines for inventory-tracked products
+            // debit the GRNI clearing account instead of expense — the goods
+            // receipt already booked DR Inventory / CR GRNI, so the bill clears
+            // GRNI rather than double-counting stock as an expense (COGS books
+            // at issue). Falls back to a single default-expense line if the bill
+            // has no captured lines.
+            let bill_lines = sqlx::query_as::<_, (String, rust_decimal::Decimal, serde_json::Value, bool)>(
+                r#"SELECT bl.account_code, bl.line_total, bl.dimensions,
+                          COALESCE(p.track_inventory, false)
+                   FROM bill_lines bl
+                   LEFT JOIN products p ON p.id = bl.product_id AND p.entity_id = $2
+                   WHERE bl.bill_id = $1 ORDER BY bl.id"#,
             )
             .bind(id)
+            .bind(ctx.entity_id)
             .fetch_all(state.engine.pool())
             .await
             .unwrap_or_default();
@@ -124,20 +136,25 @@ pub async fn post_bill(
                     account_code: posting.default_expense.clone(),
                     debit: Some(b.subtotal),
                     credit: None,
-                    currency: base_ccy.clone(),
+                    currency: b.currency.clone(),
                     fx_rate: Some(b.fx_rate),
                     description: Some(format!("Bill {}", b.number)),
                     dimensions: None,
                 });
             } else {
-                for (account_code, line_total, dims) in &bill_lines {
+                for (account_code, line_total, dims, tracks_inventory) in &bill_lines {
+                    let (account, desc) = if *tracks_inventory {
+                        (posting.inventory_clearing.clone(), format!("Bill {} — GRNI cleared", b.number))
+                    } else {
+                        (account_code.clone(), format!("Bill {}", b.number))
+                    };
                     lines.push(JLine {
-                        account_code: account_code.clone(),
+                        account_code: account,
                         debit: Some(*line_total),
                         credit: None,
-                        currency: base_ccy.clone(),
+                        currency: b.currency.clone(),
                         fx_rate: Some(b.fx_rate),
-                        description: Some(format!("Bill {}", b.number)),
+                        description: Some(desc),
                         dimensions: serde_json::from_value(dims.clone()).ok(),
                     });
                 }
@@ -153,7 +170,7 @@ pub async fn post_bill(
                     account_code: vat_account,
                     debit: Some(b.tax_total),
                     credit: None,
-                    currency: base_ccy.clone(),
+                    currency: b.currency.clone(),
                     fx_rate: Some(b.fx_rate),
                     description: Some("VAT Input".to_string()),
                     dimensions: None,
@@ -170,7 +187,7 @@ pub async fn post_bill(
                 account_code: ap_account,
                 debit: None,
                 credit: Some(b.gross_total),
-                currency: base_ccy.clone(),
+                currency: b.currency.clone(),
                 fx_rate: Some(b.fx_rate),
                 description: Some(format!("Bill {} - AP", b.number)),
                 dimensions: None,
@@ -180,7 +197,7 @@ pub async fn post_bill(
                     account_code: posting.wht_payable.clone(),
                     debit: None,
                     credit: Some(b.wht_amount),
-                    currency: base_ccy.clone(),
+                    currency: b.currency.clone(),
                     fx_rate: Some(b.fx_rate),
                     description: Some("WHT withheld".to_string()),
                     dimensions: None,

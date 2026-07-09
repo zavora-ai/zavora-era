@@ -317,6 +317,7 @@ impl JournalEntry {
             JournalSource::Payment => "Payment".to_string(),
             JournalSource::Payroll => "Payroll".to_string(),
             JournalSource::Depreciation => "Depreciation".to_string(),
+            JournalSource::FixedAsset => "Fixed asset".to_string(),
             JournalSource::FxRevaluation => "FX revaluation".to_string(),
             JournalSource::InventoryAdjustment => "Inventory adjustment".to_string(),
             JournalSource::BankFee => "Bank fee".to_string(),
