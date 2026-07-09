@@ -81,6 +81,7 @@ import PosSellPage from './pages/pos/PosSellPage';
 import PosSessionsPage from './pages/pos/PosSessionsPage';
 import MobileStockPage from './pages/pos/MobileStockPage';
 import AssetsPage from './pages/assets/AssetsPage';
+import AmortizationPage from './pages/accounting/AmortizationPage';
 import FxRatesPage from './pages/settings/FxRatesPage';
 import AuditPage from './pages/settings/AuditPage';
 import NotificationDeliveryPage from './pages/settings/NotificationDeliveryPage';
@@ -227,6 +228,7 @@ export default function App() {
             <Route path="pos/sessions" element={<PosSessionsPage />} />
             <Route path="pos/stock" element={<MobileStockPage />} />
             <Route path="assets" element={<AssetsPage />} />
+            <Route path="amortization" element={<AmortizationPage />} />
             <Route path="fx-rates" element={<FxRatesPage />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="notifications" element={<NotificationDeliveryPage />} />
