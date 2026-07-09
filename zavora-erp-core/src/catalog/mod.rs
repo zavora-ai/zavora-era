@@ -117,5 +117,9 @@ pub struct UpdateProductRequest {
     pub purchase_account: Option<AccountCode>,
     pub vat_treatment: Option<VatTreatment>,
     pub track_inventory: Option<bool>,
+    /// SKU for the stock item created when this update ENABLES inventory
+    /// tracking on a product with no linked item yet. Ignored otherwise.
+    #[serde(default)]
+    pub sku: Option<String>,
     pub is_active: Option<bool>,
 }

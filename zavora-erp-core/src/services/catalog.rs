@@ -110,6 +110,52 @@ pub async fn create_product(
     Ok(id)
 }
 
+/// Create and link a stock item for a product that is (now) inventory-tracked
+/// but has no `inventory_item_id` yet — the missing half of enabling
+/// `track_inventory` after creation. No opening stock here; existing products
+/// take stock through receive/adjust so quantities stay auditable.
+pub async fn link_inventory_item(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    product_id: Uuid,
+    sku: &str,
+) -> ErpResult<Uuid> {
+    let (name, uom) = sqlx::query_as::<_, (String, String)>(
+        "SELECT name, uom FROM products WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(product_id)
+    .bind(entity_id)
+    .fetch_one(engine.pool())
+    .await?;
+
+    let item_id = crate::services::inventory::create_item(
+        engine,
+        entity_id,
+        crate::inventory::CreateInventoryItemRequest {
+            sku: sku.to_string(),
+            description: name,
+            uom: Some(uom),
+            costing_method: None,
+            gl_inventory: None,
+            gl_cogs: None,
+            reorder_point: None,
+            reorder_quantity: None,
+            product_id: Some(product_id),
+            warehouse_id: None,
+        },
+    )
+    .await?;
+
+    sqlx::query("UPDATE products SET inventory_item_id = $1 WHERE id = $2 AND entity_id = $3")
+        .bind(item_id)
+        .bind(product_id)
+        .bind(entity_id)
+        .execute(engine.pool())
+        .await?;
+
+    Ok(item_id)
+}
+
 /// Book opening stock for a newly created item: stock quantities, a movement
 /// row, and an opening-balance JE (DR inventory / CR opening-balance equity —
 /// the seeded 9300, same account onboarding opening balances land in).
