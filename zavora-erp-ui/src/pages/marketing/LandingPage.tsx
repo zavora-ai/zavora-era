@@ -15,6 +15,14 @@ const SIGNUP = '/login?signup=1';
 /** Public marketing landing page shown to unauthenticated visitors. */
 export default function LandingPage() {
   const [menu, setMenu] = useState(false);
+  // Arriving with a hash (/#pricing from the Amos page, footer links, …):
+  // scroll to the section once content has rendered.
+  useEffect(() => {
+    if (window.location.hash) {
+      const el = document.querySelector(window.location.hash);
+      if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth' }), 50);
+    }
+  }, []);
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-indigo-200/60">
       <Nav menu={menu} setMenu={setMenu} />

@@ -275,9 +275,9 @@ function Cta() {
         <Link to={SIGNUP} className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white font-semibold px-7 py-3.5 hover:bg-slate-800 transition">
           Start free <ArrowRight className="w-4 h-4" />
         </Link>
-        <Link to="/#pricing" className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-7 py-3.5 font-semibold text-slate-700 hover:bg-slate-50 transition">
+        <a href="/#pricing" className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-7 py-3.5 font-semibold text-slate-700 hover:bg-slate-50 transition">
           <Receipt className="w-4 h-4" /> See pricing
-        </Link>
+        </a>
       </div>
     </section>
   );
