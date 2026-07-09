@@ -172,13 +172,21 @@ pub enum VatPeriod {
 }
 
 /// Payment integration configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `#[serde(default)]` so a stored config missing newer fields (e.g. an
+/// existing tenant saved before Paystack replaced Flutterwave) still loads and
+/// keeps its M-Pesa settings, defaulting only the absent fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PaymentConfig {
     pub mpesa_enabled: bool,
     pub mpesa_paybill: Option<String>,
     pub mpesa_till_number: Option<String>,
-    pub flutterwave_enabled: bool,
-    pub flutterwave_public_key: Option<String>,
+    /// Paystack card payments. The PUBLIC key is safe to store here (it's
+    /// exposed to the browser); the SECRET key lives only in `PAYSTACK_SECRET_KEY`
+    /// env and never touches the database.
+    pub paystack_enabled: bool,
+    pub paystack_public_key: Option<String>,
     pub bank_transfer_enabled: bool,
     pub default_bank_account_id: Option<Uuid>,
 }
@@ -278,14 +286,9 @@ pub async fn load_or_create_config(
         paye_enabled: true,
     });
     let payment_config: PaymentConfig =
-        serde_json::from_value(row.payment_config).unwrap_or_else(|_| PaymentConfig {
-            mpesa_enabled: false,
-            mpesa_paybill: None,
-            mpesa_till_number: None,
-            flutterwave_enabled: false,
-            flutterwave_public_key: None,
+        serde_json::from_value(row.payment_config).unwrap_or(PaymentConfig {
             bank_transfer_enabled: true,
-            default_bank_account_id: None,
+            ..Default::default()
         });
     let fiscal_year_end: MonthDay =
         serde_json::from_str(&row.fiscal_year_end).unwrap_or(MonthDay { month: 12, day: 31 });

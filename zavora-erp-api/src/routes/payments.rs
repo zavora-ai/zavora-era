@@ -154,6 +154,77 @@ pub async fn mpesa_callback(
     }
 }
 
+/// POST /payments/paystack/initialize — start a Paystack card payment for an
+/// invoice. Authenticated (staff or portal-triggered); returns the
+/// authorization_url the payer is redirected to.
+pub async fn paystack_initialize(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<zavora_erp_core::payments::paystack::PaystackInitRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match svc::paystack_initialize(&state.engine, ctx.entity_id, req).await {
+        Ok(res) => Ok(Json(serde_json::to_value(res).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /payments/paystack/webhook — Paystack charge events. Public (Paystack
+/// calls it), authenticated by the `x-paystack-signature` HMAC over the RAW
+/// body, so we take Bytes (not Json) and verify before parsing.
+pub async fn paystack_webhook(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    use zavora_erp_core::payments::paystack;
+
+    let secret = match paystack::secret_key() {
+        Some(s) => s,
+        None => {
+            tracing::error!("Paystack webhook received but PAYSTACK_SECRET_KEY is unset");
+            return Err(err_response(zavora_erp_core::ErpError::PaymentError {
+                message: "Paystack is not configured on this server.".to_string(),
+            }));
+        }
+    };
+    let sig = headers.get("x-paystack-signature").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !paystack::verify_signature(&body, sig, &secret) {
+        tracing::warn!("rejected Paystack webhook: bad signature");
+        return Err(err_response(zavora_erp_core::ErpError::Unauthorized {
+            message: "Invalid Paystack signature".to_string(),
+        }));
+    }
+
+    let event: paystack::PaystackEvent = match serde_json::from_slice(&body) {
+        Ok(e) => e,
+        // Ack non-charge / unparseable events with 200 so Paystack stops retrying.
+        Err(_) => return Ok(Json(serde_json::json!({ "status": "ignored" }))),
+    };
+    if !event.is_successful_charge() {
+        return Ok(Json(serde_json::json!({ "status": "ignored" })));
+    }
+
+    // Resolve the tenant from our claim row (the reference we minted at init).
+    let entity_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT entity_id FROM paystack_transactions WHERE reference = $1",
+    )
+    .bind(&event.data.reference)
+    .fetch_optional(state.engine.pool())
+    .await
+    .ok()
+    .flatten();
+    let Some(entity_id) = entity_id else {
+        // Unknown reference — ack so Paystack stops retrying, but log it.
+        tracing::warn!(reference = %event.data.reference, "Paystack webhook for unknown reference");
+        return Ok(Json(serde_json::json!({ "status": "unknown_reference" })));
+    };
+
+    match svc::record_paystack_payment(&state.engine, entity_id, event.data).await {
+        Ok(p) => Ok(Json(serde_json::json!({ "status": "recorded", "payment_id": p.id }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 #[derive(serde::Deserialize)]
 pub struct MpesaStkPushBody {
     pub invoice_id: uuid::Uuid,

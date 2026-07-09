@@ -181,6 +181,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(throttled)
         // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
+        // Paystack card webhook (public; verified by x-paystack-signature HMAC).
+        .route("/api/v1/payments/paystack/webhook", post(routes::payments::paystack_webhook))
         // ── Vendor portal — public auth (external `vendor_users` principal);
         //    register + login are on the throttled router above ──
         .route("/api/v1/portal/refresh", post(routes::portal_auth::refresh))
@@ -357,6 +359,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payments/{id}", get(routes::payments::get_one))
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
+        .route("/api/v1/payments/paystack/initialize", post(routes::payments::paystack_initialize))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
         .route("/api/v1/transactions/{id}/categorise", post(routes::transactions::categorise))
