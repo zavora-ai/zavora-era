@@ -82,14 +82,55 @@ pub struct MpesaCallbackWrapper {
     pub callback: MpesaCallback,
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct MpesaCallbackAuth {
+    /// Shared secret embedded in the registered callback URL (`?token=…`).
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+/// Authenticate a Daraja callback. Daraja does not sign payloads, so we rely on
+/// (1) a hard-to-guess secret in the registered callback URL and (2) an optional
+/// source-IP allowlist. Both are env-driven and OFF by default (dev), but a
+/// production deployment MUST set at least `MPESA_CALLBACK_SECRET`. Returns the
+/// refusal message when the request fails a configured check.
+fn authenticate_mpesa_callback(peer_ip: std::net::IpAddr, token: Option<&str>) -> Result<(), String> {
+    if let Ok(secret) = std::env::var("MPESA_CALLBACK_SECRET") {
+        let secret = secret.trim();
+        if !secret.is_empty() && token.map(str::trim) != Some(secret) {
+            return Err("Invalid or missing callback token".to_string());
+        }
+    }
+    if let Ok(allowed) = std::env::var("MPESA_CALLBACK_ALLOWED_IPS") {
+        let allowed = allowed.trim();
+        if !allowed.is_empty() {
+            let ip = peer_ip.to_string();
+            let ok = allowed.split(',').map(str::trim).any(|a| a == ip);
+            if !ok {
+                return Err(format!("Source IP {ip} is not in the M-Pesa callback allowlist"));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn mpesa_callback(
     State(state): State<Arc<AppState>>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    axum::extract::Query(auth): axum::extract::Query<MpesaCallbackAuth>,
     Json(req): Json<MpesaCallbackWrapper>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
-    // This webhook is unauthenticated (Daraja calls it), so the tenant cannot be
-    // derived from a JWT. Resolve it from the invoice the payment is for — NOT
-    // the process-global startup entity, which would mis-post in multi-tenant
-    // deployments.
+    // Daraja calls this unauthenticated, so verify the URL secret / IP allowlist
+    // before touching the ledger — otherwise anyone who learns an invoice id can
+    // forge a "paid" callback.
+    if let Err(msg) = authenticate_mpesa_callback(peer.ip(), auth.token.as_deref()) {
+        tracing::warn!(peer = %peer.ip(), "rejected M-Pesa callback: {msg}");
+        return Err(err_response(zavora_erp_core::ErpError::Unauthorized { message: msg }));
+    }
+
+    // The tenant cannot be derived from a JWT. Resolve it from the invoice the
+    // payment is for — NOT the process-global startup entity, which would
+    // mis-post in multi-tenant deployments.
     let entity_id = match sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT entity_id FROM invoices WHERE id = $1",
     )
