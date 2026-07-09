@@ -72,7 +72,14 @@ pub struct AuthContext {
 /// External principal roles that must never be accepted by the back-office auth
 /// layer (they have their own portals). Barring these explicitly lets us accept
 /// arbitrary *tenant* role keys (custom roles) without letting a portal token in.
-const EXTERNAL_PRINCIPAL_ROLES: &[&str] = &["Customer", "Vendor", "Employee"];
+const EXTERNAL_PRINCIPAL_ROLES: &[&str] = &[
+    "Customer",
+    "Vendor",
+    "Employee",
+    // Platform plane — must use /api/v1/platform/*, never tenant ERP routes.
+    "PlatformSuperAdmin",
+    "PlatformSupport",
+];
 
 /// Verify an `Authorization: Bearer <jwt>` access token from request headers and
 /// build the `AuthContext`. Shared by the global middleware and the extractor.

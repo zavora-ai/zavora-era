@@ -64,6 +64,14 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Failed to ensure WHT rates are seeded: {e}");
     }
 
+    // Platform Super Admin bootstrap (env PLATFORM_BOOTSTRAP_EMAIL + PASSWORD).
+    // Idempotent: creates the first operator when missing. Never creates from signup.
+    match zavora_erp_core::services::platform::bootstrap_from_env(&pool).await {
+        Ok(Some(id)) => tracing::info!("Platform Super Admin bootstrapped ({id})"),
+        Ok(None) => {}
+        Err(e) => tracing::error!("Platform bootstrap failed: {e}"),
+    }
+
     // Redis connection
     let redis_client = redis::Client::open(redis_url)?;
     let redis_conn = redis_client.get_multiplexed_async_connection().await?;
@@ -185,6 +193,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/signup", post(routes::auth_signup::signup))
         .route("/api/v1/portal/register", post(routes::portal_auth::register))
         .route("/api/v1/portal/login", post(routes::portal_auth::login))
+        // Platform Super Admin login (Zavora ops plane — not tenant Owner).
+        .route("/api/v1/platform/auth/login", post(routes::platform::login))
         .route_layer(axum::middleware::from_fn(middleware::rate_limit::limit_login));
 
     let public = Router::new()
@@ -194,6 +204,25 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/set-password", post(routes::users::set_password))
         .route("/api/v1/auth/logout", post(routes::users::logout))
         .merge(throttled)
+        // Platform plane — JWT verified in handlers via PlatformAuthContext;
+        // not under tenant require_authenticated / RBAC matrix.
+        .route("/api/v1/platform/auth/refresh", post(routes::platform::refresh))
+        .route("/api/v1/platform/auth/logout", post(routes::platform::logout))
+        .route("/api/v1/platform/me", get(routes::platform::me))
+        .route("/api/v1/platform/tenants", get(routes::platform::list_tenants))
+        .route("/api/v1/platform/tenants/{entity_id}", get(routes::platform::get_tenant))
+        .route(
+            "/api/v1/platform/tenants/{entity_id}/suspend",
+            post(routes::platform::suspend_tenant),
+        )
+        .route(
+            "/api/v1/platform/tenants/{entity_id}/unsuspend",
+            post(routes::platform::unsuspend_tenant),
+        )
+        .route(
+            "/api/v1/platform/tenants/{entity_id}/impersonate",
+            post(routes::platform::impersonate_tenant),
+        )
         // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
         // Paystack card webhook (public; verified by x-paystack-signature HMAC).

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, LogOut, CalendarClock, Globe } from 'lucide-react';
 import { getIdentity, logout, clearSession } from '../../api/client';
+import { clearSupportSessionMeta } from './SupportSessionBanner';
 import {
   getWorkDate, setWorkDate, realToday,
   getTimezone, setTimezone, timezoneList, DEFAULT_TIMEZONE,
@@ -48,6 +49,7 @@ export default function UserMenu() {
       // no-op
     } finally {
       clearSession();
+      clearSupportSessionMeta();
       navigate('/login', { replace: true });
     }
   };

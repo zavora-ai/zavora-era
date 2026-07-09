@@ -1,0 +1,97 @@
+//! Platform operator plane — Super Admin identities and tenant directory.
+//!
+//! Separate from tenant `era_users` / RBAC. Operators manage tenants as objects;
+//! they do not automatically receive ledger access inside a customer company.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use uuid::Uuid;
+
+/// JWT / DB role for full platform operators.
+pub const ROLE_PLATFORM_SUPER_ADMIN: &str = "PlatformSuperAdmin";
+
+/// Nil entity id embedded in platform JWTs (no tenant scope).
+pub fn platform_entity_id() -> Uuid {
+    Uuid::nil()
+}
+
+pub fn is_platform_role(role: &str) -> bool {
+    role.eq_ignore_ascii_case(ROLE_PLATFORM_SUPER_ADMIN)
+        || role.eq_ignore_ascii_case("PlatformSupport")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PlatformUserRow {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub password_hash: String,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TenantRow {
+    pub entity_id: Uuid,
+    pub organization_name: String,
+    pub organization_type: Option<String>,
+    pub plan_key: Option<String>,
+    pub plan_status: String,
+    pub suspended_at: Option<DateTime<Utc>>,
+    pub suspended_reason: Option<String>,
+    pub archived_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub last_activity_at: Option<DateTime<Utc>>,
+    pub user_count: i32,
+    pub invoice_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TenantSummary {
+    pub entity_id: Uuid,
+    pub organization_name: String,
+    pub organization_type: Option<String>,
+    pub plan_key: Option<String>,
+    pub plan_status: String,
+    pub suspended: bool,
+    pub suspended_at: Option<DateTime<Utc>>,
+    pub suspended_reason: Option<String>,
+    pub archived: bool,
+    pub created_at: DateTime<Utc>,
+    pub last_activity_at: Option<DateTime<Utc>>,
+    pub user_count: i32,
+    pub invoice_count: i32,
+}
+
+impl From<TenantRow> for TenantSummary {
+    fn from(r: TenantRow) -> Self {
+        Self {
+            entity_id: r.entity_id,
+            organization_name: r.organization_name,
+            organization_type: r.organization_type,
+            plan_key: r.plan_key,
+            plan_status: r.plan_status.clone(),
+            suspended: r.suspended_at.is_some() || r.plan_status == "suspended",
+            suspended_at: r.suspended_at,
+            suspended_reason: r.suspended_reason,
+            archived: r.archived_at.is_some(),
+            created_at: r.created_at,
+            last_activity_at: r.last_activity_at,
+            user_count: r.user_count,
+            invoice_count: r.invoice_count,
+        }
+    }
+}
+
+/// Active Owner (or first active user) chosen as the impersonation target.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct TenantOwnerRow {
+    pub id: Uuid,
+    pub entity_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub role: String,
+}
