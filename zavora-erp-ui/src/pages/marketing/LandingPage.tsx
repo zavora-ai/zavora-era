@@ -454,7 +454,7 @@ function Metrics() {
     { n: '1 platform', l: 'Sales, stock, payroll, tax & AI' },
     { n: '10+ hrs', l: 'saved on bookkeeping every week' },
     { n: 'Real-time', l: 'books that are always closed' },
-    { n: '24/7', l: 'Amos never takes leave' },
+    { n: '24/7', l: 'Amos is always on' },
   ];
   return (
     <section className="bg-slate-950 text-white">
@@ -498,7 +498,7 @@ function Comparison() {
       <div className="mx-auto max-w-6xl px-5 py-24">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest">Why Zavora</p>
-          <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">One platform that does what four others can't</h2>
+          <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">The work of four tools, on one set of books</h2>
           <p className="mt-4 text-slate-600 text-lg">The global tools weren't built for Kenya — and none of them come with an accountant inside. Here's how we compare.</p>
         </div>
         <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
