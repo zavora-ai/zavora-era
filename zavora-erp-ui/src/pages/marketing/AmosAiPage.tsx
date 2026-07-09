@@ -19,6 +19,7 @@ export default function AmosAiPage() {
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
             <Link to="/amos-ai" className="text-slate-900 font-semibold">Amos AI</Link>
             <a href="/#modules" className="hover:text-slate-900">Modules</a>
+            <Link to="/portals" className="hover:text-slate-900">Portals</Link>
             <a href="/#compliance" className="hover:text-slate-900">Kenya-ready</a>
             <a href="/#pricing" className="hover:text-slate-900">Pricing</a>
           </nav>

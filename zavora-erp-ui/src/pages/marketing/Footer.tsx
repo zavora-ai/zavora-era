@@ -4,6 +4,7 @@ import Logo from '../../components/brand/Logo';
 type L = { label: string; to: string; hash?: boolean };
 const PRODUCT: L[] = [
   { label: 'Amos AI', to: '/amos-ai' },
+  { label: 'Portals', to: '/portals' },
   { label: 'Point of Sale', to: '/#modules', hash: true },
   { label: 'Invoicing', to: '/#modules', hash: true },
   { label: 'Payroll', to: '/#modules', hash: true },

@@ -9,6 +9,7 @@ import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import LandingPage from './pages/marketing/LandingPage';
 import InfoPage from './pages/marketing/InfoPage';
 import AmosAiPage from './pages/marketing/AmosAiPage';
+import PortalsPage from './pages/marketing/PortalsPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import AmosPage from './pages/amos/AmosPage';
 import InvoicesPage from './pages/invoicing/InvoicesPage';
@@ -134,6 +135,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* Public marketing sub-pages (footer links). */}
           <Route path="/amos-ai" element={<AmosAiPage />} />
+          <Route path="/portals" element={<PortalsPage />} />
           <Route path="/about" element={<InfoPage />} />
           <Route path="/updates" element={<InfoPage />} />
           <Route path="/careers" element={<InfoPage />} />
