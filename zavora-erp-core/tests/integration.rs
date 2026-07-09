@@ -107,6 +107,25 @@ async fn setup(period_status: &str) -> Option<(ErpEngine, Uuid, NaiveDate)> {
     .await
     .expect("seed period");
 
+    // Journal posting validates that line accounts exist and are active, so
+    // the test tenant needs a real chart like production tenants have.
+    for a in zavora_erp_core::ledger::coa_template::kenya_standard_coa() {
+        sqlx::query(
+            "INSERT INTO accounts (entity_id, code, name, account_type, parent_code, is_control)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (entity_id, code) DO NOTHING",
+        )
+        .bind(entity_id)
+        .bind(&a.code)
+        .bind(&a.name)
+        .bind(format!("{:?}", a.account_type))
+        .bind(&a.parent_code)
+        .bind(a.is_control)
+        .execute(&pool)
+        .await
+        .expect("seed chart of accounts");
+    }
+
     let engine = ErpEngine::new(pool, redis_conn, config).await.expect("engine");
     Some((engine, entity_id, today))
 }
@@ -250,8 +269,8 @@ async fn seed_account(engine: &ErpEngine, entity_id: Uuid, code: &str, name: &st
 async fn reports_balance_after_posting() {
     let Some((engine, entity_id, today)) = setup("open").await else { return };
 
-    seed_account(&engine, entity_id, "1000", "Cash", "Asset").await;
-    seed_account(&engine, entity_id, "4000", "Sales", "Revenue").await;
+    // The harness seeds the Kenya-standard chart: 1020 = Main Bank (Asset),
+    // 5000 = Sales Revenue. (Template 4000 is a LIABILITY — don't post sales there.)
 
     let req = CreateJournalEntryRequest {
         date: today,
@@ -259,7 +278,7 @@ async fn reports_balance_after_posting() {
         source_id: None,
         reference: format!("RPT-{}", Uuid::new_v4()),
         description: "sale".to_string(),
-        lines: vec![line("1000", Some(dec!(100.00)), None), line("4000", None, Some(dec!(100.00)))],
+        lines: vec![line("1020", Some(dec!(100.00)), None), line("5000", None, Some(dec!(100.00)))],
         post_immediately: true,
     };
     create_and_post(&engine, entity_id, req, period_id(&engine, entity_id, today).await, AgentOrUserId::User(Uuid::new_v4()))
@@ -301,8 +320,8 @@ async fn reports_balance_after_posting() {
 #[tokio::test]
 async fn snapshots_reconcile_to_ledger() {
     let Some((engine, entity_id, today)) = setup("open").await else { return };
-    seed_account(&engine, entity_id, "1000", "Cash", "Asset").await;
-    seed_account(&engine, entity_id, "4000", "Sales", "Revenue").await;
+    // The harness seeds the Kenya-standard chart: 1020 = Main Bank (Asset),
+    // 5000 = Sales Revenue. (Template 4000 is a LIABILITY — don't post sales there.)
 
     // A closed prior-year period (its end_date is in the past relative to today).
     let prior_end = NaiveDate::from_ymd_opt(today.year() - 1, 12, 31).unwrap();
@@ -320,7 +339,7 @@ async fn snapshots_reconcile_to_ledger() {
     let mk = |date: NaiveDate, amt| CreateJournalEntryRequest {
         date, source: JournalSource::Manual, source_id: None, reference: format!("REC-{}", Uuid::new_v4()),
         description: "x".to_string(),
-        lines: vec![line("1000", Some(amt), None), line("4000", None, Some(amt))],
+        lines: vec![line("1020", Some(amt), None), line("5000", None, Some(amt))],
         post_immediately: true,
     };
     // One entry in the prior period (snapshot), one today (open tail).
