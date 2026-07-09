@@ -360,6 +360,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payments/apply", post(routes::payments::apply_unapplied))
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
         .route("/api/v1/payments/paystack/initialize", post(routes::payments::paystack_initialize))
+        .route("/api/v1/billing/checkout", post(routes::billing::checkout))
+        .route("/api/v1/billing/subscription", get(routes::billing::get_subscription))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
         .route("/api/v1/transactions/{id}/categorise", post(routes::transactions::categorise))

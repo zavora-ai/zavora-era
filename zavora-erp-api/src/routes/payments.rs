@@ -204,20 +204,29 @@ pub async fn paystack_webhook(
         return Ok(Json(serde_json::json!({ "status": "ignored" })));
     }
 
-    // Resolve the tenant from our claim row (the reference we minted at init).
-    let entity_id = sqlx::query_scalar::<_, uuid::Uuid>(
-        "SELECT entity_id FROM paystack_transactions WHERE reference = $1",
+    // Resolve the tenant + purpose from our claim row (the reference we minted).
+    let claim = sqlx::query_as::<_, (uuid::Uuid, String)>(
+        "SELECT entity_id, purpose FROM paystack_transactions WHERE reference = $1",
     )
     .bind(&event.data.reference)
     .fetch_optional(state.engine.pool())
     .await
     .ok()
     .flatten();
-    let Some(entity_id) = entity_id else {
+    let Some((entity_id, purpose)) = claim else {
         // Unknown reference — ack so Paystack stops retrying, but log it.
         tracing::warn!(reference = %event.data.reference, "Paystack webhook for unknown reference");
         return Ok(Json(serde_json::json!({ "status": "unknown_reference" })));
     };
+
+    // A subscription charge activates the tenant's plan; an invoice charge
+    // records a customer payment against the invoice.
+    if purpose == "subscription" {
+        return match zavora_erp_core::services::billing::activate_from_reference(&state.engine, entity_id, &event.data.reference).await {
+            Ok(()) => Ok(Json(serde_json::json!({ "status": "subscription_activated" }))),
+            Err(e) => Err(err_response(e)),
+        };
+    }
 
     match svc::record_paystack_payment(&state.engine, entity_id, event.data).await {
         Ok(p) => Ok(Json(serde_json::json!({ "status": "recorded", "payment_id": p.id }))),
