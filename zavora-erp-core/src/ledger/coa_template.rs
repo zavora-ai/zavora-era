@@ -55,6 +55,9 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         // === Current Liabilities (3000–3999) ===
         acct("3000", "Accounts Payable", AccountType::Liability, None, true),
         acct("3010", "Trade Creditors", AccountType::Liability, Some("3000"), true),
+        // Stock received against a PO but not yet billed by the vendor —
+        // credited at goods receipt, cleared when the vendor bill posts.
+        acct("3020", "Goods Received Not Invoiced", AccountType::Liability, Some("3000"), false),
         acct("3100", "VAT Output (Payable)", AccountType::Liability, None, false),
         acct("3200", "WHT Payable", AccountType::Liability, None, false),
         acct("3210", "WHT Payable - Vendors", AccountType::Liability, Some("3200"), false),
