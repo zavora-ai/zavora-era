@@ -218,13 +218,24 @@ async fn compute_into_run(
             }
         }
 
+        // Insurance relief (ITA s.31): 15% of life/health/education-policy
+        // premiums, capped at KES 5,000/month (the compute engine enforces the
+        // cap). Premiums are the deduction lines whose type category is
+        // "insurance" — set the category on the deduction type master.
+        let insurance_premiums: Decimal = deductions
+            .iter()
+            .filter(|d| d.category.eq_ignore_ascii_case("insurance"))
+            .map(|d| d.amount)
+            .sum();
+        let insurance_relief = (insurance_premiums * Decimal::new(15, 2)).round_dp(2);
+
         let inp = PayrollInputs {
             basic_salary: basic,
             earnings,
             deductions,
             helb: emp.helb_deduction.unwrap_or(Decimal::ZERO),
             personal_relief: emp.tax_relief,
-            insurance_relief: Decimal::ZERO,
+            insurance_relief,
             disability_exemption: emp.disability_exemption,
         };
         let c = compute_payslip(&cfg, &inp);
@@ -985,4 +996,101 @@ pub async fn payslip_pdf(
         ytd_net: ytd_dec("net"),
     };
     Ok(crate::payroll::payslip_pdf::render_payslip_pdf(&d))
+}
+
+/// KRA iTax P10 employee-details CSV (`B_Employees_Dtls`) for one pay run —
+/// importable into the iTax PAYE return workbook. Columns follow the official
+/// template order; fields the system doesn't track (car/housing benefits,
+/// mortgage interest…) are emitted as 0/blank, and residency/employment type
+/// default to Resident / Primary Employee — edit in the workbook for the
+/// exceptions before upload.
+pub async fn itax_p10_csv(engine: &ErpEngine, entity_id: Uuid, run_id: Uuid) -> ErpResult<Vec<u8>> {
+    // Tenant-scope the run before exporting anything.
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pay_runs WHERE id=$1 AND entity_id=$2)",
+    )
+    .bind(run_id)
+    .bind(entity_id)
+    .fetch_one(engine.pool())
+    .await?;
+    if !exists {
+        return Err(ErpError::NotFound { entity_type: "PayRun".into(), id: run_id });
+    }
+
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT employee_name, kra_pin, gross, taxable, nssf_employee, deductions, earnings
+         FROM payslips WHERE pay_run_id=$1 ORDER BY employee_name",
+    )
+    .bind(run_id)
+    .fetch_all(engine.pool())
+    .await?;
+
+    let esc = |s: &str| {
+        if s.contains(',') || s.contains('"') {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_string()
+        }
+    };
+
+    let mut out = Vec::new();
+    out.extend_from_slice(
+        b"PIN of Employee,Name of Employee,Residential Status,Type of Employee,\
+Basic Salary,Housing Allowance,Transport Allowance,Leave Pay,Overtime Allowance,\
+Directors Fee,Lump Sum Payment if any,Other Allowances,Total Cash Pay,\
+Value of Car Benefit,Other Non Cash Benefits,Total Non Cash Pay,Global Income,\
+Type of Housing,Rent of House,Computed Rent of House,Rent Recovered from Employee,\
+Net Value of Housing,Total Gross Pay,30% of Cash Pay,Actual Contribution,\
+Permissible Limit,Mortgage Interest,Deposit on Home Ownership Plan,\
+Amount of Benefit,Taxable Pay,Tax Payable,Monthly Personal Relief,\
+Amount of Insurance Relief,PAYE Tax,Self Assessed PAYE\n",
+    );
+
+    for row in &rows {
+        let name: String = row.get::<Option<String>, _>("employee_name").unwrap_or_default();
+        let pin: String = row.get::<Option<String>, _>("kra_pin").unwrap_or_default();
+        let gross: Decimal = row.get("gross");
+        let taxable: Decimal = row.get("taxable");
+        let nssf: Decimal = row.get("nssf_employee");
+        let d: PayslipDeductions = serde_json::from_value(row.get::<serde_json::Value, _>("deductions"))
+            .unwrap_or_else(|_| serde_json::from_value(serde_json::json!({})).unwrap_or(PayslipDeductions {
+                gross_salary: Decimal::ZERO, taxable_income: Decimal::ZERO, paye: Decimal::ZERO,
+                personal_relief: Decimal::ZERO, insurance_relief: Decimal::ZERO, net_paye: Decimal::ZERO,
+                nssf_employee: Decimal::ZERO, nssf_employer: Decimal::ZERO, sha: Decimal::ZERO,
+                housing_levy_employee: Decimal::ZERO, housing_levy_employer: Decimal::ZERO,
+                helb: Decimal::ZERO, total_deductions: Decimal::ZERO, net_salary: Decimal::ZERO,
+            }));
+        // Allowance lines are the earnings JSONB; basic = gross - allowances.
+        let earnings: Vec<serde_json::Value> =
+            serde_json::from_value(row.get::<serde_json::Value, _>("earnings")).unwrap_or_default();
+        let allowances: Decimal = earnings
+            .iter()
+            .filter_map(|e| e.get("amount").and_then(|a| a.as_str()).and_then(|a| a.parse::<Decimal>().ok()))
+            .sum();
+        let basic = (gross - allowances).max(Decimal::ZERO);
+        let thirty_pct = (gross * Decimal::new(30, 2)).round_dp(2);
+        // Pension relief permissible limit (ITA): KES 20,000/month.
+        let permissible = Decimal::new(20_000, 0).min(nssf.max(thirty_pct.min(Decimal::new(20_000, 0))));
+
+        let line = format!(
+            "{pin},{name},Resident,Primary Employee,{basic},0,0,0,0,0,0,{allowances},{gross},0,0,0,0,Benefit not given,0,0,0,0,{gross},{thirty},{nssf},{permissible},0,0,0,{taxable},{tax},{prelief},{irelief},{paye},0\n",
+            pin = esc(&pin),
+            name = esc(&name),
+            basic = basic,
+            allowances = allowances,
+            gross = gross,
+            thirty = thirty_pct,
+            nssf = nssf,
+            permissible = permissible,
+            taxable = taxable,
+            tax = d.paye,
+            prelief = d.personal_relief,
+            irelief = d.insurance_relief,
+            paye = d.net_paye,
+        );
+        out.extend_from_slice(line.as_bytes());
+    }
+
+    Ok(out)
 }

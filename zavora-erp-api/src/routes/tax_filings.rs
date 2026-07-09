@@ -144,3 +144,37 @@ pub async fn cit_estimate(
         Err(e) => Err(err_response(e)),
     }
 }
+
+#[derive(serde::Deserialize)]
+pub struct CitProvisionBody {
+    pub fiscal_year: Option<i32>,
+    #[serde(default)]
+    pub adjustments: Option<Decimal>,
+    /// Book this exact amount instead of the incremental estimate true-up
+    /// (e.g. the tax agent's final computation).
+    #[serde(default)]
+    pub amount: Option<Decimal>,
+}
+
+/// POST /tax/cit/provision — book the corporation-tax provision
+/// (DR 8500 Corporate Income Tax / CR 3510 Corporation Tax Payable).
+pub async fn cit_provision(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CitProvisionBody>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let actor = AgentOrUserId::User(ctx.user_id);
+    match zavora_erp_core::services::cit::post_provision(
+        &state.engine,
+        ctx.entity_id,
+        body.fiscal_year,
+        body.adjustments.unwrap_or_default(),
+        body.amount,
+        &actor,
+    )
+    .await
+    {
+        Ok(res) => Ok(Json(serde_json::to_value(res).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}

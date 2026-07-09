@@ -202,25 +202,28 @@ below break **book quality** or control-vs-subledger sign-off.
 
 ## 2. Tax & payroll accuracy
 
-- 🟡 **P0/P1 — Insurance relief always zero on pay run.**  
-  Engine supports `insurance_relief` + cap (`payroll/compute.rs`,
-  `payroll/config.rs` `insurance_relief_cap`). Run path hardcodes
-  `insurance_relief: Decimal::ZERO` (`services/payroll.rs`). No employee field
-  for insurance premiums; SHA-linked relief not auto-derived. UI has personal
-  relief only (`EmployeesPage.tsx`).
+- ✅ **P0/P1 — Insurance relief always zero on pay run.** *(Fixed 2026-07-09.)*
+  The run path now derives insurance relief (ITA s.31: 15% of premiums, capped
+  KES 5,000/month) from deduction lines categorised `insurance` and feeds it to
+  the compute engine. Unit-tested (uncapped + capped). Follow-up: a dedicated
+  employee "insurance premium" field would be tidier than the deduction-category
+  convention.
 
-- 🟡 **P1 — PAYE not rounded to nearest shilling.**  
-  `round_dp(2)` in compute, not whole KES. Needs tax-professional sign-off for
-  filing-grade PAYE.
+- ✅ **P1 — PAYE not rounded to nearest shilling.** *(Fixed 2026-07-09.)* Net
+  PAYE now rounds to the nearest whole shilling (`compute.rs`), so payslips, the
+  P10 and iTax agree to the cent. Unit-tested.
 
-- 🟡 **P1 — iTax is record-only, not file export.**  
-  Tax filings + Amos tax skill explicitly treat iTax as filing of record
-  (`skills/tax-filing`, `services/cit.rs`). No machine-ready iTax upload packs
-  for VAT/PAYE/WHT. README “iTax Data Export” oversells.
+- 🟡 **P1 — iTax is record-only, not file export.** *(PAYE done 2026-07-09.)*
+  New `GET /payroll/{run_id}/itax-csv` emits the KRA iTax `B_Employees_Dtls`
+  layout, importable into the PAYE-return workbook. VAT/WHT iTax upload packs
+  still to do; the VAT-return and WHT-schedule reports export generic CSV, not
+  the iTax template layout.
 
-- 🟡 **P1 — CIT is estimate only.**  
-  `GET /tax/cit/estimate` + Tax Filings UI (`services/cit.rs`,
-  `TaxFilingsPage.tsx`). Decision support; not full CT computation/filing.
+- 🟡 **P1 — CIT is estimate only.** *(Provision posting added 2026-07-09.)*
+  `POST /tax/cit/provision` books the provision (DR 8500 / CR 3510) as an
+  incremental true-up; the estimate now adds back the tax expense so it's
+  computed on profit before tax (no feedback loop). Still decision-support for
+  the computation itself — the final CT computation/return remains iTax.
 
 - ⬜ **P1 — eTIMS production ops maturity.**  
   OSCU/VSCU implemented (`services/etims.rs`); sandbox/prod credentials, failure
