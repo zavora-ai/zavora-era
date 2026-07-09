@@ -32,6 +32,11 @@ against `feat/portals-page` / main tip ≈ `85ecf01`._
 > — a Viewer session could post pay runs, close periods, or transmit to KRA).
 > Fix order recommendation stands as written in §1.1/§7.6.
 
+> **All ten fixed (2026-07-09).** Every defect above is closed on main —
+> see the ✅ entries in §1.1, §4.2, §5, §7.1 for the fix shape, verification
+> evidence, and the two follow-ups noted (edit-time inventory enable; set
+> `CORS_ALLOWED_ORIGINS` in the prod deploy env).
+
 > **Doc hygiene.** Prior `REMAINING.md` (2026-07-05) was stale: procurement/P2P,
 > bill lines, posting-group matrices, notifications, OCR, and prod Docker/deploy
 > were listed as missing while already shipped. Those are corrected below.
@@ -78,53 +83,52 @@ below break **book quality** or control-vs-subledger sign-off.
 
 ### 1.1 P0 — Journal / cash / multi-currency defects
 
-- ⬜ **P0 — Vendor payment unapplied leg inverted / unbalanced.**  
-  Customer overpay: `DR Bank / CR AR / CR Unapplied` balances
-  (`services/payments.rs` `post_payment_journal_entry`). Vendor path **CRs**
-  unapplied for excess while also `CR Bank` for full amount → credits exceed
-  debits when `total = applied + excess`. Comments describe `DR Unapplied / CR
-  Bank` for vendor advances; implementation does not match. Same path shares one
-  `unapplied_payments` account (default **9100**) for customer and vendor; COA
-  also has **3600** Unapplied Vendor Credits (`ledger/coa_template.rs`).
+- ✅ **P0 — Vendor payment unapplied leg inverted / unbalanced.** *(Fixed
+  2026-07-09.)* Vendor excess now **DRs** a dedicated `unapplied_vendor_credits`
+  posting account (default **9110** Unapplied Vendor Credits, an asset — the
+  vendor owes it back): `DR AP (applied) + DR 9110 (excess) = CR Bank (total)`.
+  Customer side unchanged on 9100 (liability). Verified live: a pure vendor
+  advance posts `DR 9110 / CR 1020` balanced.
 
-- ⬜ **P0 — Vendor WHT auto-remitted through bank on every vendor payment.**  
-  Bill post correctly: `CR AP` (net of WHT) + `CR WHT Payable`
-  (`routes/bills.rs` `post_bill`). Vendor pay then always adds `DR WHT Payable /
-  CR Bank` for bill WHT (`payments.rs` ~WHT handling). That conflates vendor
-  settlement with KRA remittance. Tax remittance already exists separately:
-  `POST /tax-filings/{id}/remit` (`routes/tax_filings.rs`). Risk: bank
-  overstated outflow + double-clear of WHT when remittance is recorded later.
+- ✅ **P0 — Vendor WHT auto-remitted through bank on every vendor payment.**
+  *(Fixed 2026-07-09.)* The `DR WHT Payable / CR Bank` legs are removed from
+  vendor payments (`payments.rs`): paying a bill clears the net AP only; the
+  WHT liability stays on 3210 until `POST /tax-filings/{id}/remit` moves the
+  cash to KRA. No more double-clear risk.
 
-- ⬜ **P0 — Bill / supplier-CN FCY posted as base currency.**  
-  Invoice post uses document currency + `fx_rate` (`services/invoicing.rs`
-  `post_invoice`). Bill post forces `currency: base_ccy` with bill `fx_rate` and
-  document amounts (`routes/bills.rs` `post_bill`). Supplier CN same pattern
-  (`services/supplier_credit_notes.rs`). Breaks IAS 21 transaction currency,
-  FX revaluation open AP, and realised-FX vs document rate.
+- ✅ **P0 — Bill / supplier-CN FCY posted as base currency.** *(Fixed
+  2026-07-09.)* Bill post now carries the **bill's** currency + fx_rate on every
+  line (`routes/bills.rs`), mirroring `post_invoice`. Verified live: a USD 100
+  bill @130 posts `currency=USD, functional=13,000 KES`. (Supplier CN already
+  posted in document currency — validation note corrected.)
 
-- ⬜ **P0 — Default inventory / GRNI accounts wrong vs Kenya COA.**  
-  `PostingSetup` defaults (`posting/mod.rs`):
-  - `inventory_asset` → **1300** (COA: **VAT Input**; real inventory is **1500**)
-  - `inventory_clearing` (GRNI) → **3010** (COA: **Trade Creditors control**)  
-  Standalone receive: `DR inventory / CR clearing` (`services/inventory.rs`
-  `receive_inventory`). New items without explicit GL inherit bad defaults.
+- ✅ **P0 — Default inventory / GRNI accounts wrong vs Kenya COA.** *(Fixed
+  2026-07-09.)* `PostingSetup` defaults now `inventory_asset = 1500` and
+  `inventory_clearing = 3020` — a new seeded **Goods Received Not Invoiced**
+  liability (COA template + migration `050` backfills existing entities).
 
-- ⬜ **P0 — Receive goods then bill double-counts; GRNI never cleared.**  
-  Receive posts inventory + clearing. Bill post always `DR expense (line accounts)
-  / CR AP` — never `DR GRNI`. No stock-capitalisation / GRNI-clear purchase path.
-  3-way match gates quantities (`three_way_match`), not GL mapping.
+- ✅ **P0 — Receive goods then bill double-counts; GRNI never cleared.** *(Fixed
+  2026-07-09.)* Bill post now routes lines for **inventory-tracked products** to
+  `DR inventory_clearing (GRNI)` instead of expense (`routes/bills.rs`): the
+  receipt booked `DR Inventory / CR GRNI`, the bill clears GRNI, and COGS books
+  at issue — no double count. Non-stock lines still hit their expense accounts.
+  (Procurement GRN remains quantity-only; the GL pair is the standalone
+  `receive_inventory` + bill.)
 
-- ⬜ **P0 — Fixed asset create does not capitalise.**  
-  `create_asset` inserts register only (`services/assets.rs`); NBV = cost with
-  **no** `DR FA / CR Bank|AP` JE. Depreciation later books expense/accum against
-  unposted cost.
+- ✅ **P0 — Fixed asset create does not capitalise.** *(Fixed 2026-07-09.)*
+  `CreateAssetRequest` gains `funding_account`: when set, `create_asset` posts
+  `DR asset account / CR funding` (bank / AP / opening-balance equity) in the
+  same transaction (`JournalSource::FixedAsset`). Deliberately optional —
+  an asset bought via a bill line coded to the FA account is already in the GL,
+  and an unconditional JE would double-post. Verified live: `DR 2550 /
+  CR 1020` for a 120k laptop.
 
-- ⬜ **P0 — AR ageing / dashboard open AR include drafts (and untyped docs).**  
-  Ageing SQL excludes only `paid`/`voided` (`services/reporting.rs` `ar_ageing`);
-  drafts store `balance_due = gross_total` with **no** AR JE
-  (`services/invoicing.rs` create). No `invoice_type = 'invoice'` filter → credit
-  notes can pollute. Dashboard outstanding queries use the same pattern.  
-  **Subledger > GL control** until fixed.
+- ✅ **P0 — AR ageing / dashboard open AR include drafts (and untyped docs).**
+  *(Fixed 2026-07-09.)* AR ageing, dashboard receivable/overdue and outstanding
+  lists now filter `status NOT IN ('draft','paid','voided','cancelled',
+  'written_off') AND invoice_type = 'invoice'`; AP side excludes
+  `draft`/`pending_approval`. Verified live: a 999,999 draft no longer moves
+  `total_receivable`.
 
 ### 1.2 P1 — Control, close, tax reports, FX scope
 
@@ -292,12 +296,14 @@ From [`Specs.md`](Specs.md) and marketing vs code:
 
 ### 4.2 Inventory / POS
 
-- ⬜ **P0 — Product “track inventory” does not create stock master (E2E break).**  
-  UI collects SKU + opening stock (`ProductsPage.tsx`) but **submit omits them**;
-  `create_product` only sets `track_inventory` flag (`services/catalog.rs`) —
-  no `inventory_item` / `inventory_item_id`. Invoice post then fails:
-  `track_inventory=true but no linked inventory_item_id`
-  (`services/invoicing.rs` `post_invoice`).  
+- ✅ **P0 — Product “track inventory” does not create stock master (E2E break).**
+  *(Fixed 2026-07-09.)* `create_product` now requires a SKU when
+  `track_inventory`, creates the linked `inventory_item`, sets
+  `products.inventory_item_id`, and books honest opening stock (qty **and**
+  unit cost, both wired through from `ProductsPage.tsx`) as
+  `DR inventory / CR 9300 Opening Balance Equity`. Verified live end-to-end.
+  (Enabling tracking on an *existing* product via edit still doesn't create the
+  item — follow-up.)  
 - 🟡 POS: session sell + Z + mobile stock only; **no refund/void/hold/offline**
   (`services/pos.rs`, `pages/pos/*`).  
 - 🟡 POS nav split: Sell / Till Sessions / Stock (Mobile) as three sidebar items.
@@ -339,9 +345,12 @@ coverage/security gaps only here.
   trigger. See CHANGELOG / `docs/AMOS.md` §5b.  
   **Not complete authority:** Amos tool scope + service-account execution still
   open (see **§7.1**).  
-- ⬜ **P0/P1 — CORS lockdown.** Still `CorsLayer::permissive()` in
-  `zavora-erp-api/src/main.rs` (~line 511). Restrict to `CORS_ALLOWED_ORIGINS`
-  in production.  
+- ✅ **P0/P1 — CORS lockdown.** *(Fixed 2026-07-09.)* `main.rs` now builds the
+  layer from `CORS_ALLOWED_ORIGINS` (comma-separated; unset → localhost dev
+  origins only; `*` → explicit permissive escape hatch). Credentials allowed for
+  the listed origins so the refresh cookie works. Verified: foreign origins get
+  no `access-control-allow-origin`. **Set `CORS_ALLOWED_ORIGINS` in the prod
+  deploy env.**  
 - ⬜ **P1 — M-Pesa callback authenticity.** Idempotency + orphan recovery done;
   **no** IP allowlist / signature validation
   (`routes/payments.rs` `mpesa_callback`, `payments/daraja.rs`).  
@@ -461,21 +470,16 @@ accounting/product roots of some UX failures.
 
 ### 7.1 P0 — Authority & write safety
 
-- ⬜ **P0 — Incomplete `required_scopes` (many writes treated as `erp:read`).**  
-  `amos/src/scope.rs`: only `post_bill` / `record_payment` / `post_journal_entry`
-  / `post_invoice` require `ledger:post`; a few drafts/masters/browser mutators
-  require `erp:write`; **default `_` → `erp:read`**.  
-  Mutating tools unlocked by skills that fall through to **read** include (non-
-  exhaustive): `etims_transmit_invoice`, `post_pay_run`, `approve_pay_run`,
-  `mark_pay_run_paid`, `add_pay_run_input`, `recompute_pay_run`, `close_period`,
-  `reopen_period`, `set_budget`, `adjust_stock`, `transfer_stock`,
-  `complete_reconciliation`, `file_tax_return`, `remit_tax_filing`,
-  `run_depreciation`, `run_fx_revaluation`, `import_bank_statement`,
-  `send_customer_statement`.  
-  **Docs overclaim** (`docs/AMOS.md` §5b: “Viewer cannot post”) — only true for
-  the four explicitly listed post tools.  
-  **Fix:** complete scope map; unit test that every skill-unlocked mutating tool
-  requires `erp:write` or `ledger:post`; prefer default-deny.
+- ✅ **P0 — Incomplete `required_scopes` (many writes treated as `erp:read`).**
+  *(Fixed 2026-07-09.)* `amos/src/scope.rs` now classifies the full mcp-erp
+  mutating surface: postings/statutory/period-locks (incl. `post_pay_run`,
+  `approve_pay_run`, `mark_pay_run_paid`, `close_period`, `reopen_period`,
+  `file_tax_return`, `remit_tax_filing`, `etims_transmit_invoice`,
+  `run_depreciation`, `run_fx_revaluation`, `complete_reconciliation`,
+  `receive_goods`, `adjust_stock`, `create_debit_note`) → `ledger:post`;
+  drafts/masters/payroll-prep/procurement-workflow/sends/imports/budgets →
+  `erp:write`. A unit test pins every mutating tool name so an unclassified
+  addition fails the build. “Viewer cannot post” is now true across the board.
 
 - ⬜ **P0 — Confirm-before-write is prompt-only.**  
   `amos/AGENTS.md` + `amos/system.md` require confirmation; **no code gate**
