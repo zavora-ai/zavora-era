@@ -74,6 +74,30 @@ pub async fn payslip_pdf(
     }
 }
 
+/// GET /payroll/{run_id}/itax-csv — KRA iTax P10 employee-details CSV for the run.
+pub async fn itax_csv(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(run_id): Path<Uuid>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    use axum::response::IntoResponse;
+    require_permission(&state, &ctx, "pay_run.read").await.map_err(|e| err_response(e).into_response())?;
+    match svc::itax_p10_csv(&state.engine, ctx.entity_id, run_id).await {
+        Ok(bytes) => Ok((
+            [
+                (axum::http::header::CONTENT_TYPE, "text/csv".to_string()),
+                (
+                    axum::http::header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"itax_p10_employees.csv\"".to_string(),
+                ),
+            ],
+            bytes,
+        )
+            .into_response()),
+        Err(e) => Err(err_response(e).into_response()),
+    }
+}
+
 fn pdf_response(bytes: Vec<u8>, filename: &str) -> axum::response::Response {
     use axum::response::IntoResponse;
     (
