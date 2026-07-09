@@ -161,10 +161,28 @@ pub async fn estimate(
         },
     )
     .await?;
-    let accounting_profit = match report.content {
+    let profit_after_tax = match report.content {
         ReportContent::ProfitAndLoss(p) => p.net_profit,
         _ => Decimal::ZERO,
     };
+
+    // Add back the corporation-tax expense already booked in the window (the
+    // 8500 provision). Tax on profit is never deductible in computing taxable
+    // profit, and adding it back also breaks the feedback loop where posting a
+    // provision would otherwise shrink the very estimate it was based on — so
+    // `accounting_profit` here is profit BEFORE corporation tax.
+    let cit_expense: Decimal = sqlx::query_scalar(
+        r#"SELECT COALESCE(SUM(COALESCE(functional_debit,0) - COALESCE(functional_credit,0)), 0)
+           FROM journal_lines
+           WHERE entity_id = $1 AND account_code = '8500' AND entry_date BETWEEN $2 AND $3"#,
+    )
+    .bind(entity_id)
+    .bind(fy_start)
+    .bind(fy_end)
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(Decimal::ZERO);
+    let accounting_profit = profit_after_tax + cit_expense;
 
     // Book depreciation posted in the window (added back; replaced by W&T).
     let depreciation_add_back: Decimal = sqlx::query_scalar(
