@@ -75,6 +75,7 @@ pub struct ComputedPayslip {
 }
 
 /// Inputs to a single payslip computation.
+#[derive(Debug, Clone)]
 pub struct PayrollInputs {
     /// Basic pay (already prorated by the caller if applicable).
     pub basic_salary: Decimal,
@@ -117,7 +118,11 @@ pub fn compute_payslip(cfg: &StatutoryConfig, inp: &PayrollInputs) -> ComputedPa
 
     let paye = cfg.compute_paye(taxable_income);
     let insurance_relief = inp.insurance_relief.min(cfg.insurance_relief_cap);
-    let net_paye = (paye - inp.personal_relief - insurance_relief).max(Decimal::ZERO);
+    // KRA remits PAYE in whole shillings — round the net tax to the nearest
+    // shilling so payslips, the P10 and iTax agree to the cent.
+    let net_paye = (paye - inp.personal_relief - insurance_relief)
+        .max(Decimal::ZERO)
+        .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
 
     let other_deductions: Decimal = inp.deductions.iter().map(|d| d.amount).sum();
     let total_deductions =
@@ -178,12 +183,57 @@ mod tests {
         assert_eq!(p.sha, dec!(2_750));
         // taxable = 100,000 - 2,160 - 1,500 = 96,340
         assert_eq!(p.taxable_income, dec!(96_340));
-        // PAYE: 2,400 + 2,083.25 + (96,340-32,333)*0.30 = 23,685.35
+        // PAYE: 2,400 + 2,083.25 + (96,340-32,333)*0.30 = 23,685.35 (gross tax)
         assert_eq!(p.paye, dec!(23_685.35));
-        assert_eq!(p.net_paye, dec!(21_285.35));
-        assert_eq!(p.net_salary, dec!(72_304.65));
+        // net PAYE = 23,685.35 - 2,400 relief = 21,285.35, rounded to the
+        // nearest shilling for KRA (21,285).
+        assert_eq!(p.net_paye, dec!(21_285));
+        // net_salary reflects the rounded PAYE: 100,000 - (21,285 + 2,160 +
+        // 2,750 + 1,500) = 72,305.
+        assert_eq!(p.net_salary, dec!(72_305));
         // employer cost = 100,000 + 2,160 + 1,500 (nita 0) = 103,660
         assert_eq!(p.employer_cost, dec!(103_660));
+    }
+
+    #[test]
+    fn net_paye_rounds_to_nearest_shilling() {
+        // A salary that lands PAYE on a fractional shilling must round.
+        let inp = PayrollInputs {
+            basic_salary: dec!(96_340),
+            earnings: vec![],
+            deductions: vec![],
+            helb: Decimal::ZERO,
+            personal_relief: dec!(2_400),
+            insurance_relief: Decimal::ZERO,
+            disability_exemption: false,
+        };
+        let p = compute_payslip(&cfg(), &inp);
+        // Whatever the fractional gross PAYE, net PAYE has no fractional part.
+        assert_eq!(p.net_paye.fract(), Decimal::ZERO, "net PAYE must be whole shillings");
+    }
+
+    #[test]
+    fn insurance_relief_reduces_net_paye_and_is_capped() {
+        // Uncapped relief case: relief well under the 5,000 cap.
+        let base = PayrollInputs {
+            basic_salary: dec!(100_000),
+            earnings: vec![],
+            deductions: vec![],
+            helb: Decimal::ZERO,
+            personal_relief: dec!(2_400),
+            insurance_relief: Decimal::ZERO,
+            disability_exemption: false,
+        };
+        let without = compute_payslip(&cfg(), &base);
+
+        let with = compute_payslip(&cfg(), &PayrollInputs { insurance_relief: dec!(1_000), ..base.clone() });
+        // Net PAYE drops by the relief (both whole shillings).
+        assert_eq!(without.net_paye - with.net_paye, dec!(1_000));
+
+        // Above the 5,000 monthly cap, only 5,000 applies.
+        let capped = compute_payslip(&cfg(), &PayrollInputs { insurance_relief: dec!(9_000), ..base });
+        assert_eq!(capped.insurance_relief, dec!(5_000));
+        assert_eq!(without.net_paye - capped.net_paye, dec!(5_000));
     }
 
     #[test]
@@ -209,8 +259,10 @@ mod tests {
         assert_eq!(p.housing_levy_employee, dec!(750));
         assert_eq!(p.taxable_income, dec!(47_090));
         assert_eq!(p.paye, dec!(8_910.35));
-        // Net = 60,000 - (net_paye 6,510.35 + 2,160 + 1,375 + 750) = 49,204.65
-        assert_eq!(p.net_salary, dec!(60_000) - (dec!(6_510.35) + dec!(2_160) + dec!(1_375) + dec!(750)));
+        // net PAYE = 8,910.35 - 2,400 = 6,510.35, rounded to 6,510 shillings.
+        assert_eq!(p.net_paye, dec!(6_510));
+        // Net = 60,000 - (6,510 + 2,160 + 1,375 + 750) = 49,205.
+        assert_eq!(p.net_salary, dec!(49_205));
     }
 
     #[test]
