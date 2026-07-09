@@ -157,12 +157,9 @@ async fn main() -> anyhow::Result<()> {
     // it is kept wired for backward compatibility with single-tenant
     // deployments (Requirement 9.2).
     #[allow(deprecated)]
-    let public = Router::new()
-        .route("/health", get(health))
+    // Credential-facing routes get a per-IP rate limit (brute-force backstop).
+    let throttled = Router::new()
         .route("/api/v1/auth/login", post(routes::users::login))
-        .route("/api/v1/auth/refresh", post(routes::users::refresh))
-        // Internal-user activation + recovery (public; token-gated).
-        .route("/api/v1/auth/set-password", post(routes::users::set_password))
         .route("/api/v1/auth/forgot-password", post(routes::users::forgot_password))
         // DEPRECATED: legacy single-tenant Owner bootstrap. Use
         // `/api/v1/auth/signup` to create new tenants. Retained unchanged for
@@ -171,12 +168,21 @@ async fn main() -> anyhow::Result<()> {
         // Public tenant signup — creates a new tenant + first Owner.
         // Supported path for creating new tenants (Requirement 9.3).
         .route("/api/v1/auth/signup", post(routes::auth_signup::signup))
-        .route("/api/v1/auth/logout", post(routes::users::logout))
-        // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
-        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
-        // ── Vendor portal — public auth (external `vendor_users` principal) ──
         .route("/api/v1/portal/register", post(routes::portal_auth::register))
         .route("/api/v1/portal/login", post(routes::portal_auth::login))
+        .route_layer(axum::middleware::from_fn(middleware::rate_limit::limit_login));
+
+    let public = Router::new()
+        .route("/health", get(health))
+        .route("/api/v1/auth/refresh", post(routes::users::refresh))
+        // Internal-user activation + recovery (public; token-gated).
+        .route("/api/v1/auth/set-password", post(routes::users::set_password))
+        .route("/api/v1/auth/logout", post(routes::users::logout))
+        .merge(throttled)
+        // M-Pesa Daraja webhook (server-to-server; cannot carry a user JWT).
+        .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
+        // ── Vendor portal — public auth (external `vendor_users` principal);
+        //    register + login are on the throttled router above ──
         .route("/api/v1/portal/refresh", post(routes::portal_auth::refresh))
         .route("/api/v1/portal/logout", post(routes::portal_auth::logout))
         // ── Vendor portal — gated by `VendorContext` (each handler verifies a
@@ -507,8 +513,17 @@ async fn main() -> anyhow::Result<()> {
         // Every route above requires a valid access token.
         .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
 
+    // Cap request bodies (default 5 MiB; override with MAX_BODY_BYTES) so a
+    // single oversized upload can't exhaust memory. Attachment/import routes
+    // that legitimately need more can raise this per-route later.
+    let max_body = std::env::var("MAX_BODY_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(5 * 1024 * 1024);
+
     let app = public
         .merge(protected)
+        .layer(axum::extract::DefaultBodyLimit::max(max_body))
         .layer(TraceLayer::new_for_http())
         .layer(cors_layer())
         .with_state(state);
@@ -523,9 +538,34 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    // Drain in-flight requests on SIGINT/SIGTERM instead of dropping them —
+    // a mid-flight posting finishes committing before the process exits.
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
     Ok(())
+}
+
+/// Resolves when the process receives SIGINT (Ctrl-C) or SIGTERM (orchestrator
+/// stop). axum stops accepting new connections and lets active handlers finish.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            sig.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("Shutdown signal received — draining in-flight requests");
 }
 
 /// Build the CORS layer from `CORS_ALLOWED_ORIGINS` (comma-separated origins).
