@@ -8,8 +8,8 @@
 #
 # Build context: the zavora-era repo root (amos/ is copied from it).
 
-ARG ADK_RUST_REF=fix/gemini-batched-tool-calls
-ARG MCP_ERP_REF=feat/zavora-backend
+ARG ADK_RUST_REF=main
+ARG MCP_ERP_REF=main
 ARG PLAYWRIGHT_MCP_VERSION=0.0.77
 
 # ── Stage 1: build amos + mcp-erp ────────────────────────────────────────────
