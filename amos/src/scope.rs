@@ -49,14 +49,22 @@ fn required_scopes(tool_name: &str) -> &'static [&'static str] {
     }
 }
 
+/// How long a posting waits for the user's Approve/Deny before giving up.
+const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Wraps a tool so its required scopes are enforced against the session
-/// principal's granted scopes, with an audit entry per attempt.
+/// principal's granted scopes, with an audit entry per attempt. In an
+/// interactive session (`session` is Some), ledger:post tools additionally
+/// block until the user clicks Approve in the UI — the code gate behind the
+/// confirm-before-write promise. Ambient routines pass None: they are
+/// deliberately unattended (e.g. the eTIMS sweep).
 pub struct ScopedTool {
     inner: Arc<dyn Tool>,
     granted: Arc<Vec<String>>,
     user_id: String,
     session_id: String,
     audit: Option<Arc<dyn AuditSink>>,
+    session: Option<Arc<crate::state::SessionState>>,
 }
 
 impl ScopedTool {
@@ -66,8 +74,49 @@ impl ScopedTool {
         user_id: String,
         session_id: String,
         audit: Option<Arc<dyn AuditSink>>,
+        session: Option<Arc<crate::state::SessionState>>,
     ) -> Arc<dyn Tool> {
-        Arc::new(Self { inner, granted, user_id, session_id, audit })
+        Arc::new(Self { inner, granted, user_id, session_id, audit, session })
+    }
+
+    /// The interactive write gate. Returns Ok(()) to proceed, or the refusal
+    /// message the model should relay.
+    async fn confirm_with_user(&self, args: &serde_json::Value) -> Result<(), String> {
+        let Some(session) = &self.session else { return Ok(()) };
+        // Escape hatch for demos/dev; the gate is on by default.
+        if matches!(std::env::var("AMOS_CONFIRM_WRITES").as_deref(), Ok("0") | Ok("false")) {
+            return Ok(());
+        }
+
+        let (id, rx) = session.confirmations.request().await;
+        // Compact argument preview so the user can see WHAT they are approving
+        // without a wall of JSON.
+        let preview = serde_json::to_string(args).unwrap_or_default();
+        let preview = if preview.chars().count() > 400 {
+            let cut: String = preview.chars().take(400).collect();
+            format!("{cut}…")
+        } else {
+            preview
+        };
+        session.push_json(serde_json::json!({
+            "type": "confirm_request",
+            "id": id,
+            "tool": self.inner.name(),
+            "args": preview,
+        }));
+
+        match tokio::time::timeout(CONFIRM_TIMEOUT, rx).await {
+            Ok(Ok(true)) => Ok(()),
+            Ok(Ok(false)) => {
+                session.push_json(serde_json::json!({"type": "confirm_closed", "id": id}));
+                Err("The user DECLINED this posting. Do not retry it; ask what they want changed.".to_string())
+            }
+            _ => {
+                session.confirmations.forget(&id).await;
+                session.push_json(serde_json::json!({"type": "confirm_closed", "id": id}));
+                Err("No confirmation arrived in time, so the posting was NOT executed. Ask the user to approve the pending action and try again.".to_string())
+            }
+        }
     }
 
     async fn record(&self, tool: &str, outcome: AuditOutcome) {
@@ -95,6 +144,15 @@ impl Tool for ScopedTool {
         let required = required_scopes(self.inner.name());
         match check_scopes(required, &self.granted) {
             Ok(()) => {
+                // Scope alone isn't enough for a posting in an interactive
+                // session — the user must approve THIS call in the UI.
+                if required.contains(&"ledger:post") {
+                    if let Err(refusal) = self.confirm_with_user(&args).await {
+                        tracing::warn!(tool = self.inner.name(), user = %self.user_id, "write not confirmed");
+                        self.record(self.inner.name(), AuditOutcome::Denied).await;
+                        return Ok(serde_json::json!({ "error": refusal }));
+                    }
+                }
                 self.record(self.inner.name(), AuditOutcome::Allowed).await;
                 self.inner.execute(ctx, args).await
             }

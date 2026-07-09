@@ -277,7 +277,7 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
             </label>
             {form.track_inventory && (
               <div className="mt-3 grid grid-cols-3 gap-3 pl-8">
-                <div><label className="label text-xs">SKU {!isEdit && <span className="text-red-500">*</span>}</label><input className="input text-sm py-1.5 font-mono" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. PROD-001" required={!isEdit} /></div>
+                <div><label className="label text-xs">SKU {!product?.track_inventory && <span className="text-red-500">*</span>}</label><input className="input text-sm py-1.5 font-mono" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. PROD-001" required={!product?.track_inventory} /></div>
                 <div><label className="label text-xs">Opening Stock</label><input type="number" className="input text-sm py-1.5" value={form.opening_stock} onChange={(e) => setForm({ ...form, opening_stock: e.target.value })} placeholder="0" /></div>
                 <div><label className="label text-xs">Unit Cost{form.opening_stock && parseFloat(form.opening_stock) > 0 ? <span className="text-red-500"> *</span> : null}</label><input type="number" step="0.01" className="input text-sm py-1.5" value={form.opening_unit_cost} onChange={(e) => setForm({ ...form, opening_unit_cost: e.target.value })} placeholder="0.00" required={!!form.opening_stock && parseFloat(form.opening_stock) > 0} /></div>
               </div>

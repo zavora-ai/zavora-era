@@ -444,6 +444,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let tx_guard = tx.clone();
     let attachments_ingest = attachments.clone();
     let clock_ingest = clock.clone();
+    let session_confirm = session.clone();
     let voice_enabled = entitlements.voice;
     let send_handle = tokio::spawn(async move {
         let mut voice_upsold = false;
@@ -519,6 +520,15 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                 let updated = crate::clock::SessionClock::from_handshake(tz, wd);
                                 info!("🕑 context update: tz {} · posting date {}", updated.tz.name(), updated.effective_posting_date());
                                 *clock_ingest.write().await = updated;
+                            }
+                            Some("confirm") => {
+                                // Approve/Deny click for a pending posting —
+                                // resolves the confirm-before-write gate the
+                                // blocked tool call is awaiting.
+                                let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+                                let approve = msg.get("approve").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let resolved = session_confirm.confirmations.resolve(id, approve).await;
+                                info!("🖊️ confirmation {id}: {} ({})", if approve { "approved" } else { "declined" }, if resolved { "resolved" } else { "stale" });
                             }
                             Some("commit_audio") => {
                                 let _ = runner_send.commit_audio().await;

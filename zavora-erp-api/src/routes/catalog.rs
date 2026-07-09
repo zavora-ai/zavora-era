@@ -64,13 +64,26 @@ pub async fn update_product(
     Json(req): Json<UpdateProductRequest>,
 ) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
 
-    // Confirm the product belongs to the tenant before mutating.
-    let exists = sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 AND entity_id = $2")
+    // Confirm the product belongs to the tenant before mutating, and grab its
+    // current inventory state to detect a tracking enable.
+    let current = sqlx::query_as::<_, (bool, Option<Uuid>)>(
+        "SELECT track_inventory, inventory_item_id FROM products WHERE id = $1 AND entity_id = $2",
+    )
         .bind(id).bind(ctx.entity_id)
         .fetch_optional(state.engine.pool()).await
         .map_err(|e| err_response(zavora_erp_core::ErpError::Database(e)))?;
-    if exists.is_none() {
+    let Some((_, inventory_item_id)) = current else {
         return Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Product".into(), id }));
+    };
+
+    // Enabling tracking on a product with no stock item needs a SKU up front —
+    // validate BEFORE the update so a rejected request changes nothing.
+    let sku = req.sku.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let needs_item = req.track_inventory == Some(true) && inventory_item_id.is_none();
+    if needs_item && sku.is_none() {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: "SKU is required to enable inventory tracking on this product".to_string(),
+        }));
     }
 
     // COALESCE keeps any field the caller omitted. Enum columns are stored as
@@ -109,10 +122,21 @@ pub async fn update_product(
     .bind(id).bind(ctx.entity_id)
     .execute(state.engine.pool()).await;
 
-    match result {
-        Ok(_) => Ok(Json(serde_json::json!({ "id": id, "updated": true }))),
-        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    if let Err(e) = result {
+        return Err(err_response(zavora_erp_core::ErpError::Database(e)));
     }
+
+    // Tracking just enabled on an unlinked product: create + link the stock
+    // item, else the first invoice for it fails at stock-issue time. Existing
+    // products take stock through receive/adjust (no silent opening balance).
+    if needs_item {
+        let sku = sku.expect("validated above");
+        zavora_erp_core::services::catalog::link_inventory_item(&state.engine, ctx.entity_id, id, &sku)
+            .await
+            .map_err(err_response)?;
+    }
+
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 /// DELETE /products/{id} — remove a product, but only when it has never been

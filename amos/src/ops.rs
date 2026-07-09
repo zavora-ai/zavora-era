@@ -442,12 +442,15 @@ impl Ops {
         for tool in tools {
             // Same scope + audit pipeline as the live session: every tool call
             // is checked against the routine's granted scopes and recorded.
+            // No session handle: routines are deliberately unattended, so the
+            // interactive confirm-before-write gate does not apply here.
             builder = builder.tool(crate::scope::ScopedTool::wrap(
                 tool,
                 granted.clone(),
                 format!("amos-ops:{}", spec.name),
                 run_id.to_string(),
                 state.audit.clone(),
+                None,
             ));
         }
         let agent = Arc::new(builder.build().map_err(|e| anyhow!("agent build: {e}"))?);
