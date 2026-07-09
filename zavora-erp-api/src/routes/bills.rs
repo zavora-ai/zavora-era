@@ -218,13 +218,24 @@ pub async fn post_bill(
             let period = zavora_erp_core::services::periods::period_for_date(&state.engine, ctx.entity_id, b.issue_date).await;
             match period {
                 Ok(p) => {
-                    match zavora_erp_core::services::journal::create_and_post(&state.engine, ctx.entity_id, entry_req, p.id, actor).await {
-                        Ok(entry) => {
-                            sqlx::query("UPDATE bills SET status = 'posted', journal_entry_id = $1 WHERE id = $2")
-                                .bind(entry.id).bind(id)
-                                .execute(state.engine.pool()).await.ok();
-                            Ok(Json(serde_json::json!({ "journal_entry_id": entry.id })))
-                        }
+                    // JE + bill status flip commit together — the old two-step
+                    // (post, then UPDATE … .ok()) could leave a posted JE with
+                    // the bill still 'approved', silently double-postable.
+                    let post_atomic = async {
+                        let mut tx = state.engine.pool().begin().await?;
+                        let entry = zavora_erp_core::services::journal::create_and_post_in_tx(
+                            &mut tx, &state.engine, ctx.entity_id, entry_req, p.id, actor,
+                        )
+                        .await?;
+                        sqlx::query("UPDATE bills SET status = 'posted', journal_entry_id = $1 WHERE id = $2 AND entity_id = $3")
+                            .bind(entry.id).bind(id).bind(ctx.entity_id)
+                            .execute(&mut *tx)
+                            .await?;
+                        tx.commit().await?;
+                        Ok::<_, zavora_erp_core::ErpError>(entry)
+                    };
+                    match post_atomic.await {
+                        Ok(entry) => Ok(Json(serde_json::json!({ "journal_entry_id": entry.id }))),
                         Err(e) => Err(err_response(e)),
                     }
                 }
