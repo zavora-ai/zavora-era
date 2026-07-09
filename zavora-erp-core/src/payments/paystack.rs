@@ -51,6 +51,41 @@ pub struct PaystackChargeData {
     pub currency: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    /// Reusable authorization for recurring (subscription renewal) charges.
+    #[serde(default)]
+    pub authorization: Option<PaystackAuthorization>,
+    #[serde(default)]
+    pub customer: Option<PaystackCustomer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaystackAuthorization {
+    /// The token used to re-charge without the customer re-entering details.
+    #[serde(default)]
+    pub authorization_code: Option<String>,
+    /// True when this authorization can be reused for future charges.
+    #[serde(default)]
+    pub reusable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaystackCustomer {
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+impl PaystackChargeData {
+    /// The reusable authorization code, if the charge left one we can re-bill.
+    pub fn reusable_auth_code(&self) -> Option<String> {
+        self.authorization
+            .as_ref()
+            .filter(|a| a.reusable.unwrap_or(true))
+            .and_then(|a| a.authorization_code.clone())
+    }
+
+    pub fn customer_email(&self) -> Option<String> {
+        self.customer.as_ref().and_then(|c| c.email.clone())
+    }
 }
 
 impl PaystackEvent {

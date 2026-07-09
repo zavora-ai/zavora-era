@@ -222,7 +222,7 @@ pub async fn paystack_webhook(
     // A subscription charge activates the tenant's plan; an invoice charge
     // records a customer payment against the invoice.
     if purpose == "subscription" {
-        return match zavora_erp_core::services::billing::activate_from_reference(&state.engine, entity_id, &event.data.reference).await {
+        return match zavora_erp_core::services::billing::activate_from_charge(&state.engine, entity_id, &event.data).await {
             Ok(()) => Ok(Json(serde_json::json!({ "status": "subscription_activated" }))),
             Err(e) => Err(err_response(e)),
         };

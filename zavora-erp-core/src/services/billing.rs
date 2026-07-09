@@ -135,15 +135,19 @@ pub async fn start_checkout(
 }
 
 /// Activate a subscription after a verified Paystack `charge.success` for a
-/// subscription transaction. Idempotent: activating an already-active period is
-/// harmless (it re-stamps the same month). Extends the paid-through date one
-/// month from now.
-pub async fn activate_from_reference(engine: &ErpEngine, entity_id: Uuid, reference: &str) -> ErpResult<()> {
+/// subscription transaction, capturing the reusable authorization so renewals
+/// can re-charge without the customer. Idempotent. Extends the paid-through
+/// date 30 days from now.
+pub async fn activate_from_charge(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    data: &crate::payments::paystack::PaystackChargeData,
+) -> ErpResult<()> {
     let plan: Option<String> = sqlx::query_scalar(
         "SELECT plan FROM paystack_transactions WHERE entity_id = $1 AND reference = $2 AND purpose = 'subscription'",
     )
     .bind(entity_id)
-    .bind(reference)
+    .bind(&data.reference)
     .fetch_optional(engine.pool())
     .await?
     .flatten();
@@ -152,19 +156,161 @@ pub async fn activate_from_reference(engine: &ErpEngine, entity_id: Uuid, refere
     };
 
     let period_end = Utc::now() + Duration::days(30);
-    set_subscription(engine, entity_id, &plan, "active", Some(period_end)).await?;
+    let mut patch = serde_json::json!({
+        "plan": plan,
+        "status": "active",
+        "current_period_end": period_end,
+        "failed_attempts": 0,
+        "updated_at": Utc::now(),
+    });
+    // Store the reusable authorization + email for automatic renewal.
+    if let Some(code) = data.reusable_auth_code() {
+        patch["authorization_code"] = code.into();
+    }
+    if let Some(email) = data.customer_email() {
+        patch["billing_email"] = email.into();
+    }
+    merge_subscription(engine, entity_id, patch, Some(&plan)).await?;
 
     sqlx::query("UPDATE paystack_transactions SET status = 'success' WHERE entity_id = $1 AND reference = $2")
         .bind(entity_id)
-        .bind(reference)
+        .bind(&data.reference)
         .execute(engine.pool())
         .await?;
     Ok(())
 }
 
-/// Write the tenant's subscription state onto entity_settings.subscription, and
-/// mirror the plan into branding.plan (where signup already records it) so both
-/// stay consistent.
+/// Cancel a tenant's subscription. Access continues until the paid-through date
+/// (`current_period_end`); renewal stops.
+pub async fn cancel(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<()> {
+    merge_subscription(
+        engine,
+        entity_id,
+        serde_json::json!({ "status": "cancelled", "updated_at": Utc::now() }),
+        None,
+    )
+    .await
+}
+
+/// Charge every active subscription whose paid-through date has passed, using
+/// the stored Paystack authorization. Returns (renewed, failed) counts. Called
+/// by the scheduler. A subscription with no saved authorization, or that fails
+/// 3 times, is marked `past_due` (kept, not deleted — an operator can follow up).
+pub async fn process_renewals(engine: &ErpEngine) -> ErpResult<(u32, u32)> {
+    let Some(secret) = crate::payments::paystack::secret_key() else {
+        return Ok((0, 0)); // billing not configured on this instance
+    };
+
+    // Due = active, past period end, on a paid plan.
+    let due = sqlx::query_as::<_, (Uuid, serde_json::Value)>(
+        r#"SELECT entity_id, subscription FROM entity_settings
+           WHERE subscription->>'status' = 'active'
+             AND subscription->>'current_period_end' IS NOT NULL
+             AND (subscription->>'current_period_end')::timestamptz < NOW()"#,
+    )
+    .fetch_all(engine.pool())
+    .await?;
+
+    let mut renewed = 0u32;
+    let mut failed = 0u32;
+    for (entity_id, sub) in due {
+        let plan_key = sub.get("plan").and_then(|v| v.as_str()).unwrap_or("");
+        let Some(plan) = plan_by_key(plan_key) else { continue };
+        if plan.monthly_kes == 0 {
+            continue;
+        }
+        let auth_code = sub.get("authorization_code").and_then(|v| v.as_str());
+        let email = sub.get("billing_email").and_then(|v| v.as_str());
+        let attempts = sub.get("failed_attempts").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        let charged = match (auth_code, email) {
+            (Some(code), Some(email)) if !code.is_empty() => {
+                charge_authorization(&secret, email, code, plan.monthly_kes).await
+            }
+            _ => false, // no saved authorization to charge
+        };
+
+        if charged {
+            let period_end = Utc::now() + Duration::days(30);
+            let _ = merge_subscription(
+                engine,
+                entity_id,
+                serde_json::json!({ "current_period_end": period_end, "failed_attempts": 0, "updated_at": Utc::now() }),
+                None,
+            )
+            .await;
+            renewed += 1;
+        } else {
+            let next = attempts + 1;
+            let status = if next >= 3 { "past_due" } else { "active" };
+            let _ = merge_subscription(
+                engine,
+                entity_id,
+                serde_json::json!({ "status": status, "failed_attempts": next, "updated_at": Utc::now() }),
+                None,
+            )
+            .await;
+            failed += 1;
+        }
+    }
+    Ok((renewed, failed))
+}
+
+/// Charge a saved Paystack authorization for a renewal. Returns true on a
+/// successful charge.
+async fn charge_authorization(secret: &str, email: &str, auth_code: &str, amount_kes: i64) -> bool {
+    let body = serde_json::json!({
+        "email": email,
+        "amount": (amount_kes * 100).to_string(),
+        "currency": "KES",
+        "authorization_code": auth_code,
+    });
+    let resp: Result<serde_json::Value, _> = async {
+        reqwest::Client::new()
+            .post("https://api.paystack.co/transaction/charge_authorization")
+            .bearer_auth(secret)
+            .json(&body)
+            .send()
+            .await?
+            .json()
+            .await
+    }
+    .await;
+    matches!(
+        resp,
+        Ok(v) if v["status"].as_bool() == Some(true)
+            && v["data"]["status"].as_str() == Some("success")
+    )
+}
+
+/// Merge a patch into entity_settings.subscription, preserving existing keys
+/// (so a status update doesn't wipe the stored authorization). When `plan` is
+/// given it's also mirrored into branding.plan.
+async fn merge_subscription(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    patch: serde_json::Value,
+    plan: Option<&str>,
+) -> ErpResult<()> {
+    let branding_plan = plan.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null);
+    sqlx::query(
+        r#"UPDATE entity_settings
+           SET subscription = COALESCE(subscription, '{}'::jsonb) || $1,
+               branding = CASE WHEN $2::jsonb = 'null'::jsonb THEN branding
+                               ELSE COALESCE(branding, '{}'::jsonb) || jsonb_build_object('plan', $2::jsonb) END
+           WHERE entity_id = $3"#,
+    )
+    .bind(&patch)
+    .bind(&branding_plan)
+    .bind(entity_id)
+    .execute(engine.pool())
+    .await?;
+    engine.invalidate_config(entity_id).await;
+    Ok(())
+}
+
+/// Set (or reset) a subscription to a specific plan/status without a payment —
+/// used for free-plan trials and the initial pending state.
 async fn set_subscription(
     engine: &ErpEngine,
     entity_id: Uuid,
@@ -172,25 +318,18 @@ async fn set_subscription(
     status: &str,
     period_end: Option<chrono::DateTime<Utc>>,
 ) -> ErpResult<()> {
-    let sub = serde_json::json!({
-        "plan": plan,
-        "status": status,
-        "current_period_end": period_end,
-        "updated_at": Utc::now(),
-    });
-    sqlx::query(
-        r#"UPDATE entity_settings
-           SET subscription = $1,
-               branding = COALESCE(branding, '{}'::jsonb) || jsonb_build_object('plan', $2::text)
-           WHERE entity_id = $3"#,
+    merge_subscription(
+        engine,
+        entity_id,
+        serde_json::json!({
+            "plan": plan,
+            "status": status,
+            "current_period_end": period_end,
+            "updated_at": Utc::now(),
+        }),
+        Some(plan),
     )
-    .bind(sub)
-    .bind(plan)
-    .bind(entity_id)
-    .execute(engine.pool())
-    .await?;
-    engine.invalidate_config(entity_id).await;
-    Ok(())
+    .await
 }
 
 #[cfg(test)]

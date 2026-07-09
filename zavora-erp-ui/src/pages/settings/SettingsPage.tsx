@@ -7,6 +7,7 @@ import PostingAccountsTab from './PostingAccountsTab';
 import PostingGroupsTab from './PostingGroupsTab';
 import NotificationPrefsTab from './NotificationPrefsTab';
 import NotificationProvidersTab from './NotificationProvidersTab';
+import SubscriptionTab from './SubscriptionTab';
 import { SkeletonLines } from '../../components/shared/Skeleton';
 import ErrorRetry from '../../components/shared/ErrorRetry';
 import { Save, CheckCircle, AlertCircle } from 'lucide-react';
@@ -15,7 +16,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data: config, isLoading, isError, refetch } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
 
-  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting' | 'posting-groups' | 'notifications' | 'providers'>('company');
+  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting' | 'posting-groups' | 'notifications' | 'providers' | 'subscription'>('company');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Controlled form state for each tab
@@ -102,6 +103,7 @@ export default function SettingsPage() {
     { key: 'posting-groups', label: 'Posting Groups' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'providers', label: 'Providers' },
+    { key: 'subscription', label: 'Subscription' },
   ];
 
   return (
@@ -244,6 +246,7 @@ export default function SettingsPage() {
         {tab === 'posting-groups' && <PostingGroupsTab />}
         {tab === 'notifications' && <NotificationPrefsTab />}
         {tab === 'providers' && <NotificationProvidersTab />}
+        {tab === 'subscription' && <SubscriptionTab />}
 
         {tab !== 'posting' && tab !== 'posting-groups' && tab !== 'notifications' && tab !== 'providers' && (
           <div className="mt-6 pt-4 border-t flex justify-end">

@@ -140,6 +140,14 @@ async fn main() -> anyhow::Result<()> {
                 Ok(_) => {}
                 Err(e) => tracing::error!("Leave accrual scheduler error: {}", e),
             }
+            // Renew subscriptions whose paid-through date has passed, charging the
+            // saved Paystack authorization (no-op when billing isn't configured).
+            match zavora_erp_core::services::billing::process_renewals(&scheduler_engine).await {
+                Ok((renewed, failed)) if renewed > 0 || failed > 0 =>
+                    tracing::info!("Subscription renewals: {renewed} renewed, {failed} failed"),
+                Ok(_) => {}
+                Err(e) => tracing::error!("Subscription renewal error: {}", e),
+            }
         }
     });
 
@@ -361,6 +369,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payments/mpesa-stk-push", post(routes::payments::mpesa_stk_push))
         .route("/api/v1/payments/paystack/initialize", post(routes::payments::paystack_initialize))
         .route("/api/v1/billing/checkout", post(routes::billing::checkout))
+        .route("/api/v1/billing/cancel", post(routes::billing::cancel))
         .route("/api/v1/billing/subscription", get(routes::billing::get_subscription))
         // Transactions (categorisation queue)
         .route("/api/v1/transactions", get(routes::transactions::list))
