@@ -69,9 +69,9 @@ pub async fn create_supplier_credit_note(
         // Full reversal — copy all lines from the original bill (mirrors the
         // customer credit note pattern in create_credit_note()).
         if let Some(bill_id) = req.applies_to_bill {
-            let bill_lines = sqlx::query_as::<_, (Option<Uuid>, String, Decimal, Decimal, Decimal, String, String, Decimal, Decimal)>(
+            let bill_lines = sqlx::query_as::<_, (Option<Uuid>, String, Decimal, Decimal, Decimal, String, String, Decimal, Decimal, serde_json::Value)>(
                 r#"SELECT product_id, description, quantity, unit_price, discount_percent,
-                          account_code, vat_treatment, line_total, vat_amount
+                          account_code, vat_treatment, line_total, vat_amount, dimensions
                    FROM bill_lines WHERE bill_id = $1"#,
             )
             .bind(bill_id)
@@ -84,7 +84,7 @@ pub async fn create_supplier_credit_note(
                 });
             }
 
-            for (product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount) in &bill_lines {
+            for (product_id, description, quantity, unit_price, discount_percent, account_code, vat_treatment, line_total, vat_amount, dims) in &bill_lines {
                 lines.push(InvoiceLine {
                     id: Uuid::new_v4(),
                     product_id: *product_id,
@@ -97,7 +97,9 @@ pub async fn create_supplier_credit_note(
                         .unwrap_or(crate::types::VatTreatment::Standard16),
                     line_total: *line_total,
                     vat_amount: *vat_amount,
-                    dimensions: Default::default(),
+                    // Reversal must credit the SAME analytical buckets the bill
+                    // debited, or dimension reports show phantom net spend.
+                    dimensions: serde_json::from_value(dims.clone()).unwrap_or_default(),
                 });
             }
         } else {
@@ -197,7 +199,7 @@ pub async fn create_supplier_credit_note(
             currency: currency.clone(),
             fx_rate: Some(fx_rate),
             description: Some(format!("SCN reversal: {}", line.description)),
-            dimensions: None,
+            dimensions: (!line.dimensions.is_empty()).then(|| line.dimensions.clone()),
         });
         if line.vat_amount > Decimal::ZERO {
             let vat_account = crate::posting::groups::resolve_vat_input(engine, entity_id, req.vendor_id, line.product_id)
