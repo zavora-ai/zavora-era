@@ -66,6 +66,7 @@ pub mod audit;
 pub mod tenant;
 pub mod posting;
 pub mod auth;
+pub mod platform;
 pub mod money;
 pub mod crypto;
 pub mod etims;

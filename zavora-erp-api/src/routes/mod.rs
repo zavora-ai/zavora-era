@@ -56,6 +56,7 @@ pub mod pos;
 pub mod etims;
 pub mod portal;
 pub mod portal_auth;
+pub mod platform;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use zavora_erp_core::ErpError;

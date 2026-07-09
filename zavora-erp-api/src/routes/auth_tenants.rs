@@ -278,6 +278,15 @@ pub async fn create_tenant(
     .await
     .map_err(er)?;
 
+    let _ = zavora_erp_core::services::platform::upsert_tenant(
+        state.engine.pool(),
+        provisioned.entity_id,
+        &provisioned.organization_name,
+        Some(org_type),
+        None,
+    )
+    .await;
+
     // Optional sample-company seed (best-effort; never fails tenant creation).
     if req.with_sample_data {
         match zavora_erp_core::services::sample_data::seed_sample_company(

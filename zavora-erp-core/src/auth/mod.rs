@@ -146,6 +146,10 @@ pub struct Claims {
     /// Refresh-token id (present on refresh tokens; used for revocation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jti: Option<Uuid>,
+    /// When set, this is a platform-operator support session acting as `sub`
+    /// inside `entity_id`. Audit / UI can show a support banner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impersonator_id: Option<Uuid>,
     pub iat: i64,
     pub exp: i64,
 }
@@ -191,7 +195,50 @@ pub fn issue_token_pair(
     entity_id: Uuid,
     role: &str,
 ) -> ErpResult<TokenPair> {
+    issue_token_pair_opts(config, user_id, entity_id, role, None, None, None)
+}
+
+/// Issue a short-lived support (impersonation) session for a platform operator
+/// acting as a tenant user. Default access TTL is 30 minutes; refresh 2 hours.
+pub fn issue_impersonation_token_pair(
+    config: &JwtConfig,
+    target_user_id: Uuid,
+    entity_id: Uuid,
+    role: &str,
+    impersonator_id: Uuid,
+) -> ErpResult<TokenPair> {
+    // Support sessions are deliberately shorter than normal logins.
+    let access_ttl = std::env::var("PLATFORM_IMPERSONATE_ACCESS_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30 * 60);
+    let refresh_ttl = std::env::var("PLATFORM_IMPERSONATE_REFRESH_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2 * 60 * 60);
+    issue_token_pair_opts(
+        config,
+        target_user_id,
+        entity_id,
+        role,
+        Some(impersonator_id),
+        Some(access_ttl),
+        Some(refresh_ttl),
+    )
+}
+
+fn issue_token_pair_opts(
+    config: &JwtConfig,
+    user_id: Uuid,
+    entity_id: Uuid,
+    role: &str,
+    impersonator_id: Option<Uuid>,
+    access_ttl_secs: Option<i64>,
+    refresh_ttl_secs: Option<i64>,
+) -> ErpResult<TokenPair> {
     let now = Utc::now();
+    let access_ttl = access_ttl_secs.unwrap_or(config.access_ttl_secs);
+    let refresh_ttl = refresh_ttl_secs.unwrap_or(config.refresh_ttl_secs);
     let access_claims = Claims {
         sub: user_id,
         entity_id,
@@ -199,12 +246,13 @@ pub fn issue_token_pair(
         token_type: TOKEN_TYPE_ACCESS.to_string(),
         iss: config.issuer.clone(),
         jti: None,
+        impersonator_id,
         iat: now.timestamp(),
-        exp: (now + Duration::seconds(config.access_ttl_secs)).timestamp(),
+        exp: (now + Duration::seconds(access_ttl)).timestamp(),
     };
 
     let refresh_jti = Uuid::new_v4();
-    let refresh_expires_at = now + Duration::seconds(config.refresh_ttl_secs);
+    let refresh_expires_at = now + Duration::seconds(refresh_ttl);
     let refresh_claims = Claims {
         sub: user_id,
         entity_id,
@@ -212,6 +260,7 @@ pub fn issue_token_pair(
         token_type: TOKEN_TYPE_REFRESH.to_string(),
         iss: config.issuer.clone(),
         jti: Some(refresh_jti),
+        impersonator_id,
         iat: now.timestamp(),
         exp: refresh_expires_at.timestamp(),
     };
@@ -222,7 +271,7 @@ pub fn issue_token_pair(
     Ok(TokenPair {
         access_token,
         refresh_token,
-        expires_in: config.access_ttl_secs,
+        expires_in: access_ttl,
         refresh_jti,
         refresh_expires_at,
     })
@@ -414,9 +463,26 @@ mod tests {
         assert_eq!(claims.entity_id, entity_id);
         assert_eq!(claims.role, "Owner");
         assert_eq!(claims.token_type, TOKEN_TYPE_ACCESS);
+        assert!(claims.impersonator_id.is_none());
 
         let r = decode_refresh_token(&cfg, &pair.refresh_token).unwrap();
         assert_eq!(r.jti, Some(pair.refresh_jti));
+    }
+
+    #[test]
+    fn impersonation_token_carries_impersonator_and_shorter_ttl() {
+        let cfg = test_config();
+        let target = Uuid::new_v4();
+        let entity = Uuid::new_v4();
+        let ops = Uuid::new_v4();
+        let pair = issue_impersonation_token_pair(&cfg, target, entity, "Owner", ops).unwrap();
+        assert_eq!(pair.expires_in, 30 * 60);
+        let claims = decode_access_token(&cfg, &pair.access_token).unwrap();
+        assert_eq!(claims.sub, target);
+        assert_eq!(claims.entity_id, entity);
+        assert_eq!(claims.impersonator_id, Some(ops));
+        let r = decode_refresh_token(&cfg, &pair.refresh_token).unwrap();
+        assert_eq!(r.impersonator_id, Some(ops));
     }
 
     #[test]

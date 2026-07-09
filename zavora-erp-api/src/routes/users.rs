@@ -33,20 +33,29 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-fn token_response(user: &AuthUserRow, pair: &TokenPair) -> serde_json::Value {
+fn token_response_ext(
+    user: &AuthUserRow,
+    pair: &TokenPair,
+    impersonator_id: Option<Uuid>,
+) -> serde_json::Value {
     // Note: the refresh token is intentionally NOT in the body — it is delivered
     // only as an httpOnly cookie so it is never exposed to JavaScript.
+    let mut user_json = serde_json::json!({
+        "user_id": user.id,
+        "entity_id": user.entity_id,
+        "role": user.role,
+        "display_name": user.display_name,
+        "email": user.email,
+    });
+    if let Some(imp) = impersonator_id {
+        user_json["impersonated_by"] = serde_json::json!(imp);
+        user_json["support_session"] = serde_json::json!(true);
+    }
     serde_json::json!({
         "access_token": pair.access_token,
         "token_type": "Bearer",
         "expires_in": pair.expires_in,
-        "user": {
-            "user_id": user.id,
-            "entity_id": user.entity_id,
-            "role": user.role,
-            "display_name": user.display_name,
-            "email": user.email,
-        }
+        "user": user_json,
     })
 }
 
@@ -83,13 +92,17 @@ fn read_refresh_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
 /// Build a success response: access token + user in the body, refresh token in
 /// an httpOnly cookie.
 fn auth_success(user: &AuthUserRow, pair: &TokenPair) -> Response {
+    auth_success_ext(user, pair, None)
+}
+
+fn auth_success_ext(user: &AuthUserRow, pair: &TokenPair, impersonator_id: Option<Uuid>) -> Response {
     let max_age = (pair.refresh_expires_at - chrono::Utc::now())
         .num_seconds()
         .max(0);
     let cookie = set_refresh_cookie(&pair.refresh_token, max_age);
     (
         [(axum::http::header::SET_COOKIE, cookie)],
-        Json(token_response(user, pair)),
+        Json(token_response_ext(user, pair, impersonator_id)),
     )
         .into_response()
 }
@@ -176,6 +189,16 @@ pub async fn login(
         return Err(invalid());
     }
 
+    // Platform ops suspension blocks tenant sign-in (Phase 1).
+    if zavora_erp_core::services::platform::is_tenant_suspended(state.engine.pool(), user.entity_id)
+        .await
+        .map_err(er)?
+    {
+        return Err(er(ErpError::Unauthorized {
+            message: "This organization has been suspended. Contact support.".into(),
+        }));
+    }
+
     let pair = auth::issue_token_pair(jwt_config(), user.id, user.entity_id, &user.role)
         .map_err(er)?;
     store_refresh_token(state.engine.pool(), &pair, &user).await.map_err(er)?;
@@ -225,8 +248,31 @@ pub async fn refresh(
             message: "User no longer active".to_string(),
         }))?;
 
-    let pair = auth::issue_token_pair(jwt_config(), user.id, user.entity_id, &user.role)
-        .map_err(er)?;
+    // Suspended tenants cannot refresh (support impersonation issues a new pair
+    // via the platform plane when ops need access).
+    if zavora_erp_core::services::platform::is_tenant_suspended(state.engine.pool(), user.entity_id)
+        .await
+        .map_err(er)?
+        && claims.impersonator_id.is_none()
+    {
+        return Err(er(ErpError::Unauthorized {
+            message: "This organization has been suspended. Contact support.".into(),
+        }));
+    }
+
+    // Preserve support-session claim across refresh when present.
+    let pair = if let Some(impersonator) = claims.impersonator_id {
+        auth::issue_impersonation_token_pair(
+            jwt_config(),
+            user.id,
+            user.entity_id,
+            &user.role,
+            impersonator,
+        )
+        .map_err(er)?
+    } else {
+        auth::issue_token_pair(jwt_config(), user.id, user.entity_id, &user.role).map_err(er)?
+    };
 
     // Rotate: revoke the presented token, store the new one — atomically.
     let mut tx = state.engine.pool().begin().await.map_err(|e| er(ErpError::Database(e)))?;
@@ -247,7 +293,7 @@ pub async fn refresh(
     .map_err(|e| er(ErpError::Database(e)))?;
     tx.commit().await.map_err(|e| er(ErpError::Database(e)))?;
 
-    Ok(auth_success(&user, &pair))
+    Ok(auth_success_ext(&user, &pair, claims.impersonator_id))
 }
 
 /// POST /auth/logout — revoke the current refresh token and clear its cookie.

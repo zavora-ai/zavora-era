@@ -323,6 +323,19 @@ pub async fn signup(
         }
     }
 
+    // 3a2. Platform tenant directory (ops plane). Best-effort.
+    if let Err(e) = zavora_erp_core::services::platform::upsert_tenant(
+        state.engine.pool(),
+        provisioned.entity_id,
+        &provisioned.organization_name,
+        None,
+        plan.as_deref(),
+    )
+    .await
+    {
+        tracing::warn!(entity_id = %provisioned.entity_id, "platform tenant upsert failed (continuing): {e}");
+    }
+
     // 3b. Optional sample-company seed (best-effort; never fails signup). Runs
     //     after the tenant + COA are committed so the new user lands on a
     //     populated dashboard to explore.
