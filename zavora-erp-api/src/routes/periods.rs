@@ -45,6 +45,8 @@ pub async fn close(
         period_id: id,
         close_type,
         closed_by: zavora_erp_core::AgentOrUserId::User(ctx.user_id),
+        // Hard-close checklist override — explicit opt-in, recorded in audit.
+        force: body.get("force").and_then(|v| v.as_bool()).unwrap_or(false),
     };
     match svc::close_period(&state.engine, ctx.entity_id, close_req).await {
         Ok(period) => Ok(Json(serde_json::to_value(period).unwrap_or_default())),
