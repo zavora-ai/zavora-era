@@ -399,6 +399,14 @@ export const registerEtimsProduct = (productId: string) => api.post(`/etims/prod
 
 // === Assets ===
 export const getAssets = () => api.get('/assets');
+// Amortisation schedules (prepayments & deferred revenue).
+export const getAmortization = () => api.get('/amortization');
+export const createAmortization = (data: {
+  kind: string; description: string; balance_account: string; pnl_account: string;
+  total_amount: number; periods: number; start_date: string;
+}) => api.post('/amortization', data);
+export const runAmortization = () => api.post('/amortization/run', {});
+export const cancelAmortization = (id: string) => api.post(`/amortization/${id}/cancel`, {});
 export const createAsset = (data: any) => api.post('/assets', data);
 export const runDepreciation = () => api.post('/assets/depreciation/run');
 

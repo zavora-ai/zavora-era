@@ -148,6 +148,13 @@ async fn main() -> anyhow::Result<()> {
                 Ok(_) => {}
                 Err(e) => tracing::error!("Subscription renewal error: {}", e),
             }
+            // Amortise prepayments / deferred revenue — post any due monthly
+            // installments across all tenants (idempotent catch-up).
+            match zavora_erp_core::services::amortization::run_all(&scheduler_engine).await {
+                Ok(n) if n > 0 => tracing::info!("Amortisation posted for {} schedule(s)", n),
+                Ok(_) => {}
+                Err(e) => tracing::error!("Amortisation scheduler error: {}", e),
+            }
         }
     });
 
@@ -454,6 +461,10 @@ async fn main() -> anyhow::Result<()> {
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
+        // Amortisation schedules (prepayments & deferred revenue)
+        .route("/api/v1/amortization", get(routes::amortization::list).post(routes::amortization::create))
+        .route("/api/v1/amortization/run", post(routes::amortization::run))
+        .route("/api/v1/amortization/{id}/cancel", post(routes::amortization::cancel))
         // FX Rates
         .route("/api/v1/fx-rates", get(routes::fx::list).post(routes::fx::upsert))
         .route("/api/v1/fx-rates/{id}", delete(routes::fx::delete))
