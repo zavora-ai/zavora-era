@@ -217,7 +217,7 @@ pub async fn dashboard_summary_as_at(
 
     // Total receivable
     let total_receivable = sqlx::query_scalar::<_, Decimal>(
-        "SELECT COALESCE(SUM(balance_due), 0) FROM invoices WHERE entity_id = $1 AND status NOT IN ('paid', 'voided')",
+        "SELECT COALESCE(SUM(balance_due), 0) FROM invoices WHERE entity_id = $1 AND status NOT IN ('draft', 'paid', 'voided', 'cancelled', 'written_off') AND invoice_type = 'invoice'",
     )
     .bind(entity_id)
     .fetch_one(engine.pool())
@@ -226,7 +226,7 @@ pub async fn dashboard_summary_as_at(
 
     // Overdue receivable
     let overdue_receivable = sqlx::query_scalar::<_, Decimal>(
-        "SELECT COALESCE(SUM(balance_due), 0) FROM invoices WHERE entity_id = $1 AND status NOT IN ('paid', 'voided') AND due_date < $2",
+        "SELECT COALESCE(SUM(balance_due), 0) FROM invoices WHERE entity_id = $1 AND status NOT IN ('draft', 'paid', 'voided', 'cancelled', 'written_off') AND invoice_type = 'invoice' AND due_date < $2",
     )
     .bind(entity_id)
     .bind(today)
@@ -235,7 +235,7 @@ pub async fn dashboard_summary_as_at(
     .unwrap_or(Decimal::ZERO);
 
     let overdue_invoice_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM invoices WHERE entity_id = $1 AND status NOT IN ('paid', 'voided') AND due_date < $2",
+        "SELECT COUNT(*) FROM invoices WHERE entity_id = $1 AND status NOT IN ('draft', 'paid', 'voided', 'cancelled', 'written_off') AND invoice_type = 'invoice' AND due_date < $2",
     )
     .bind(entity_id)
     .bind(today)
@@ -245,7 +245,7 @@ pub async fn dashboard_summary_as_at(
 
     // Total payable
     let total_payable = sqlx::query_scalar::<_, Decimal>(
-        "SELECT COALESCE(SUM(balance_due), 0) FROM bills WHERE entity_id = $1 AND status NOT IN ('paid', 'cancelled')",
+        "SELECT COALESCE(SUM(balance_due), 0) FROM bills WHERE entity_id = $1 AND status NOT IN ('draft', 'pending_approval', 'paid', 'cancelled')",
     )
     .bind(entity_id)
     .fetch_one(engine.pool())
@@ -253,7 +253,7 @@ pub async fn dashboard_summary_as_at(
     .unwrap_or(Decimal::ZERO);
 
     let overdue_payable = sqlx::query_scalar::<_, Decimal>(
-        "SELECT COALESCE(SUM(balance_due), 0) FROM bills WHERE entity_id = $1 AND status NOT IN ('paid', 'cancelled') AND due_date < $2",
+        "SELECT COALESCE(SUM(balance_due), 0) FROM bills WHERE entity_id = $1 AND status NOT IN ('draft', 'pending_approval', 'paid', 'cancelled') AND due_date < $2",
     )
     .bind(entity_id)
     .bind(today)
@@ -262,7 +262,7 @@ pub async fn dashboard_summary_as_at(
     .unwrap_or(Decimal::ZERO);
 
     let overdue_bill_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM bills WHERE entity_id = $1 AND status NOT IN ('paid', 'cancelled') AND due_date < $2",
+        "SELECT COUNT(*) FROM bills WHERE entity_id = $1 AND status NOT IN ('draft', 'pending_approval', 'paid', 'cancelled') AND due_date < $2",
     )
     .bind(entity_id)
     .bind(today)
@@ -383,7 +383,8 @@ pub async fn dashboard_summary_as_at(
             COALESCE(SUM(balance_due) FILTER (WHERE due_date > $3), 0),
             COUNT(*) FILTER (WHERE due_date > $3)
            FROM invoices
-           WHERE entity_id = $1 AND status NOT IN ('paid','voided','draft') AND balance_due > 0"#,
+           WHERE entity_id = $1 AND status NOT IN ('draft','paid','voided','cancelled','written_off')
+             AND invoice_type = 'invoice' AND balance_due > 0"#,
     )
     .bind(entity_id)
     .bind(today)
@@ -459,7 +460,8 @@ pub async fn dashboard_summary_as_at(
         r#"SELECT i.id, i.number, c.name, i.gross_total, i.balance_due, i.due_date
            FROM invoices i
            LEFT JOIN customers c ON c.id = i.customer_id AND c.entity_id = i.entity_id
-           WHERE i.entity_id = $1 AND i.status NOT IN ('paid','voided','draft') AND i.balance_due > 0
+           WHERE i.entity_id = $1 AND i.status NOT IN ('draft','paid','voided','cancelled','written_off')
+             AND i.invoice_type = 'invoice' AND i.balance_due > 0
            ORDER BY i.due_date ASC
            LIMIT 8"#,
     )
@@ -1536,7 +1538,10 @@ async fn ar_ageing(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
                i.due_date
            FROM invoices i
            JOIN customers c ON c.id = i.customer_id
-           WHERE i.entity_id = $1 AND i.status NOT IN ('paid', 'voided') AND i.balance_due > 0"#,
+           WHERE i.entity_id = $1
+             AND i.status NOT IN ('draft', 'paid', 'voided', 'cancelled', 'written_off')
+             AND i.invoice_type = 'invoice'
+             AND i.balance_due > 0"#,
     )
     .bind(entity_id)
     .fetch_all(engine.pool())
@@ -1596,7 +1601,9 @@ async fn ap_ageing(engine: &ErpEngine, entity_id: Uuid, params: ReportParameters
                b.due_date
            FROM bills b
            JOIN vendors v ON v.id = b.vendor_id
-           WHERE b.entity_id = $1 AND b.status NOT IN ('paid', 'cancelled') AND b.balance_due > 0"#,
+           WHERE b.entity_id = $1
+             AND b.status NOT IN ('draft', 'pending_approval', 'paid', 'cancelled')
+             AND b.balance_due > 0"#,
     )
     .bind(entity_id)
     .fetch_all(engine.pool())
