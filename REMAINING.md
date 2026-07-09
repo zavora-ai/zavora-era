@@ -132,48 +132,53 @@ below break **book quality** or control-vs-subledger sign-off.
 
 ### 1.2 P1 — Control, close, tax reports, FX scope
 
-- ⬜ **P1 — No AR/AP control-account reconciliation report.**  
-  Subledger = open invoices/bills; control = GL `1200`/`3010` (or group
-  accounts via `posting/groups.rs`). No as-at Σ subledger == control check.
+- ✅ **P1 — No AR/AP control-account reconciliation report.** *(Fixed
+  2026-07-09.)* New `ControlAccountRecon` report: Σ open invoice/bill balances
+  (functional) vs the posted GL balance of every control account each side
+  posts to (flat setup + business-group overrides), with per-side difference
+  and in-balance flag. In the Reports launcher + CSV export.
 
-- ⬜ **P1 — Soft close traps operational AR/AP.**  
-  Soft-closed periods allow only `JournalSource::Manual`
-  (`services/journal.rs` `enforce_period_status`). Manual JE cannot post to
-  `is_control` AR/AP (`validate_entry`). Late invoice into soft-closed month
-  requires reopen; no approved “prior-period document” source.
+- ✅ **P1 — Soft close traps operational AR/AP.** *(Fixed 2026-07-09.)* New
+  per-tenant `period_controls.soft_close_allow_documents` (default OFF,
+  migration `051`): when enabled, document sources (invoice / bill / credit
+  note / payment) may post into soft-closed periods while everything else
+  stays locked. Settable via the settings API (`SettingsPatch.period_controls`);
+  Settings UI toggle is a follow-up.
 
-- ⬜ **P1 — Bill post not atomic with status update.**  
-  `post_bill` posts JE then separate `UPDATE bills SET status='posted'` with
-  `.ok()` (`routes/bills.rs`) — JE can commit while bill stays approved (or
-  status update fails silently). Invoice post uses one tx (`post_invoice`).
+- ✅ **P1 — Bill post not atomic with status update.** *(Fixed 2026-07-09.)*
+  `post_bill` now posts the JE and flips the bill to `posted` in ONE
+  transaction (`create_and_post_in_tx`), mirroring `post_invoice`.
 
-- ⬜ **P1 — Journal reverse does not set original status to `reversed`.**  
-  `reverse_journal_entry` posts `REV-…` only; original stays `posted`
-  (`services/journal.rs`). DB trigger allows status→reversed; app unused.
-  Idempotency is reference-based only.
+- ✅ **P1 — Journal reverse does not set original status to `reversed`.**
+  *(Fixed 2026-07-09.)* The reversal posting and the original's status flip to
+  `reversed` commit in the same transaction.
 
-- ⬜ **P1 — `create_and_post_in_tx` skips account existence/active checks.**  
-  Only balance + period; `validate_entry` not called on system paths
-  (`services/journal.rs`). Bad codes from services can land.
+- ✅ **P1 — `create_and_post_in_tx` skips account existence/active checks.**
+  *(Fixed 2026-07-09.)* Every posting now verifies each line account exists
+  and is active, naming the offenders in the error. Test harnesses seed the
+  Kenya-standard chart so integration tests post like production tenants.
 
-- ⬜ **P1 — VAT return uses single flat VAT accounts only.**  
-  `vat_return` reads `posting.vat_output` / `vat_input` movement only
-  (`services/reporting.rs`). Posting-group matrix can route VAT to other
-  accounts → understated return.
+- ✅ **P1 — VAT return uses single flat VAT accounts only.** *(Fixed
+  2026-07-09.)* The return aggregates every VAT account the tenant posts to:
+  flat setup + all accounts routed by `vat_posting_matrix`.
 
-- ⬜ **P1 — FX revaluation revalues any residual FCY account.**  
-  `run_fx_revaluation` groups all non-base journal residues
-  (`services/fx.rs`), including potential P&L history; should limit to
-  **monetary BS** items (IAS 21). Combined with bill FCY bug, AP often never
-  enters the reval set.
+- ✅ **P1 — FX revaluation revalues any residual FCY account.** *(Fixed
+  2026-07-09.)* Scope is now monetary balance-sheet items only (IAS 21):
+  Asset/Liability/Contra types minus inventory, fixed assets and accumulated
+  depreciation. With the bill-FCY fix (§1.1), open FCY AP now enters the
+  reval set correctly.
 
-- ⬜ **P1 — Supplier CN dimensions not carried on post.**  
-  Bill lines post dimensions; CN path defaults empty
-  (`services/supplier_credit_notes.rs`).
+- ✅ **P1 — Supplier CN dimensions not carried on post.** *(Fixed 2026-07-09.)*
+  Full-reversal copies read the bill lines' dimensions and the SCN reversal JE
+  lines carry them — reversals credit the same analytical buckets the bill
+  debited.
 
-- ⬜ **P1 — Period close has no pre-close checklist gate.**  
-  No API requirement for zero drafts, recon complete, tax filed, FX reval, FA
-  depreciation. Amos month-end skill is advisory only (`amos/skills/month-end-review`).
+- ✅ **P1 — Period close has no pre-close checklist gate.** *(Fixed
+  2026-07-09.)* Hard close runs a checklist — draft invoices, unposted bills,
+  draft JEs dated in the period, depreciation not run through period end —
+  and refuses with named blockers. `force=true` overrides knowingly and is
+  recorded in the audit event. (Recon/tax-filed checks can be added to
+  `pre_close_checklist` as those flows harden.)
 
 - ⬜ **P2 — Accruals / deferrals / prepaid amortisation engines.**  
   COA has prepaid (`1400`); no first-class schedules (manual JE only).
