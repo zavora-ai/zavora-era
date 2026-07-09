@@ -30,7 +30,15 @@ export default function EstimatesPage() {
 
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['estimates'] }),
+    onSuccess: (resp: any) => {
+      queryClient.invalidateQueries({ queryKey: ['estimates'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      // Take the user straight to the invoice the conversion created, instead
+      // of leaving them on the estimates list wondering what happened.
+      const invoiceId = resp?.data?.invoice_id;
+      if (invoiceId) navigate(`/invoices?highlight=${invoiceId}`);
+    },
+    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to convert estimate.'),
   });
   const sendMutation = useMutation({
     mutationFn: (id: string) => sendEstimate(id),

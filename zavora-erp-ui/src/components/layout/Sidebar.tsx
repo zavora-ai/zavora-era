@@ -7,8 +7,51 @@ import {
   Gavel, ShoppingCart, UserPlus, Shield
 } from 'lucide-react';
 import clsx from 'clsx';
+import { usePermissions } from '../../hooks/usePermissions';
 
-const navigation = [
+// Primary read-permission for a nav destination, keyed by href. Items absent
+// here are always shown (safe default — the backend still enforces on every
+// request; this only trims what a role can't use so people stop clicking into
+// 403s). Keys match the RBAC catalog in core `rbac/mod.rs`.
+const PERM_BY_HREF: Record<string, string> = {
+  '/invoices': 'invoice.read',
+  '/estimates': 'estimate.read',
+  '/customers': 'customer.read',
+  '/bills': 'bill.read',
+  '/debit-notes': 'debit_note.read',
+  '/expense-claims': 'expense_claim.read',
+  '/purchase-orders': 'purchase_order.read',
+  '/crm': 'crm.read',
+  '/payments': 'payment.read',
+  '/banking': 'bank_account.read',
+  '/reconciliation': 'reconciliation.read',
+  '/transactions': 'bank_transaction.read',
+  '/products': 'product.read',
+  '/inventory': 'inventory.read',
+  '/pos/sessions': 'pos_session.read',
+  '/employees': 'employee.read',
+  '/onboarding': 'onboarding.read',
+  '/leave': 'leave.read',
+  '/payroll': 'pay_run.read',
+  '/payroll-settings': 'payroll_config.read',
+  '/payroll-reports': 'pay_run.read',
+  '/accounts': 'account.read',
+  '/journal-entries': 'journal.read',
+  '/recurring-journals': 'journal.read',
+  '/assets': 'asset.read',
+  '/periods': 'period.read',
+  '/budgets': 'budget.read',
+  '/dimensions': 'dimension.read',
+  '/etims': 'etims.read',
+  '/tax-filings': 'tax_filing.read',
+  '/approval-limits': 'approval_limit.read',
+  '/users': 'user.manage',
+  '/roles-admin': 'role.read',
+  '/fx-rates': 'fx_rate.read',
+  '/audit': 'audit.read',
+};
+
+export const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
 
   { divider: true, label: 'SALES' },
@@ -88,6 +131,28 @@ const navigation = [
 ];
 
 export default function Sidebar() {
+  const { can, loaded } = usePermissions();
+
+  // Hide a nav item when the user demonstrably lacks its permission. Until
+  // permissions load (or when an item has no mapped perm) everything shows, so
+  // the nav never flickers empty and unmapped items are never wrongly hidden.
+  const visible = (href: string) => {
+    const perm = PERM_BY_HREF[href];
+    if (!perm || !loaded) return true;
+    return can(perm);
+  };
+
+  // A section divider shows only when at least one item beneath it (up to the
+  // next divider) is visible — no empty section headers.
+  const dividerHasVisibleItems = (startIdx: number) => {
+    for (let i = startIdx + 1; i < navigation.length; i++) {
+      const it = navigation[i] as any;
+      if (it.divider) break;
+      if (visible(it.href)) return true;
+    }
+    return false;
+  };
+
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-[260px] bg-[#0f0f1a] flex flex-col">
       {/* Logo */}
@@ -124,6 +189,7 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
         {navigation.map((item, idx) => {
           if ('divider' in item && item.divider) {
+            if (!dividerHasVisibleItems(idx)) return null;
             return (
               <div key={idx} className="pt-4 pb-1 px-3">
                 {item.label && (
@@ -133,6 +199,7 @@ export default function Sidebar() {
             );
           }
           const navItem = item as { name: string; href: string; icon: any };
+          if (!visible(navItem.href)) return null;
           return (
             <NavLink
               key={navItem.name}

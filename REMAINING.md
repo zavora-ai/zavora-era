@@ -393,12 +393,20 @@ accounting/product roots of some UX failures.
   create AND edit now create/link the stock item).*  
 - ⬜ **Desktop-only shell.** Fixed 260px sidebar + `pl-[260px]`, no hamburger
   (`AppShell.tsx`, `Sidebar.tsx`) — phone/tablet unusable.  
-- ⬜ **Header search is decorative.** “Search anything…” + ⌘K with **no handler**
-  (`Header.tsx`).  
+- ✅ **Header search is decorative.** *(Fixed 2026-07-09.)* Now a working ⌘K
+  command palette (`CommandPalette.tsx`): the header search and Cmd/Ctrl-K open
+  it; type-to-filter over every app page (sourced from the sidebar nav),
+  arrow-key + Enter to jump.  
 - ⬜ **Silent mutation failures on critical actions.** e.g. invoice list
   `postMutation` / `deleteMutation` have no `onError`
   (`InvoicesPage.tsx`) — credit limit / stock / period errors invisible.  
-- ⬜ **RBAC UI vs API drift.** Backend: granular perms + route registry.
+- 🟡 **RBAC UI vs API drift.** *(Nav gated 2026-07-09.)* The sidebar now hides
+  destinations the user lacks the read-permission for (`usePermissions().can()`
+  + an href→permission map; unmapped items stay visible, backend still
+  enforces), and empty section headers collapse. Per-page ACTION buttons
+  (Post/Send/Approve) still lean on coarse `hasRole` — migrating those to
+  `can()` is the remaining drift.
+  <!-- superseded detail: --> Backend: granular perms + route registry.
   Most UI buttons use coarse `hasRole(ROLES_POST|…)` (`utils/roles.ts`).
   `usePermissions().can()` used almost only on Users/Roles pages. Custom roles
   (e.g. “Bookkeeper”) **hide** Post/Send even when allowed, or show actions that
@@ -423,8 +431,9 @@ accounting/product roots of some UX failures.
   (`PaymentsPage.tsx`) — no open-doc picker.  
 - ⬜ **Credit note UI = full reverse only** (reason + `lines: []`)
   (`InvoiceDetailPage.tsx` CreditNoteModal) — no partial lines.  
-- ⬜ **Estimate convert does not open new invoice**
-  (`EstimatesPage.tsx` convertMutation).  
+- ✅ **Estimate convert does not open new invoice** *(Fixed 2026-07-09.)* The
+  convert mutation now navigates to the created invoice (`?highlight=<id>`) and
+  surfaces errors, instead of silently staying on the estimates list.  
 - ⬜ **Bill approve → post two-step** with tiny row buttons; easy to leave
   approved unposted (`BillsPage.tsx`).  
 - ⬜ **Banking import vs Reconciliation vs Transactions** split across three
