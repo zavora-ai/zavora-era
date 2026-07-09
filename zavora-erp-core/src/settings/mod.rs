@@ -19,6 +19,20 @@ pub struct ErpConfig {
     pub payment_config: PaymentConfig,
     /// GL account determination (control/clearing/default accounts).
     pub posting: PostingSetup,
+    /// Fiscal-period posting controls.
+    pub period_controls: PeriodControls,
+}
+
+/// Per-tenant fiscal-period posting controls.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PeriodControls {
+    /// Allow DOCUMENT postings (invoice / bill / credit note / payment) into
+    /// soft-closed periods. Off by default: soft close admits only manual
+    /// prior-period adjustments. Turning this on un-traps late operational
+    /// documents (manual JEs cannot touch the AR/AP control accounts, so a
+    /// late invoice was otherwise un-enterable without a full reopen).
+    pub soft_close_allow_documents: bool,
 }
 
 /// Month and day (e.g. December 31 = { month: 12, day: 31 })
@@ -179,6 +193,8 @@ pub struct SettingsPatch {
     pub payment_config: Option<PaymentConfig>,
     pub posting: Option<PostingSetup>,
     pub sequences: Option<DocumentSequences>,
+    #[serde(default)]
+    pub period_controls: Option<PeriodControls>,
 }
 
 /// Patch for a single sequence type.
@@ -201,6 +217,8 @@ pub struct SettingsRow {
     pub tax_config: serde_json::Value,
     pub payment_config: serde_json::Value,
     pub posting_setup: serde_json::Value,
+    #[sqlx(default)]
+    pub period_controls: serde_json::Value,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub updated_by: Option<uuid::Uuid>,
 }
@@ -272,6 +290,7 @@ pub async fn load_or_create_config(
     let fiscal_year_end: MonthDay =
         serde_json::from_str(&row.fiscal_year_end).unwrap_or(MonthDay { month: 12, day: 31 });
     let posting: PostingSetup = serde_json::from_value(row.posting_setup).unwrap_or_default();
+    let period_controls: PeriodControls = serde_json::from_value(row.period_controls).unwrap_or_default();
 
     Ok(ErpConfig {
         entity_id,
@@ -283,5 +302,6 @@ pub async fn load_or_create_config(
         tax_config,
         payment_config,
         posting,
+        period_controls,
     })
 }
