@@ -393,7 +393,8 @@ export interface TaxConfig {
 export interface PaymentConfig {
   mpesa_enabled: boolean;
   mpesa_paybill?: string;
-  flutterwave_enabled: boolean;
+  paystack_enabled: boolean;
+  paystack_public_key?: string;
   bank_transfer_enabled: boolean;
 }
 

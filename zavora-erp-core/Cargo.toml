@@ -43,6 +43,11 @@ base64 = "0.22"
 # AES-256-GCM for encrypting per-tenant notification provider secrets at rest.
 aes-gcm = "0.10"
 
+# HMAC-SHA512 to verify Paystack webhook signatures (x-paystack-signature).
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 proptest = "1"

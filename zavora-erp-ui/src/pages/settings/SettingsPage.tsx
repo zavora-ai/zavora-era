@@ -21,7 +21,7 @@ export default function SettingsPage() {
   // Controlled form state for each tab
   const [company, setCompany] = useState({ company_name: '', registration_number: '', kra_pin: '', vat_number: '', address: '', phone: '', primary_color: '#1a56db', base_currency: 'KES', fiscal_year_end: '12-31' });
   const [tax, setTax] = useState({ vat_registered: false, wht_enabled: false, paye_enabled: false });
-  const [payments, setPayments] = useState({ mpesa_enabled: false, mpesa_paybill: '', flutterwave_enabled: false, bank_transfer_enabled: false });
+  const [payments, setPayments] = useState({ mpesa_enabled: false, mpesa_paybill: '', paystack_enabled: false, paystack_public_key: '', bank_transfer_enabled: false });
   const [seq, setSeq] = useState<DocumentSequences | null>(null);
 
   // Initialize form state from fetched config
@@ -46,7 +46,8 @@ export default function SettingsPage() {
     setPayments({
       mpesa_enabled: config.payment_config?.mpesa_enabled ?? false,
       mpesa_paybill: config.payment_config?.mpesa_paybill ?? '',
-      flutterwave_enabled: config.payment_config?.flutterwave_enabled ?? false,
+      paystack_enabled: config.payment_config?.paystack_enabled ?? false,
+      paystack_public_key: config.payment_config?.paystack_public_key ?? '',
       bank_transfer_enabled: config.payment_config?.bank_transfer_enabled ?? false,
     });
     if (config.sequences) setSeq(config.sequences);
@@ -190,7 +191,14 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <div className="flex items-center gap-3"><input type="checkbox" checked={payments.flutterwave_enabled} onChange={(e) => setPayments({ ...payments, flutterwave_enabled: e.target.checked })} /><label className="text-sm font-medium text-purple-900">Flutterwave (Card Payments)</label></div>
+              <div className="flex items-center gap-3 mb-2"><input type="checkbox" checked={payments.paystack_enabled} onChange={(e) => setPayments({ ...payments, paystack_enabled: e.target.checked })} /><label className="text-sm font-medium text-purple-900">Paystack (Card Payments)</label></div>
+              {payments.paystack_enabled && (
+                <div className="pl-6">
+                  <label className="label text-xs">Public Key</label>
+                  <input className="input text-sm font-mono" value={payments.paystack_public_key} onChange={(e) => setPayments({ ...payments, paystack_public_key: e.target.value })} placeholder="pk_live_…" />
+                  <p className="text-xs text-gray-500 mt-1">The secret key is set on the server (PAYSTACK_SECRET_KEY env), never here.</p>
+                </div>
+              )}
             </div>
             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
               <div className="flex items-center gap-3"><input type="checkbox" checked={payments.bank_transfer_enabled} onChange={(e) => setPayments({ ...payments, bank_transfer_enabled: e.target.checked })} /><label className="text-sm font-medium">Bank Transfer</label></div>

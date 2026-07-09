@@ -152,6 +152,7 @@ pub const ROUTE_PERMISSIONS: &[(&str, &str, Access)] = &[
     ("GET", "/api/v1/payments/{id}", Access::Perm("payment.read")),
     ("POST", "/api/v1/payments/apply", Access::Perm("payment.apply")),
     ("POST", "/api/v1/payments/mpesa-stk-push", Access::Perm("payment.create")),
+    ("POST", "/api/v1/payments/paystack/initialize", Access::Perm("payment.create")),
     ("GET", "/api/v1/transactions", Access::Perm("bank_transaction.read")),
     ("POST", "/api/v1/transactions/{id}/categorise", Access::Perm("bank_transaction.categorise")),
     ("POST", "/api/v1/transactions/{id}/split", Access::Perm("bank_transaction.categorise")),

@@ -1292,3 +1292,194 @@ async fn post_fx_gain_loss_entry(
 
     Ok(entry.id)
 }
+
+// ─── Paystack card payments ────────────────────────────────────────────────
+
+/// Initialise a Paystack card payment for an invoice. Calls Paystack's
+/// `transaction/initialize` (server-to-server with the SECRET key), records a
+/// `paystack_transactions` claim row, and returns the `authorization_url` the
+/// browser sends the payer to. Amount is the invoice's OUTSTANDING balance in
+/// the currency subunit (kobo/cents).
+pub async fn paystack_initialize(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    req: crate::payments::paystack::PaystackInitRequest,
+) -> ErpResult<crate::payments::paystack::PaystackInitResponse> {
+    let secret = crate::payments::paystack::secret_key().ok_or_else(|| ErpError::PaymentError {
+        message: "Paystack is not configured (PAYSTACK_SECRET_KEY unset).".to_string(),
+    })?;
+
+    let invoice = sqlx::query_as::<_, crate::invoicing::InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(req.invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: req.invoice_id })?;
+
+    if invoice.balance_due <= Decimal::ZERO {
+        return Err(ErpError::ValidationFailed {
+            message: "Invoice has no outstanding balance to charge.".to_string(),
+        });
+    }
+
+    // Email is required by Paystack; prefer the request, fall back to the customer.
+    let email = match req.email.filter(|e| !e.trim().is_empty()) {
+        Some(e) => e,
+        None => sqlx::query_scalar::<_, Option<String>>(
+            "SELECT email FROM customers WHERE id = $1 AND entity_id = $2",
+        )
+        .bind(invoice.customer_id)
+        .bind(entity_id)
+        .fetch_optional(engine.pool())
+        .await?
+        .flatten()
+        .ok_or_else(|| ErpError::ValidationFailed {
+            message: "No email for the customer — Paystack requires a payer email.".to_string(),
+        })?,
+    };
+
+    // Unique reference we can reconcile the webhook against.
+    let reference = format!("ZV-{}-{}", &invoice.number, &Uuid::new_v4().to_string()[..8]);
+    // Paystack takes the amount in the currency's subunit (integer kobo/cents).
+    let subunit = (invoice.balance_due * Decimal::from(100))
+        .round()
+        .to_string();
+
+    let mut body = serde_json::json!({
+        "email": email,
+        "amount": subunit,
+        "currency": invoice.currency,
+        "reference": reference,
+        "metadata": { "invoice_id": invoice.id, "entity_id": entity_id },
+    });
+    if let Some(cb) = req.callback_url.filter(|c| !c.trim().is_empty()) {
+        body["callback_url"] = cb.into();
+    }
+
+    let resp: serde_json::Value = reqwest::Client::new()
+        .post("https://api.paystack.co/transaction/initialize")
+        .bearer_auth(&secret)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| ErpError::PaymentError { message: format!("Paystack request failed: {e}") })?
+        .json()
+        .await
+        .map_err(|e| ErpError::PaymentError { message: format!("Paystack response invalid: {e}") })?;
+
+    if resp["status"].as_bool() != Some(true) {
+        return Err(ErpError::PaymentError {
+            message: format!("Paystack rejected the request: {}", resp["message"].as_str().unwrap_or("unknown")),
+        });
+    }
+    let auth_url = resp["data"]["authorization_url"].as_str().ok_or_else(|| ErpError::PaymentError {
+        message: "Paystack did not return an authorization_url".to_string(),
+    })?;
+
+    sqlx::query(
+        r#"INSERT INTO paystack_transactions
+           (entity_id, reference, invoice_id, amount, currency, customer_email, status, authorization_url)
+           VALUES ($1, $2, $3, $4, $5, $6, 'initialized', $7)"#,
+    )
+    .bind(entity_id)
+    .bind(&reference)
+    .bind(invoice.id)
+    .bind(invoice.balance_due)
+    .bind(&invoice.currency)
+    .bind(&email)
+    .bind(auth_url)
+    .execute(engine.pool())
+    .await?;
+
+    Ok(crate::payments::paystack::PaystackInitResponse {
+        authorization_url: auth_url.to_string(),
+        reference,
+    })
+}
+
+/// Record a payment from a verified Paystack `charge.success` webhook. The
+/// caller MUST have verified the `x-paystack-signature` first. Idempotent on
+/// the Paystack reference (duplicate webhooks return the existing payment).
+pub async fn record_paystack_payment(
+    engine: &ErpEngine,
+    entity_id: Uuid,
+    data: crate::payments::paystack::PaystackChargeData,
+) -> ErpResult<Payment> {
+    // Resolve the invoice from our claim row (written at initialise time).
+    let claim = sqlx::query_as::<_, (Option<Uuid>, Option<Uuid>)>(
+        "SELECT invoice_id, payment_id FROM paystack_transactions WHERE entity_id = $1 AND reference = $2",
+    )
+    .bind(entity_id)
+    .bind(&data.reference)
+    .fetch_optional(engine.pool())
+    .await?;
+
+    let Some((invoice_id, existing_payment)) = claim else {
+        return Err(ErpError::NotFound {
+            entity_type: "PaystackTransaction".to_string(),
+            id: Uuid::nil(),
+        });
+    };
+
+    // Idempotency: if a payment is already linked, this is a duplicate webhook.
+    if let Some(pid) = existing_payment {
+        if let Some(row) = sqlx::query_as::<_, PaymentRow>("SELECT * FROM payments WHERE id = $1 AND entity_id = $2")
+            .bind(pid)
+            .bind(entity_id)
+            .fetch_optional(engine.pool())
+            .await?
+        {
+            return Ok(payment_from_row(row));
+        }
+    }
+
+    let invoice_id = invoice_id.ok_or_else(|| ErpError::ValidationFailed {
+        message: "Paystack transaction has no linked invoice.".to_string(),
+    })?;
+    let invoice = sqlx::query_as::<_, crate::invoicing::InvoiceRow>(
+        "SELECT * FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(invoice_id)
+    .bind(entity_id)
+    .fetch_optional(engine.pool())
+    .await?
+    .ok_or_else(|| ErpError::NotFound { entity_type: "Invoice".to_string(), id: invoice_id })?;
+
+    // Paystack amount is in subunit (kobo/cents).
+    let amount = (Decimal::from(data.amount) / Decimal::from(100)).round_dp(2);
+
+    let req = RecordPaymentRequest {
+        payment_type: PaymentType::CustomerPayment,
+        party_id: invoice.customer_id,
+        payment_date: None,
+        amount,
+        currency: Some(invoice.currency.clone()),
+        fx_rate: Some(invoice.fx_rate),
+        method: PaymentMethod::Card {
+            processor: "paystack".to_string(),
+            authorization: data.reference.clone(),
+        },
+        reference: Some(data.reference.clone()),
+        bank_account_id: None,
+        applications: vec![PaymentApplicationRequest { document_id: invoice_id, amount }],
+        wht_amount: None,
+        wht_account: None,
+        funding_account: None,
+    };
+
+    let actor = AgentOrUserId::Agent("paystack-webhook".to_string());
+    let payment = record_payment(engine, entity_id, req, &actor).await?;
+
+    sqlx::query(
+        "UPDATE paystack_transactions SET status = 'success', payment_id = $1 WHERE entity_id = $2 AND reference = $3",
+    )
+    .bind(payment.id)
+    .bind(entity_id)
+    .bind(&data.reference)
+    .execute(engine.pool())
+    .await?;
+
+    Ok(payment)
+}
