@@ -397,9 +397,10 @@ accounting/product roots of some UX failures.
   command palette (`CommandPalette.tsx`): the header search and Cmd/Ctrl-K open
   it; type-to-filter over every app page (sourced from the sidebar nav),
   arrow-key + Enter to jump.  
-- ⬜ **Silent mutation failures on critical actions.** e.g. invoice list
-  `postMutation` / `deleteMutation` have no `onError`
-  (`InvoicesPage.tsx`) — credit limit / stock / period errors invisible.  
+- 🟡 **Silent mutation failures on critical actions.** *(Invoice/bill lists
+  fixed 2026-07-09.)* Invoice post/delete and bill approve/post/delete list
+  mutations now surface the server error (`onError` → alert), so credit-limit /
+  stock / closed-period failures are visible. Other list pages still to sweep.  
 - 🟡 **RBAC UI vs API drift.** *(Nav gated 2026-07-09.)* The sidebar now hides
   destinations the user lacks the read-permission for (`usePermissions().can()`
   + an href→permission map; unmapped items stay visible, backend still
@@ -425,17 +426,22 @@ accounting/product roots of some UX failures.
   (`InvoicesPage.tsx` filters `invoices` page slice).  
 - ⬜ **Overdue tab depends on hourly scheduler** (`scheduler.rs` marks
   `overdue`); fresh past-due stay `posted` until tick.  
-- ⬜ **No “Pay” on bill/invoice list rows** — must navigate Payments and re-pick
-  party.  
-- ⬜ **Apply unapplied payment requires pasting document UUID**
-  (`PaymentsPage.tsx`) — no open-doc picker.  
+- ✅ **No “Pay” on bill/invoice list rows** *(Fixed 2026-07-09.)* Posted
+  invoices/bills with a balance show a **Pay** button that opens Record Payment
+  deep-linked to the party + document (`/payments?record=…&party=…&invoice|bill=…`).  
+- ✅ **Apply unapplied payment requires pasting document UUID** *(Fixed
+  2026-07-09.)* The allocate modal now shows a picker of the party's OPEN
+  invoices/bills (number + balance), and defaults the amount to the document
+  balance — no more UUID paste.  
 - ⬜ **Credit note UI = full reverse only** (reason + `lines: []`)
   (`InvoiceDetailPage.tsx` CreditNoteModal) — no partial lines.  
 - ✅ **Estimate convert does not open new invoice** *(Fixed 2026-07-09.)* The
   convert mutation now navigates to the created invoice (`?highlight=<id>`) and
   surfaces errors, instead of silently staying on the estimates list.  
-- ⬜ **Bill approve → post two-step** with tiny row buttons; easy to leave
-  approved unposted (`BillsPage.tsx`).  
+- ✅ **Bill approve → post two-step** *(Fixed 2026-07-09.)* Draft bills gain an
+  **Approve & Post** one-click (for users with both rights) alongside the
+  separate Approve/Post buttons — the approval gate stays, but the common
+  do-both path is one action.  
 - ⬜ **Banking import vs Reconciliation vs Transactions** split across three
   nav items without guided flow.  
 - ⬜ **Amos iframe blank if service down** (dev `localhost:8090`; prod

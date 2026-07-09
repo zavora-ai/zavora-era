@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPayments, recordPayment, getCustomers, getVendors, getInvoices, getBills, getBankAccounts, getAccounts } from '../../api/client';
 import api from '../../api/client';
@@ -18,6 +19,20 @@ type TabKey = 'all' | 'unapplied';
 export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep-link from a "Pay" button on an invoice/bill row:
+  // /payments?record=customer&party=<id>&invoice=<id>  (or ?bill=<id>)
+  const recordKind = searchParams.get('record');
+  const preset: RecordPreset | undefined = recordKind
+    ? {
+        payment_type: recordKind === 'vendor' ? 'vendor_payment' : 'customer_payment',
+        party_id: searchParams.get('party') ?? undefined,
+        apply_to_document_id: searchParams.get('invoice') ?? searchParams.get('bill') ?? undefined,
+      }
+    : undefined;
+  const presetOpen = !!recordKind;
+  const closePreset = () => setSearchParams({}, { replace: true });
 
   return (
     <div>
@@ -59,6 +74,7 @@ export default function PaymentsPage() {
       {activeTab === 'unapplied' && <UnappliedPaymentsTab />}
 
       {showCreate && <RecordPaymentModal onClose={() => setShowCreate(false)} />}
+      {presetOpen && <RecordPaymentModal preset={preset} onClose={closePreset} />}
     </div>
   );
 }
@@ -255,6 +271,22 @@ function AllocatePaymentModal({ payment, onClose }: { payment: Payment; onClose:
   const [applyAmount, setApplyAmount] = useState<number>(payment.unapplied);
   const [error, setError] = useState('');
 
+  // Open documents for THIS payment's party, so the user picks from a list
+  // instead of pasting a UUID. Customer receipt → open invoices for the
+  // customer; vendor payment → open bills for the vendor.
+  const isCustomer = payment.payment_type === 'customer_payment';
+  const { data: openDocs = [] } = useQuery<any[]>({
+    queryKey: ['open-docs', payment.id],
+    queryFn: async () => {
+      const r = isCustomer ? await getInvoices({ limit: 200 }) : await getBills({ limit: 200 });
+      const rows: any[] = r.data?.items ?? (Array.isArray(r.data) ? r.data : []);
+      const partyKey = isCustomer ? 'customer_id' : 'vendor_id';
+      return rows.filter(
+        (d) => d[partyKey] === payment.party_id && Number(d.balance_due) > 0 && d.status !== 'draft' && d.status !== 'voided',
+      );
+    },
+  });
+
   const mutation = useMutation({
     mutationFn: (data: { payment_id: string; document_id: string; amount: number }) =>
       api.post('/payments/apply', data),
@@ -273,7 +305,7 @@ function AllocatePaymentModal({ payment, onClose }: { payment: Payment; onClose:
     setError('');
 
     if (!documentId.trim()) {
-      setError('Please enter a document ID (invoice or bill).');
+      setError(`Please select an ${isCustomer ? 'invoice' : 'bill'} to apply to.`);
       return;
     }
     if (applyAmount <= 0) {
@@ -315,19 +347,32 @@ function AllocatePaymentModal({ payment, onClose }: { payment: Payment; onClose:
           </div>
         </div>
 
-        {/* Document selection */}
+        {/* Document selection — a picker of the party's open documents. */}
         <div>
-          <label className="label">Invoice / Bill ID *</label>
-          <input
-            className="input font-mono text-xs"
+          <label className="label">{isCustomer ? 'Invoice' : 'Bill'} to apply to *</label>
+          <select
+            className="input"
             value={documentId}
-            onChange={(e) => setDocumentId(e.target.value)}
-            placeholder="Paste the invoice or bill ID to apply payment to"
+            onChange={(e) => {
+              setDocumentId(e.target.value);
+              // Default the amount to min(unapplied, that document's balance).
+              const doc = openDocs.find((d) => d.id === e.target.value);
+              if (doc) setApplyAmount(Math.min(payment.unapplied, Number(doc.balance_due)));
+            }}
             required
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Enter the document ID of the invoice or bill you want to allocate this payment to.
-          </p>
+          >
+            <option value="">Select an open {isCustomer ? 'invoice' : 'bill'}…</option>
+            {openDocs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.number} — {formatCurrency(d.balance_due, d.currency)} due
+              </option>
+            ))}
+          </select>
+          {openDocs.length === 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              No open {isCustomer ? 'invoices' : 'bills'} for this party.
+            </p>
+          )}
         </div>
 
         {/* Amount */}
@@ -371,22 +416,28 @@ function AllocatePaymentModal({ payment, onClose }: { payment: Payment; onClose:
 
 // ─── Record Payment Modal ──────────────────────────────────────────────────────
 
-function RecordPaymentModal({ onClose }: { onClose: () => void }) {
+interface RecordPreset {
+  payment_type?: string;
+  party_id?: string;
+  apply_to_document_id?: string;
+}
+
+function RecordPaymentModal({ onClose, preset }: { onClose: () => void; preset?: RecordPreset }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     // API contract: serde expects snake_case PaymentType ('customer_payment' | 'vendor_payment').
-    payment_type: 'customer_payment',
+    payment_type: preset?.payment_type ?? 'customer_payment',
     amount: 0,
     currency: 'KES',
     fx_rate: 1,
     method: 'BankTransfer',
     reference: '',
-    party_id: '',
+    party_id: preset?.party_id ?? '',
     payment_date: workToday(),
     bank_account_id: '',
     funding_source: 'bank' as 'bank' | 'director', // pay-from: company bank vs director's loan / owner funds
     funding_account: '4200', // GL account when funding_source = 'director'
-    apply_to_document_id: '',
+    apply_to_document_id: preset?.apply_to_document_id ?? '',
     apply_amount: 0,
     wht_amount: 0, // withholding tax withheld by the customer (KES), customer receipts only
   });

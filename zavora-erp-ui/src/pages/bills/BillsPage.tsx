@@ -44,9 +44,21 @@ export default function BillsPage() {
   const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bills'] });
-  const approveMut = useMutation({ mutationFn: (id: string) => approveBill(id), onSuccess: invalidate });
-  const postMut = useMutation({ mutationFn: (id: string) => postBill(id), onSuccess: invalidate });
-  const deleteMut = useMutation({ mutationFn: (id: string) => deleteBill(id), onSuccess: invalidate });
+  const mutError = (fallback: string) => (e: any) =>
+    alert(e?.response?.data?.error || e?.response?.data?.message || fallback);
+  const approveMut = useMutation({ mutationFn: (id: string) => approveBill(id), onSuccess: invalidate, onError: mutError('Failed to approve bill.') });
+  const postMut = useMutation({ mutationFn: (id: string) => postBill(id), onSuccess: invalidate, onError: mutError('Failed to post bill.') });
+  const deleteMut = useMutation({ mutationFn: (id: string) => deleteBill(id), onSuccess: invalidate, onError: mutError('Failed to delete draft.') });
+  // Approve then immediately post — the two-step is real (approval is an
+  // authorization gate) but the common path is do-both, so offer one click.
+  const approveAndPostMut = useMutation({
+    mutationFn: async (id: string) => {
+      await approveBill(id);
+      return postBill(id);
+    },
+    onSuccess: invalidate,
+    onError: mutError('Failed to approve & post bill.'),
+  });
 
   const filtered = filter === 'all' ? bills
     : bills.filter(b => b.status === filter);
@@ -104,6 +116,11 @@ export default function BillsPage() {
                   <CheckCircle className="w-3 h-3" /> Approve
                 </button>
               )}
+              {hasRole(ROLES_APPROVE) && hasRole(ROLES_POST) && (
+                <button onClick={() => approveAndPostMut.mutate(r.id)} disabled={approveAndPostMut.isPending} className="btn-primary text-xs py-1 px-2" title="Approve and post to the ledger in one step">
+                  Approve & Post
+                </button>
+              )}
               <button onClick={() => setEditId(r.id)} className="btn-secondary text-xs py-1 px-2" title="Edit draft">
                 <Pencil className="w-3 h-3" />
               </button>
@@ -115,6 +132,15 @@ export default function BillsPage() {
           {r.status === 'approved' && hasRole(ROLES_POST) && (
             <button onClick={() => postMut.mutate(r.id)} disabled={postMut.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
               Post
+            </button>
+          )}
+          {Number(r.balance_due) > 0 && (r.status === 'posted') && (
+            <button
+              onClick={() => navigate(`/payments?record=vendor&party=${r.vendor_id}&bill=${r.id}`)}
+              className="btn-primary text-xs py-1 px-2"
+              title="Record a payment for this bill"
+            >
+              Pay
             </button>
           )}
           {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (

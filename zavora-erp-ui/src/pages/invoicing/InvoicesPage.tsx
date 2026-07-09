@@ -54,8 +54,12 @@ export default function InvoicesPage() {
   const [sendInv, setSendInv] = useState<any | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
-  const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate });
-  const deleteMutation = useMutation({ mutationFn: (id: string) => deleteInvoice(id), onSuccess: invalidate });
+  // Surface post/delete failures (credit-limit, stock, closed-period) instead of
+  // swallowing them — these were previously silent onSuccess-only mutations.
+  const mutError = (fallback: string) => (e: any) =>
+    alert(e?.response?.data?.error || e?.response?.data?.message || fallback);
+  const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate, onError: mutError('Failed to post invoice.') });
+  const deleteMutation = useMutation({ mutationFn: (id: string) => deleteInvoice(id), onSuccess: invalidate, onError: mutError('Failed to delete draft.') });
 
   const filtered = filter === 'all' ? invoices
     : filter === 'posted' ? invoices.filter(i => isPostedLike(i.status))
@@ -115,6 +119,15 @@ export default function InvoicesPage() {
           {isPostedLike(r.status) && !(r as any).sent_at && hasRole(ROLES_SEND) && (
             <button onClick={() => setSendInv(r)} className="btn-secondary text-xs py-1 px-2" title="Send to customer (email + PDF) or mark as sent">
               <Send className="w-3 h-3" /> Send
+            </button>
+          )}
+          {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && (
+            <button
+              onClick={() => navigate(`/payments?record=customer&party=${r.customer_id}&invoice=${r.id}`)}
+              className="btn-primary text-xs py-1 px-2"
+              title="Record a payment against this invoice"
+            >
+              Pay
             </button>
           )}
           {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && hasRole(ROLES_POST) && (
