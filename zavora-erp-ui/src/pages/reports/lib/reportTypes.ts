@@ -58,6 +58,7 @@ export const reportTypes: ReportMeta[] = [
   { key: 'InventoryValuation', name: 'Inventory Valuation', desc: 'On-hand quantity, cost & value by item', controls: ['asAt'], category: 'Management' },
   { key: 'FixedAssetRegister', name: 'Fixed-Asset Register', desc: 'Cost, depreciation & net book value', controls: ['asAt'], category: 'Management' },
   { key: 'BankReconSummary', name: 'Bank Reconciliation', desc: 'Statement vs GL balance, matched & unmatched', controls: ['asAt'], category: 'Management' },
+  { key: 'ControlAccountRecon', name: 'AR/AP Control Reconciliation', desc: 'Open invoices/bills vs GL control accounts — sign-off check', controls: [], category: 'Receivables/Payables' },
   { key: 'BudgetVsActual', name: 'Budget vs Actual', desc: 'Actual vs budget by account, with variance', controls: ['period'], category: 'Management' },
   { key: 'DimensionalAnalysis', name: 'Dimensional Analysis', desc: 'Ledger movement grouped by a dimension (cost centre, project…)', controls: ['dimension', 'period'], category: 'Management' },
 ];
@@ -93,6 +94,7 @@ const KEY_TO_SLUG: Record<string, string> = {
   InventoryValuation: 'inventory-valuation',
   FixedAssetRegister: 'fixed-asset-register',
   BankReconSummary: 'bank-reconciliation',
+  ControlAccountRecon: 'control-account-reconciliation',
   BudgetVsActual: 'budget-vs-actual',
   DimensionalAnalysis: 'dimensional-analysis',
   CashFlowDirect: 'cash-flow-direct',
