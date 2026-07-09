@@ -116,6 +116,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
             set -euo pipefail
+            cd ~/zavora-era
+
             echo "==> Waiting for API health"
             for i in $(seq 1 30); do
               code=$(docker run --rm --network zavora-era_default curlimages/curl:latest \
@@ -128,10 +130,12 @@ jobs:
               echo "  attempt $i: $code — retrying"; sleep 4
             done
 
+            # Amos: probe unauthenticated /health (liveness). Do NOT use /api/*
+            # — those require a JWT and return 401 by design (looks like a dead service).
             echo "==> Waiting for Amos health"
             for i in $(seq 1 30); do
               code=$(docker run --rm --network zavora-era_default curlimages/curl:latest \
-                       -s -o /dev/null -w '%{http_code}' --max-time 5 http://amos:8090/api/skills || echo 000)
+                       -s -o /dev/null -w '%{http_code}' --max-time 5 http://amos:8090/health || echo 000)
               if [ "$code" = "200" ]; then echo "Amos healthy (200) after ${i} tries"; exit 0; fi
               echo "  attempt $i: $code — retrying"; sleep 4
             done
