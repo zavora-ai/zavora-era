@@ -61,6 +61,8 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("3100", "VAT Output (Payable)", AccountType::Liability, None, false),
         acct("3200", "WHT Payable", AccountType::Liability, None, false),
         acct("3210", "WHT Payable - Vendors", AccountType::Liability, Some("3200"), false),
+        // Corporation-tax provision (accrued but not yet remitted to KRA).
+        acct("3510", "Corporation Tax Payable", AccountType::Liability, None, false),
         acct("3300", "Payroll Liabilities", AccountType::Liability, None, true),
         acct("3310", "PAYE Payable", AccountType::Liability, Some("3300"), false),
         acct("3320", "NSSF Payable", AccountType::Liability, Some("3300"), false),

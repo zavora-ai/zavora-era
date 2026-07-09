@@ -257,6 +257,117 @@ pub async fn estimate(
     })
 }
 
+/// Result of posting a CIT provision.
+#[derive(Debug, serde::Serialize)]
+pub struct CitProvisionResult {
+    pub journal_entry_id: uuid::Uuid,
+    pub journal_number: String,
+    pub fiscal_year_end: NaiveDate,
+    /// The year's estimated tax at posting time.
+    pub estimated_tax: rust_decimal::Decimal,
+    /// Provision already on the books for this year before this posting.
+    pub previously_provided: rust_decimal::Decimal,
+    /// The incremental amount this posting booked.
+    pub provided_now: rust_decimal::Decimal,
+}
+
+/// Book the corporation-tax provision for a fiscal year:
+/// `DR 8500 Corporate Income Tax / CR 3510 Corporation Tax Payable`.
+///
+/// Incremental true-up: the amount defaults to the current estimate less what
+/// prior `CIT-PROV-…` entries already provided for the year, so re-running
+/// after profits move books only the difference. `amount_override` books an
+/// exact figure instead (e.g. the tax agent's computation). Remitting the tax
+/// stays in the tax-filings flow — this books the expense/liability only.
+pub async fn post_provision(
+    engine: &ErpEngine,
+    entity_id: uuid::Uuid,
+    ending_year: Option<i32>,
+    adjustments: rust_decimal::Decimal,
+    amount_override: Option<rust_decimal::Decimal>,
+    posted_by: &crate::types::AgentOrUserId,
+) -> ErpResult<CitProvisionResult> {
+    use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest, JournalSource};
+    use rust_decimal::Decimal;
+
+    let est = estimate(engine, entity_id, ending_year, adjustments).await?;
+    let fy_label = est.fiscal_year_end.year();
+
+    // What earlier provision entries already booked for this year.
+    let previously_provided: Decimal = sqlx::query_scalar::<_, Option<Decimal>>(
+        r#"SELECT SUM(COALESCE(jl.functional_credit,0) - COALESCE(jl.functional_debit,0))
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           WHERE je.entity_id = $1 AND je.status = 'posted'
+             AND je.reference LIKE $2 AND jl.account_code = '3510'"#,
+    )
+    .bind(entity_id)
+    .bind(format!("CIT-PROV-{fy_label}%"))
+    .fetch_one(engine.pool())
+    .await?
+    .unwrap_or(Decimal::ZERO);
+
+    let amount = match amount_override {
+        Some(a) => a,
+        None => (est.estimated_tax - previously_provided).round_dp(2),
+    };
+    if amount <= Decimal::ZERO {
+        return Err(crate::error::ErpError::ValidationFailed {
+            message: format!(
+                "Nothing to provide: estimate {} vs {} already provided for FY{fy_label}. Pass an explicit amount to adjust.",
+                est.estimated_tax, previously_provided
+            ),
+        });
+    }
+
+    // Post within the fiscal year (true-ups after year end land on the last
+    // day of the year — reopen or allow documents if that period is locked).
+    let today = chrono::Utc::now().date_naive();
+    let date = today.clamp(est.fiscal_year_start, est.fiscal_year_end);
+    let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+    let reference = format!("CIT-PROV-{fy_label}-{}", &uuid::Uuid::new_v4().to_string()[..8]);
+
+    let entry_req = CreateJournalEntryRequest {
+        date,
+        source: JournalSource::Manual,
+        source_id: None,
+        reference: reference.clone(),
+        description: format!("Corporation tax provision FY{fy_label} ({} of est. {})", amount, est.estimated_tax),
+        lines: vec![
+            CreateJournalLineRequest {
+                account_code: "8500".to_string(),
+                debit: Some(amount),
+                credit: None,
+                currency: base_ccy.clone(),
+                fx_rate: Some(Decimal::ONE),
+                description: Some(format!("CIT provision FY{fy_label}")),
+                dimensions: None,
+            },
+            CreateJournalLineRequest {
+                account_code: "3510".to_string(),
+                debit: None,
+                credit: Some(amount),
+                currency: base_ccy,
+                fx_rate: Some(Decimal::ONE),
+                description: Some(format!("Corporation tax payable FY{fy_label}")),
+                dimensions: None,
+            },
+        ],
+        post_immediately: true,
+    };
+    let period = crate::services::periods::period_for_date(engine, entity_id, date).await?;
+    let entry = crate::services::journal::create_and_post(engine, entity_id, entry_req, period.id, posted_by.clone()).await?;
+
+    Ok(CitProvisionResult {
+        journal_entry_id: entry.id,
+        journal_number: entry.number,
+        fiscal_year_end: est.fiscal_year_end,
+        estimated_tax: est.estimated_tax,
+        previously_provided,
+        provided_now: amount,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
