@@ -8,9 +8,21 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::{ErpError, ErpResult};
 use crate::platform::{
-    PlatformAuditEvent, PlatformUserRow, TenantDetail, TenantOwnerRow, TenantRow,
+    PlatformAuditEvent, PlatformUserRow, TenantDetail, TenantListRow, TenantOwnerRow, TenantRow,
     TenantSummary, TenantUserSummary, ROLE_PLATFORM_SUPER_ADMIN,
 };
+
+/// Prefer active Owner email/name, else first active user.
+const PRIMARY_CONTACT_SQL: &str = r#"
+    (SELECT u.email FROM era_users u
+     WHERE u.entity_id = t.entity_id AND u.is_active = true
+     ORDER BY CASE WHEN u.role = 'Owner' THEN 0 ELSE 1 END, u.created_at ASC NULLS LAST, u.id
+     LIMIT 1) AS primary_email,
+    (SELECT u.display_name FROM era_users u
+     WHERE u.entity_id = t.entity_id AND u.is_active = true
+     ORDER BY CASE WHEN u.role = 'Owner' THEN 0 ELSE 1 END, u.created_at ASC NULLS LAST, u.id
+     LIMIT 1) AS primary_contact
+"#;
 
 /// Ensure a bootstrap Super Admin exists when env credentials are set.
 /// Idempotent: if the email already exists, does nothing.
@@ -176,8 +188,15 @@ pub async fn list_tenants(pool: &PgPool, query: ListTenantsQuery) -> ErpResult<(
 
     let total: i64 = sqlx::query_scalar(
         r#"SELECT COUNT(*) FROM tenants t
-           WHERE ($1::text IS NULL OR t.organization_name ILIKE '%' || $1 || '%'
-                  OR t.entity_id::text ILIKE '%' || $1 || '%')
+           WHERE ($1::text IS NULL
+                  OR t.organization_name ILIKE '%' || $1 || '%'
+                  OR t.entity_id::text ILIKE '%' || $1 || '%'
+                  OR EXISTS (
+                      SELECT 1 FROM era_users u
+                      WHERE u.entity_id = t.entity_id
+                        AND (u.email ILIKE '%' || $1 || '%'
+                             OR u.display_name ILIKE '%' || $1 || '%')
+                  ))
              AND ($2::text IS NULL OR t.plan_status = $2)
              AND (NOT $3::bool OR t.user_count > 0)
              AND (NOT $4::bool OR t.archived_at IS NULL)"#,
@@ -189,31 +208,54 @@ pub async fn list_tenants(pool: &PgPool, query: ListTenantsQuery) -> ErpResult<(
     .fetch_one(pool)
     .await?;
 
-    let rows = sqlx::query_as::<_, TenantRow>(
-        r#"SELECT * FROM tenants t
-           WHERE ($1::text IS NULL OR t.organization_name ILIKE '%' || $1 || '%'
-                  OR t.entity_id::text ILIKE '%' || $1 || '%')
+    let sql = format!(
+        r#"SELECT t.entity_id, t.organization_name, t.organization_type, t.plan_key, t.plan_status,
+                  t.suspended_at, t.suspended_reason, t.archived_at, t.created_at, t.last_activity_at,
+                  t.user_count, t.invoice_count,
+                  {contact}
+           FROM tenants t
+           WHERE ($1::text IS NULL
+                  OR t.organization_name ILIKE '%' || $1 || '%'
+                  OR t.entity_id::text ILIKE '%' || $1 || '%'
+                  OR EXISTS (
+                      SELECT 1 FROM era_users u
+                      WHERE u.entity_id = t.entity_id
+                        AND (u.email ILIKE '%' || $1 || '%'
+                             OR u.display_name ILIKE '%' || $1 || '%')
+                  ))
              AND ($2::text IS NULL OR t.plan_status = $2)
              AND (NOT $3::bool OR t.user_count > 0)
              AND (NOT $4::bool OR t.archived_at IS NULL)
            ORDER BY t.created_at DESC
            LIMIT $5 OFFSET $6"#,
-    )
-    .bind(&q)
-    .bind(&status)
-    .bind(query.hide_empty)
-    .bind(query.hide_archived)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
+        contact = PRIMARY_CONTACT_SQL
+    );
+
+    let rows = sqlx::query_as::<_, TenantListRow>(&sql)
+        .bind(&q)
+        .bind(&status)
+        .bind(query.hide_empty)
+        .bind(query.hide_archived)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
 
     Ok((rows.into_iter().map(TenantSummary::from).collect(), total))
 }
 
 pub async fn get_tenant(pool: &PgPool, entity_id: Uuid) -> ErpResult<Option<TenantSummary>> {
     let _ = refresh_tenant_counts(pool, entity_id).await;
-    let row = sqlx::query_as::<_, TenantRow>("SELECT * FROM tenants WHERE entity_id = $1")
+    let sql = format!(
+        r#"SELECT t.entity_id, t.organization_name, t.organization_type, t.plan_key, t.plan_status,
+                  t.suspended_at, t.suspended_reason, t.archived_at, t.created_at, t.last_activity_at,
+                  t.user_count, t.invoice_count,
+                  {contact}
+           FROM tenants t
+           WHERE t.entity_id = $1"#,
+        contact = PRIMARY_CONTACT_SQL
+    );
+    let row = sqlx::query_as::<_, TenantListRow>(&sql)
         .bind(entity_id)
         .fetch_optional(pool)
         .await?;
