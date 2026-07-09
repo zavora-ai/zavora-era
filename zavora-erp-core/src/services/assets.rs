@@ -9,11 +9,17 @@ use crate::ledger::journal::{CreateJournalEntryRequest, CreateJournalLineRequest
 use crate::types::AgentOrUserId;
 
 /// Create a fixed asset.
+///
+/// When `funding_account` is set, the acquisition is capitalised in the same
+/// transaction: DR asset account / CR funding account. Without it the register
+/// entry alone is created — the caller asserts the cost already reached the GL
+/// (e.g. via a bill line coded to the asset account); depreciation would
+/// otherwise run against cost the ledger never saw.
 pub async fn create_asset(
     engine: &ErpEngine,
     entity_id: Uuid,
     req: CreateAssetRequest,
-    _created_by: &AgentOrUserId,
+    created_by: &AgentOrUserId,
 ) -> ErpResult<Uuid> {
     let id = Uuid::new_v4();
     let asset_number = format!("FA-{:06}", id.as_fields().0 % 1_000_000);
@@ -23,6 +29,8 @@ pub async fn create_asset(
     let gl_asset = req.gl_asset_account.unwrap_or_else(|| posting.fixed_asset.clone());
     let gl_accum = req.gl_accum_depr_account.unwrap_or_else(|| posting.accumulated_depreciation.clone());
     let gl_expense = req.gl_depr_expense.unwrap_or_else(|| posting.depreciation_expense.clone());
+
+    let mut tx = engine.pool().begin().await?;
 
     sqlx::query(
         r#"INSERT INTO fixed_assets 
@@ -45,8 +53,59 @@ pub async fn create_asset(
     .bind(&gl_accum)
     .bind(&gl_expense)
     .bind(Utc::now())
-    .execute(engine.pool())
+    .execute(&mut *tx)
     .await?;
+
+    // Capitalisation JE — only when the caller names the funding source.
+    if let Some(funding) = req.funding_account.as_deref().filter(|a| !a.trim().is_empty()) {
+        if funding == gl_asset {
+            return Err(crate::error::ErpError::ValidationFailed {
+                message: "Funding account must differ from the asset account".to_string(),
+            });
+        }
+        let base_ccy = engine.config_for(entity_id).await?.base_currency.clone();
+        let entry_req = CreateJournalEntryRequest {
+            date: req.acquisition_date,
+            source: JournalSource::FixedAsset,
+            source_id: Some(id),
+            reference: asset_number.clone(),
+            description: format!("Capitalise {} — {}", asset_number, req.description),
+            lines: vec![
+                CreateJournalLineRequest {
+                    account_code: gl_asset.clone(),
+                    debit: Some(req.cost),
+                    credit: None,
+                    currency: base_ccy.clone(),
+                    fx_rate: Some(Decimal::ONE),
+                    description: Some(format!("Asset cost: {}", req.description)),
+                    dimensions: None,
+                },
+                CreateJournalLineRequest {
+                    account_code: funding.to_string(),
+                    debit: None,
+                    credit: Some(req.cost),
+                    currency: base_ccy,
+                    fx_rate: Some(Decimal::ONE),
+                    description: Some(format!("Funding for {}", asset_number)),
+                    dimensions: None,
+                },
+            ],
+            post_immediately: true,
+        };
+        let period =
+            crate::services::periods::period_for_date(engine, entity_id, req.acquisition_date).await?;
+        crate::services::journal::create_and_post_in_tx(
+            &mut tx,
+            engine,
+            entity_id,
+            entry_req,
+            period.id,
+            created_by.clone(),
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(id)
 }

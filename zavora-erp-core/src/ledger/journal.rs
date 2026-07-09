@@ -18,6 +18,9 @@ pub enum JournalSource {
     Payment,
     Payroll,
     Depreciation,
+    /// Fixed-asset lifecycle postings other than depreciation (capitalisation,
+    /// disposal).
+    FixedAsset,
     FxRevaluation,
     InventoryAdjustment,
     BankFee,

@@ -250,6 +250,13 @@ pub struct CreateAssetRequest {
     pub gl_asset_account: Option<AccountCode>,
     pub gl_accum_depr_account: Option<AccountCode>,
     pub gl_depr_expense: Option<AccountCode>,
+    /// When set, a capitalisation JE is posted: DR asset account / CR this
+    /// account (bank for a direct purchase, AP for on-credit, opening-balance
+    /// equity for takeover balances). Leave `None` when the cost already
+    /// reached the GL another way — e.g. a bill line coded to the asset
+    /// account — otherwise the cost would post twice.
+    #[serde(default)]
+    pub funding_account: Option<AccountCode>,
 }
 
 /// Request to dispose of an asset.
