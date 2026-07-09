@@ -111,6 +111,22 @@ enter suspended tenants.
 | 1 | Shipped | Suspend / restore, impersonate |
 | 2 | Shipped | Detail drawer, plan, archive, audit UI, pagination, targeted Open |
 | 3 | Shipped | Suspend gate, operators, metrics, Open reason + read-only |
+| 4 | Shipped | Billing subscription ↔ tenants.plan_key / plan_status sync |
+
+## Billing sync (Phase 4)
+
+Whenever Paystack / subscription state is written (`merge_subscription`), the
+platform `tenants` row is updated:
+
+| `subscription.status` | `tenants.plan_status` |
+|----------------------|------------------------|
+| trialing / trial | trial |
+| active / paid | active |
+| past_due | past_due |
+| cancelled | active (access until period end) |
+
+Ops **suspend** (`suspended_at`) always wins over billing status. On API startup
+a backfill mirrors existing `entity_settings.subscription` into `tenants`.
 
 ## Ops checklist (production)
 

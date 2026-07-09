@@ -71,6 +71,12 @@ async fn main() -> anyhow::Result<()> {
         Ok(None) => {}
         Err(e) => tracing::error!("Platform bootstrap failed: {e}"),
     }
+    // Keep platform tenants.plan_* aligned with entity_settings.subscription.
+    match zavora_erp_core::services::platform::backfill_tenant_billing_from_settings(&pool).await {
+        Ok(n) if n > 0 => tracing::info!("Platform tenant billing backfill updated {n} row(s)"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("Platform tenant billing backfill skipped: {e}"),
+    }
 
     // Redis connection
     let redis_client = redis::Client::open(redis_url)?;

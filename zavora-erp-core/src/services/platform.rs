@@ -25,6 +25,30 @@ const PRIMARY_CONTACT_SQL: &str = r#"
      LIMIT 1) AS primary_contact
 "#;
 
+/// One-shot backfill of plan_key/plan_status from entity_settings.subscription
+/// (and branding.plan). Does not clear ops suspensions. Safe to call repeatedly.
+pub async fn backfill_tenant_billing_from_settings(pool: &PgPool) -> ErpResult<u64> {
+    let res = sqlx::query(
+        r#"UPDATE tenants t SET
+               plan_key = COALESCE(
+                   NULLIF(trim(s.subscription->>'plan'), ''),
+                   NULLIF(trim(s.branding->>'plan'), ''),
+                   t.plan_key
+               ),
+               plan_status = CASE
+                   WHEN t.suspended_at IS NOT NULL THEN 'suspended'
+                   WHEN lower(COALESCE(s.subscription->>'status', '')) IN ('trialing', 'trial') THEN 'trial'
+                   WHEN lower(COALESCE(s.subscription->>'status', '')) = 'past_due' THEN 'past_due'
+                   ELSE 'active'
+               END
+           FROM entity_settings s
+           WHERE s.entity_id = t.entity_id"#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// Ensure a bootstrap Super Admin exists when env credentials are set.
 /// Idempotent: if the email already exists, does nothing.
 pub async fn bootstrap_from_env(pool: &PgPool) -> ErpResult<Option<Uuid>> {
@@ -121,6 +145,50 @@ pub async fn upsert_tenant(
     .bind(organization_name)
     .bind(organization_type)
     .bind(plan_key)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Map Paystack / entity_settings subscription status → platform `plan_status`.
+/// Does not clear ops suspension (`suspended_at`); those stay `suspended`.
+pub fn map_subscription_status(status: &str) -> &'static str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "trialing" | "trial" => "trial",
+        "past_due" | "pastdue" => "past_due",
+        "active" | "paid" => "active",
+        // Cancelled tenants keep access until period end — still listed as active.
+        "cancelled" | "canceled" => "active",
+        other if other == "suspended" => "suspended",
+        _ => "active",
+    }
+}
+
+/// Mirror billing subscription plan/status onto the platform tenants directory.
+/// Best-effort: never fails the billing path. Skips plan_status when ops-suspended.
+pub async fn sync_tenant_billing(
+    pool: &PgPool,
+    entity_id: Uuid,
+    plan_key: Option<&str>,
+    subscription_status: Option<&str>,
+) -> ErpResult<()> {
+    let plan_status = subscription_status.map(map_subscription_status);
+    // Ensure a directory row exists (signup should have created one).
+    let _ = ensure_tenant_row(pool, entity_id).await;
+
+    sqlx::query(
+        r#"UPDATE tenants SET
+               plan_key = COALESCE($2, plan_key),
+               plan_status = CASE
+                   WHEN suspended_at IS NOT NULL THEN 'suspended'
+                   WHEN $3::text IS NOT NULL THEN $3
+                   ELSE plan_status
+               END
+           WHERE entity_id = $1"#,
+    )
+    .bind(entity_id)
+    .bind(plan_key)
+    .bind(plan_status)
     .execute(pool)
     .await?;
     Ok(())

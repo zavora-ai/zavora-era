@@ -8,6 +8,12 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-09 — Platform Super Admin Phase 4 (billing directory sync)
+
+Paystack / subscription status now mirrors onto `tenants.plan_key` /
+`plan_status` so the ops console stays accurate. Startup backfill from
+`entity_settings.subscription`; ops suspend still overrides billing status.
+
 ### 2026-07-09 — Platform Super Admin Phase 3
 
 Hardening and multi-operator ops console.
