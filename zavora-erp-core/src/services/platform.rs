@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::{ErpError, ErpResult};
 use crate::platform::{
-    PlatformUserRow, TenantOwnerRow, TenantRow, TenantSummary, ROLE_PLATFORM_SUPER_ADMIN,
+    PlatformAuditEvent, PlatformUserRow, TenantDetail, TenantOwnerRow, TenantRow,
+    TenantSummary, TenantUserSummary, ROLE_PLATFORM_SUPER_ADMIN,
 };
 
 /// Ensure a bootstrap Super Admin exists when env credentials are set.
@@ -138,6 +139,10 @@ pub async fn refresh_tenant_counts(pool: &PgPool, entity_id: Uuid) -> ErpResult<
 pub struct ListTenantsQuery {
     pub q: Option<String>,
     pub plan_status: Option<String>,
+    /// When true, hide tenants with zero users (noise from empty seeds).
+    pub hide_empty: bool,
+    /// When true, exclude archived tenants.
+    pub hide_archived: bool,
     pub limit: i64,
     pub offset: i64,
 }
@@ -169,33 +174,35 @@ pub async fn list_tenants(pool: &PgPool, query: ListTenantsQuery) -> ErpResult<(
     .await
     .ok();
 
-    let total: i64 = if q.is_some() || status.is_some() {
-        sqlx::query_scalar(
-            r#"SELECT COUNT(*) FROM tenants t
-               WHERE ($1::text IS NULL OR t.organization_name ILIKE '%' || $1 || '%'
-                      OR t.entity_id::text ILIKE '%' || $1 || '%')
-                 AND ($2::text IS NULL OR t.plan_status = $2)"#,
-        )
-        .bind(&q)
-        .bind(&status)
-        .fetch_one(pool)
-        .await?
-    } else {
-        sqlx::query_scalar("SELECT COUNT(*) FROM tenants")
-            .fetch_one(pool)
-            .await?
-    };
+    let total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM tenants t
+           WHERE ($1::text IS NULL OR t.organization_name ILIKE '%' || $1 || '%'
+                  OR t.entity_id::text ILIKE '%' || $1 || '%')
+             AND ($2::text IS NULL OR t.plan_status = $2)
+             AND (NOT $3::bool OR t.user_count > 0)
+             AND (NOT $4::bool OR t.archived_at IS NULL)"#,
+    )
+    .bind(&q)
+    .bind(&status)
+    .bind(query.hide_empty)
+    .bind(query.hide_archived)
+    .fetch_one(pool)
+    .await?;
 
     let rows = sqlx::query_as::<_, TenantRow>(
         r#"SELECT * FROM tenants t
            WHERE ($1::text IS NULL OR t.organization_name ILIKE '%' || $1 || '%'
                   OR t.entity_id::text ILIKE '%' || $1 || '%')
              AND ($2::text IS NULL OR t.plan_status = $2)
+             AND (NOT $3::bool OR t.user_count > 0)
+             AND (NOT $4::bool OR t.archived_at IS NULL)
            ORDER BY t.created_at DESC
-           LIMIT $3 OFFSET $4"#,
+           LIMIT $5 OFFSET $6"#,
     )
     .bind(&q)
     .bind(&status)
+    .bind(query.hide_empty)
+    .bind(query.hide_archived)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -363,6 +370,249 @@ pub async fn pick_impersonation_target(
     .ok_or_else(|| ErpError::ValidationFailed {
         message: "Tenant has no active users to impersonate".into(),
     })
+}
+
+/// Impersonate a specific user in the tenant (must belong to entity and be active).
+pub async fn get_impersonation_target(
+    pool: &PgPool,
+    entity_id: Uuid,
+    user_id: Uuid,
+) -> ErpResult<TenantOwnerRow> {
+    sqlx::query_as::<_, TenantOwnerRow>(
+        r#"SELECT id, entity_id, email, display_name, role
+           FROM era_users
+           WHERE id = $1 AND entity_id = $2 AND is_active = true"#,
+    )
+    .bind(user_id)
+    .bind(entity_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ErpError::ValidationFailed {
+        message: "User not found, inactive, or not in this tenant".into(),
+    })
+}
+
+pub async fn list_tenant_users(
+    pool: &PgPool,
+    entity_id: Uuid,
+) -> ErpResult<Vec<TenantUserSummary>> {
+    let rows = sqlx::query_as::<_, TenantUserSummary>(
+        r#"SELECT id, email, display_name, role, is_active, last_login, created_at
+           FROM era_users
+           WHERE entity_id = $1
+           ORDER BY
+             CASE WHEN role = 'Owner' THEN 0 ELSE 1 END,
+             created_at ASC NULLS LAST,
+             email ASC"#,
+    )
+    .bind(entity_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ListAuditQuery {
+    pub entity_id: Option<Uuid>,
+    pub action: Option<String>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+pub async fn list_audit_events(
+    pool: &PgPool,
+    query: ListAuditQuery,
+) -> ErpResult<(Vec<PlatformAuditEvent>, i64)> {
+    let limit = query.limit.clamp(1, 200);
+    let offset = query.offset.max(0);
+    let action = query
+        .action
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM platform_audit_events e
+           WHERE ($1::uuid IS NULL OR e.target_entity_id = $1)
+             AND ($2::text IS NULL OR e.action = $2)
+             AND e.action NOT IN ('list_tenants', 'get_tenant')"#,
+    )
+    .bind(query.entity_id)
+    .bind(&action)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query_as::<_, PlatformAuditEvent>(
+        r#"SELECT e.id,
+                  e.actor_platform_user_id,
+                  u.email AS actor_email,
+                  e.action,
+                  e.target_entity_id,
+                  t.organization_name,
+                  COALESCE(e.metadata, '{}'::jsonb) AS metadata,
+                  e.created_at
+           FROM platform_audit_events e
+           LEFT JOIN platform_users u ON u.id = e.actor_platform_user_id
+           LEFT JOIN tenants t ON t.entity_id = e.target_entity_id
+           WHERE ($1::uuid IS NULL OR e.target_entity_id = $1)
+             AND ($2::text IS NULL OR e.action = $2)
+             AND e.action NOT IN ('list_tenants', 'get_tenant')
+           ORDER BY e.created_at DESC
+           LIMIT $3 OFFSET $4"#,
+    )
+    .bind(query.entity_id)
+    .bind(&action)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok((rows, total))
+}
+
+pub async fn get_tenant_detail(pool: &PgPool, entity_id: Uuid) -> ErpResult<Option<TenantDetail>> {
+    let tenant = match get_tenant(pool, entity_id).await? {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let users = list_tenant_users(pool, entity_id).await?;
+    let (recent_audit, _) = list_audit_events(
+        pool,
+        ListAuditQuery {
+            entity_id: Some(entity_id),
+            action: None,
+            limit: 20,
+            offset: 0,
+        },
+    )
+    .await?;
+    Ok(Some(TenantDetail {
+        tenant,
+        users,
+        recent_audit,
+    }))
+}
+
+/// Update plan_key and/or plan_status. Cannot set plan_status=suspended here —
+/// use suspend_tenant so session revocation stays consistent.
+pub async fn update_tenant_plan(
+    pool: &PgPool,
+    entity_id: Uuid,
+    plan_key: Option<Option<String>>,
+    plan_status: Option<String>,
+) -> ErpResult<TenantSummary> {
+    ensure_tenant_row(pool, entity_id).await?;
+
+    if let Some(ref status) = plan_status {
+        let s = status.trim();
+        if !matches!(s, "active" | "trial" | "past_due") {
+            return Err(ErpError::ValidationFailed {
+                message: "plan_status must be active, trial, or past_due (use suspend for suspended)"
+                    .into(),
+            });
+        }
+        if s == "suspended" {
+            return Err(ErpError::ValidationFailed {
+                message: "Use the suspend endpoint to suspend a tenant".into(),
+            });
+        }
+    }
+
+    // plan_key: Some(None) clears; Some(Some(v)) sets; None leaves unchanged.
+    let row = sqlx::query_as::<_, TenantRow>(
+        r#"UPDATE tenants SET
+               plan_key = CASE
+                   WHEN $2::bool THEN $3
+                   ELSE plan_key
+               END,
+               plan_status = COALESCE($4, plan_status)
+           WHERE entity_id = $1
+             AND (suspended_at IS NULL)
+           RETURNING *"#,
+    )
+    .bind(entity_id)
+    .bind(plan_key.is_some())
+    .bind(plan_key.clone().flatten())
+    .bind(plan_status.as_deref().map(str::trim))
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => Ok(TenantSummary::from(r)),
+        None => {
+            // Distinguish not found vs suspended.
+            if is_tenant_suspended(pool, entity_id).await? {
+                return Err(ErpError::ValidationFailed {
+                    message: "Tenant is suspended; restore before changing plan".into(),
+                });
+            }
+            Err(ErpError::NotFound {
+                entity_type: "Tenant".into(),
+                id: entity_id,
+            })
+        }
+    }
+}
+
+pub async fn archive_tenant(pool: &PgPool, entity_id: Uuid) -> ErpResult<TenantSummary> {
+    ensure_tenant_row(pool, entity_id).await?;
+    let updated = sqlx::query(
+        r#"UPDATE tenants SET archived_at = COALESCE(archived_at, NOW())
+           WHERE entity_id = $1"#,
+    )
+    .bind(entity_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Err(ErpError::NotFound {
+            entity_type: "Tenant".into(),
+            id: entity_id,
+        });
+    }
+    // Mirror onto entity_settings when present (best-effort).
+    let _ = sqlx::query(
+        "UPDATE entity_settings SET archived_at = COALESCE(archived_at, NOW()) WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .execute(pool)
+    .await;
+    revoke_entity_refresh_tokens(pool, entity_id).await?;
+    get_tenant(pool, entity_id)
+        .await?
+        .ok_or_else(|| ErpError::NotFound {
+            entity_type: "Tenant".into(),
+            id: entity_id,
+        })
+}
+
+pub async fn unarchive_tenant(pool: &PgPool, entity_id: Uuid) -> ErpResult<TenantSummary> {
+    ensure_tenant_row(pool, entity_id).await?;
+    let updated = sqlx::query(
+        r#"UPDATE tenants SET archived_at = NULL WHERE entity_id = $1"#,
+    )
+    .bind(entity_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Err(ErpError::NotFound {
+            entity_type: "Tenant".into(),
+            id: entity_id,
+        });
+    }
+    let _ = sqlx::query(
+        "UPDATE entity_settings SET archived_at = NULL, archived_by = NULL WHERE entity_id = $1",
+    )
+    .bind(entity_id)
+    .execute(pool)
+    .await;
+    get_tenant(pool, entity_id)
+        .await?
+        .ok_or_else(|| ErpError::NotFound {
+            entity_type: "Tenant".into(),
+            id: entity_id,
+        })
 }
 
 /// Ensure a tenants row exists for entity_id (sync from entity_settings if needed).

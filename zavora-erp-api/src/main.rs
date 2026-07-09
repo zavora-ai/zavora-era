@@ -209,8 +209,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/platform/auth/refresh", post(routes::platform::refresh))
         .route("/api/v1/platform/auth/logout", post(routes::platform::logout))
         .route("/api/v1/platform/me", get(routes::platform::me))
+        .route("/api/v1/platform/audit", get(routes::platform::list_audit))
         .route("/api/v1/platform/tenants", get(routes::platform::list_tenants))
-        .route("/api/v1/platform/tenants/{entity_id}", get(routes::platform::get_tenant))
+        .route(
+            "/api/v1/platform/tenants/{entity_id}",
+            get(routes::platform::get_tenant).patch(routes::platform::update_tenant),
+        )
         .route(
             "/api/v1/platform/tenants/{entity_id}/suspend",
             post(routes::platform::suspend_tenant),
@@ -218,6 +222,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/platform/tenants/{entity_id}/unsuspend",
             post(routes::platform::unsuspend_tenant),
+        )
+        .route(
+            "/api/v1/platform/tenants/{entity_id}/archive",
+            post(routes::platform::archive_tenant),
+        )
+        .route(
+            "/api/v1/platform/tenants/{entity_id}/unarchive",
+            post(routes::platform::unarchive_tenant),
         )
         .route(
             "/api/v1/platform/tenants/{entity_id}/impersonate",

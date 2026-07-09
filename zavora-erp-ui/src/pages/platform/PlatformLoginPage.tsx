@@ -44,6 +44,8 @@ export default function PlatformLoginPage() {
             <input
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
               type="email"
+              name="email"
+              autoComplete="username"
               autoFocus
               required
               value={email}
@@ -56,6 +58,8 @@ export default function PlatformLoginPage() {
             <input
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
               type="password"
+              name="password"
+              autoComplete="current-password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}

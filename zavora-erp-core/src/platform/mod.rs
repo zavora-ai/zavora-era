@@ -95,3 +95,37 @@ pub struct TenantOwnerRow {
     pub display_name: String,
     pub role: String,
 }
+
+/// Tenant staff user as seen by the platform directory (no password hash).
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct TenantUserSummary {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+/// Operator audit event for the platform console.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct PlatformAuditEvent {
+    pub id: Uuid,
+    pub actor_platform_user_id: Uuid,
+    pub actor_email: Option<String>,
+    pub action: String,
+    pub target_entity_id: Option<Uuid>,
+    pub organization_name: Option<String>,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Full tenant detail for the ops drawer.
+#[derive(Debug, Clone, Serialize)]
+pub struct TenantDetail {
+    #[serde(flatten)]
+    pub tenant: TenantSummary,
+    pub users: Vec<TenantUserSummary>,
+    pub recent_audit: Vec<PlatformAuditEvent>,
+}
