@@ -15,13 +15,31 @@ use std::sync::Arc;
 /// requirement — they don't touch the books.
 fn required_scopes(tool_name: &str) -> &'static [&'static str] {
     match tool_name {
-        // Ledger postings — the highest bar.
-        "post_bill" | "record_payment" | "post_journal_entry" | "post_invoice" => &["ledger:post"],
-        // Other writes: drafting documents and any browser action that can
-        // mutate ERP state (clicks/typing/form fills / navigation that posts).
-        "create_bill_draft" | "create_invoice_draft" | "create_customer" | "create_vendor"
-        | "update_customer" | "update_vendor" | "browser_click" | "browser_type"
-        | "browser_fill_form" | "browser_select_option" | "browser_press_key" => &["erp:write"],
+        // Ledger postings, statutory transmissions and period locks — the
+        // highest bar. Anything that writes journal lines, moves money,
+        // files with KRA, or (un)locks a period lands here.
+        "post_bill" | "record_payment" | "post_journal_entry" | "post_invoice"
+        | "post_pay_run" | "approve_pay_run" | "mark_pay_run_paid"
+        | "close_period" | "reopen_period"
+        | "file_tax_return" | "remit_tax_filing" | "etims_transmit_invoice"
+        | "run_depreciation" | "run_fx_revaluation"
+        | "complete_reconciliation"
+        // Stock receipts/adjustments and debit notes post inventory JEs.
+        | "receive_goods" | "adjust_stock" | "create_debit_note" => &["ledger:post"],
+        // Other writes: drafting documents, masters, payroll prep, procurement
+        // workflow, outward sends, and any browser action that can mutate ERP
+        // state (clicks/typing/form fills / navigation that posts).
+        "create_bill_draft" | "create_invoice_draft" | "submit_invoice"
+        | "create_customer" | "create_vendor" | "update_customer" | "update_vendor"
+        | "create_product" | "update_product" | "transfer_stock"
+        | "send_customer_statement" | "import_bank_statement" | "compute_reconciliation"
+        | "set_budget" | "run_payroll" | "add_pay_run_input" | "recompute_pay_run"
+        | "create_sales_order_draft" | "submit_sales_order"
+        | "create_purchase_order_draft" | "submit_purchase_order" | "create_direct_po"
+        | "send_purchase_order" | "create_requisition" | "approve_requisition"
+        | "convert_requisition" | "create_expense_claim" | "approve_expense_claim"
+        | "browser_click" | "browser_type" | "browser_fill_form"
+        | "browser_select_option" | "browser_press_key" => &["erp:write"],
         // Native orchestration / memory / evidence — no ERP capability needed.
         "plan_tasks" | "update_task" | "use_skill" | "remember" | "recall" | "showcase_step"
         | "erp_login" => &[],
@@ -92,6 +110,48 @@ impl Tool for ScopedTool {
                     )
                 }))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::required_scopes;
+
+    /// Every mutating mcp-erp tool must map to a write or post scope. A tool
+    /// falling through to the read arm is a privilege hole (a Viewer session
+    /// could run it) — this test pins the full mutating surface so adding a
+    /// tool to mcp-erp without classifying it here fails loudly.
+    #[test]
+    fn every_mutating_tool_requires_write_or_post() {
+        let posts = [
+            "post_bill", "record_payment", "post_journal_entry", "post_invoice",
+            "post_pay_run", "approve_pay_run", "mark_pay_run_paid",
+            "close_period", "reopen_period",
+            "file_tax_return", "remit_tax_filing", "etims_transmit_invoice",
+            "run_depreciation", "run_fx_revaluation", "complete_reconciliation",
+            "receive_goods", "adjust_stock", "create_debit_note",
+        ];
+        let writes = [
+            "create_bill_draft", "create_invoice_draft", "submit_invoice",
+            "create_customer", "create_vendor", "update_customer", "update_vendor",
+            "create_product", "update_product", "transfer_stock",
+            "send_customer_statement", "import_bank_statement", "compute_reconciliation",
+            "set_budget", "run_payroll", "add_pay_run_input", "recompute_pay_run",
+            "create_sales_order_draft", "submit_sales_order",
+            "create_purchase_order_draft", "submit_purchase_order", "create_direct_po",
+            "send_purchase_order", "create_requisition", "approve_requisition",
+            "convert_requisition", "create_expense_claim", "approve_expense_claim",
+        ];
+        for t in posts {
+            assert_eq!(required_scopes(t), &["ledger:post"], "{t} must require ledger:post");
+        }
+        for t in writes {
+            assert_eq!(required_scopes(t), &["erp:write"], "{t} must require erp:write");
+        }
+        // Reads stay reads — the default arm.
+        for t in ["list_invoices", "get_dashboard", "run_report", "cit_estimate", "three_way_match"] {
+            assert_eq!(required_scopes(t), &["erp:read"], "{t} should be a read");
         }
     }
 }
