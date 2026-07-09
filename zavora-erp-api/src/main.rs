@@ -367,6 +367,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/bank/reconciliations/compute", post(routes::reconciliation::compute))
         .route("/api/v1/bank/reconciliations/complete", post(routes::reconciliation::complete))
         .route("/api/v1/bank/confirm-match", post(routes::bank::confirm_match))
+        .route("/api/v1/forecasts/cash", get(routes::bank::cash_forecast))
         // Payroll
         .route("/api/v1/payroll", get(routes::payroll::list))
         .route("/api/v1/payroll/run", post(routes::payroll::run))
