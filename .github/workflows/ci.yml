@@ -1,0 +1,106 @@
+name: CI
+
+# Quality gate on every PR to main (deploy.yml only fires AFTER merge, so
+# without this nothing checked a PR compiled or passed tests before it hit
+# production). Three independent jobs so a UI-only breakage doesn't hide
+# behind a long Rust build:
+#
+#   erp   – cargo build + full test suite for zavora-erp-core/api against
+#           real Postgres + Redis services (the integration harness skips
+#           gracefully without them, which would silently skip ~half the
+#           suite — so we provide both).
+#   amos  – builds + tests the standalone amos workspace. Its ../../adk-rust
+#           path deps are satisfied by cloning adk-rust as a sibling of the
+#           checkout (same layout amos/Dockerfile builds with).
+#   ui    – type-checks and production-builds the SPA.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  erp:
+    name: ERP build + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zavora
+          POSTGRES_PASSWORD: zavora
+          POSTGRES_DB: zavora_era
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zavora"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://zavora:zavora@localhost:5433/zavora_era
+      TEST_DATABASE_URL: postgres://zavora:zavora@localhost:5433/zavora_era
+      REDIS_URL: redis://127.0.0.1:6380
+      JWT_ACCESS_SECRET: ci-access-secret-not-a-real-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: erp
+      - name: Build workspace
+        run: cargo build --workspace --locked
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+  amos:
+    name: Amos build + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # amos path-depends on ../../adk-rust (relative to amos/), i.e. a
+      # sibling of this checkout — mirror the layout amos/Dockerfile uses.
+      - name: Clone adk-rust as sibling
+        run: git clone --depth 1 https://github.com/zavora-ai/adk-rust.git "$GITHUB_WORKSPACE/../adk-rust"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: amos
+          workspaces: amos
+      - name: Build
+        working-directory: amos
+        run: cargo build
+      - name: Run tests
+        working-directory: amos
+        run: cargo test --bin amos
+
+  ui:
+    name: UI typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: zavora-erp-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zavora-erp-ui/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
