@@ -34,6 +34,8 @@ export default function TaxFilingsPage() {
     <div>
       <PageHeader title="Tax Filing & Remittance" subtitle="Record VAT/PAYE/WHT returns as filed and the payment to KRA, so the ledger reflects tax paid." />
 
+      <CitCard />
+
       <div className="card p-4 mb-5 flex flex-wrap items-end gap-3">
         <div><label className="label">Tax</label><select className="input" value={taxType} onChange={(e) => setTaxType(e.target.value)}><option>VAT</option><option>PAYE</option><option>WHT</option></select></div>
         <div><label className="label">Period from</label><input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
