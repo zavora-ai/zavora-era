@@ -83,6 +83,9 @@ fn prod(name: &str, kind: ProductType, price: rust_decimal::Decimal) -> CreatePr
         purchase_account: None,
         vat_treatment: None, // defaults to Standard 16% VAT
         track_inventory: Some(false),
+        sku: None,
+        opening_stock: None,
+        opening_unit_cost: None,
     }
 }
 
