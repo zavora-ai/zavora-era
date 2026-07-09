@@ -95,6 +95,11 @@ export const signup = (data: {
   plan?: string;
 }) => api.post('/auth/signup', data);
 export const logout = () => api.post('/auth/logout', {});
+// Subscription billing — start a Paystack checkout for the caller's plan.
+// Free plans return { free: true }; paid plans return { authorization_url }.
+export const billingCheckout = (plan: string, callback_url?: string) =>
+  api.post('/billing/checkout', { plan, callback_url });
+export const getSubscription = () => api.get('/billing/subscription');
 // === Tenant management (multi-tenant: a user may belong to several entities) ===
 export const getMyTenants = (includeArchived = false) =>
   api.get('/auth/tenants', { params: includeArchived ? { include_archived: true } : undefined });
