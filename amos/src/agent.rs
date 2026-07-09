@@ -52,11 +52,20 @@ pub async fn build_runner(
         memory_service: None,
     });
 
-    // Session authorization context for the scope wrapper + audit trail.
+    // Session authorization context for the scope wrapper + audit trail. The
+    // session handle turns on the interactive confirm-before-write gate for
+    // ledger:post tools (ambient ops pass None and stay unattended).
     let granted = Arc::new(principal.scopes());
     let user_id = principal.user_id.to_string();
     let scope = |tool: Arc<dyn adk_core::Tool>| {
-        crate::scope::ScopedTool::wrap(tool, granted.clone(), user_id.clone(), session_id.clone(), state.audit.clone())
+        crate::scope::ScopedTool::wrap(
+            tool,
+            granted.clone(),
+            user_id.clone(),
+            session_id.clone(),
+            state.audit.clone(),
+            Some(session.clone()),
+        )
     };
 
     let mut builder = RealtimeRunner::builder().model(state.model.clone()).config(config);

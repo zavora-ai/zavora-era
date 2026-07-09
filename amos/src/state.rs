@@ -36,6 +36,41 @@ pub struct ShowcaseStep {
     pub at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Pending write-confirmations for one session: the code gate behind
+/// "postings always require your explicit confirmation". A ledger:post tool
+/// registers a request here and blocks until the UI's Approve/Deny button
+/// resolves it (or it times out). Prompt instructions alone could not stop
+/// the model from writing immediately — this can.
+#[derive(Default)]
+pub struct Confirmations {
+    pending: tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+}
+
+impl Confirmations {
+    /// Register a new confirmation; returns its id and the receiver the tool
+    /// awaits.
+    pub async fn request(&self) -> (String, tokio::sync::oneshot::Receiver<bool>) {
+        let id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending.lock().await.insert(id.clone(), tx);
+        (id, rx)
+    }
+
+    /// Resolve a pending confirmation from the UI. Returns false if the id is
+    /// unknown (already resolved / timed out) — resolving twice is harmless.
+    pub async fn resolve(&self, id: &str, approve: bool) -> bool {
+        match self.pending.lock().await.remove(id) {
+            Some(tx) => tx.send(approve).is_ok(),
+            None => false,
+        }
+    }
+
+    /// Drop a request that timed out so the map doesn't accumulate.
+    pub async fn forget(&self, id: &str) {
+        self.pending.lock().await.remove(id);
+    }
+}
+
 /// State scoped to ONE realtime session (one browser connection). Tasks,
 /// evidence, and the active skill belong to the conversation that created
 /// them — process-global versions bled between concurrent sessions (one
@@ -46,6 +81,8 @@ pub struct SessionState {
     pub active_skill: RwLock<Option<String>>,
     pub tasks: RwLock<Vec<AmosTask>>,
     pub showcase: RwLock<Vec<ShowcaseStep>>,
+    /// Write-confirmation gate for this session's posting tools.
+    pub confirmations: Confirmations,
     /// JSON messages pushed to THIS session's UI websocket only.
     pub push: broadcast::Sender<String>,
 }
@@ -57,6 +94,7 @@ impl SessionState {
             active_skill: RwLock::new(None),
             tasks: RwLock::new(Vec::new()),
             showcase: RwLock::new(Vec::new()),
+            confirmations: Confirmations::default(),
             push,
         }
     }
@@ -69,6 +107,35 @@ impl SessionState {
     pub async fn push_tasks(&self) {
         let tasks = self.tasks.read().await.clone();
         self.push_json(serde_json::json!({"type": "tasks", "tasks": tasks}));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Confirmations;
+
+    #[tokio::test]
+    async fn confirmation_resolves_approval_to_waiter() {
+        let c = Confirmations::default();
+        let (id, rx) = c.request().await;
+        assert!(c.resolve(&id, true).await, "first resolve reaches the waiter");
+        assert_eq!(rx.await, Ok(true));
+        // Second resolve (double click / stale id) is a no-op.
+        assert!(!c.resolve(&id, false).await);
+    }
+
+    #[tokio::test]
+    async fn confirmation_decline_and_forget() {
+        let c = Confirmations::default();
+        let (id, rx) = c.request().await;
+        assert!(c.resolve(&id, false).await);
+        assert_eq!(rx.await, Ok(false));
+
+        let (id2, rx2) = c.request().await;
+        c.forget(&id2).await;
+        // Sender dropped → the waiting tool sees a closed channel (timeout path).
+        assert!(rx2.await.is_err());
+        assert!(!c.resolve(&id2, true).await);
     }
 }
 

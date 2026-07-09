@@ -129,6 +129,20 @@
     border: 1px solid #f3d1d1; border-radius: 8px; padding: 9px 13px;
   }
 
+  /* Confirm-before-write card: a pending posting waiting on Approve/Decline. */
+  .confirm-card {
+    display: block; align-self: stretch; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--accent);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .confirm-card pre {
+    margin: 8px 0; padding: 8px 10px; font-size: 11px; line-height: 1.5;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;
+  }
+  .confirm-card .confirm-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .confirm-card .resolved { color: var(--ink-3); font-size: 12px; }
+
   /* ══ Composer ════════════════════════════════════════════ */
   .composer-zone { flex-shrink: 0; padding: 8px 32px 20px; }
   .composer-inner { max-width: 760px; margin: 0 auto; }
@@ -877,6 +891,55 @@ function addNotice(text) {
   $('threadInner').appendChild(div);
   scrollThread();
 }
+
+// ─── Confirm-before-write: a pending posting waits on these buttons ────
+function addConfirmCard(msg) {
+  hideWelcome();
+  const card = document.createElement('div');
+  card.className = 'confirm-card';
+  card.dataset.confirmId = msg.id;
+
+  const head = document.createElement('div');
+  head.innerHTML = '<strong>Approve this posting?</strong> Amos wants to run <code></code> against the live ledger.';
+  head.querySelector('code').textContent = msg.tool;
+  card.appendChild(head);
+
+  if (msg.args && msg.args !== '{}' && msg.args !== 'null') {
+    const pre = document.createElement('pre');
+    pre.textContent = msg.args;
+    card.appendChild(pre);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'confirm-actions';
+  const mk = (label, cls, approve) => {
+    const b = document.createElement('button');
+    b.className = 'btn ' + cls;
+    b.textContent = label;
+    b.onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'confirm', id: msg.id, approve }));
+      resolveConfirmCard(msg.id, approve ? 'Approved — posting…' : 'Declined. Nothing was posted.');
+    };
+    return b;
+  };
+  actions.appendChild(mk('Approve & post', 'btn-primary', true));
+  actions.appendChild(mk('Decline', 'btn-end', false));
+  card.appendChild(actions);
+
+  $('threadInner').appendChild(card);
+  scrollThread();
+}
+
+function resolveConfirmCard(id, text) {
+  const card = document.querySelector(`.confirm-card[data-confirm-id="${id}"]`);
+  if (!card || card.querySelector('.resolved')) return;
+  const actions = card.querySelector('.confirm-actions');
+  if (actions) actions.remove();
+  const note = document.createElement('div');
+  note.className = 'resolved';
+  note.textContent = text || 'Closed.';
+  card.appendChild(note);
+}
 function appendPending(which, content) {
   if (which === 'user') {
     if (!pendingUser) pendingUser = addMessage('user', '', true);
@@ -1012,6 +1075,8 @@ function handleServer(msg) {
       addNotice(`${msg.status === 'ok' ? '🗓️' : '⚠️'} ${msg.title}: ${String(msg.summary || '').slice(0, 200)}${(msg.summary || '').length > 200 ? '… (full report in your notifications)' : ''}`);
       loadOps();
       break;
+    case 'confirm_request':  addConfirmCard(msg); break;
+    case 'confirm_closed':   resolveConfirmCard(msg.id, 'Expired without approval — nothing was posted.'); break;
     case 'error':            addNotice(msg.message); break;
     case 'notice':           addNotice(msg.message); break;
     case 'suggestions':      renderFollowups(msg.items); break;
