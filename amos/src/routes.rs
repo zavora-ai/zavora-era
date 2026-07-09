@@ -34,11 +34,19 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest_service("/showcase", ServeDir::new(state.showcase_dir.clone()))
         .layer(axum::middleware::from_fn_with_state(state.clone(), require_auth));
 
+    // Liveness only (no auth): deploy probes and orchestrators must not need a
+    // JWT. Data routes stay behind require_auth.
     Router::new()
         .route("/", get(serve_index))
+        .route("/health", get(health))
         .route("/ws", get(ws_handler))
         .merge(protected)
         .with_state(state)
+}
+
+/// Unauthenticated liveness probe — process is up and serving HTTP.
+async fn health() -> impl IntoResponse {
+    Json(serde_json::json!({ "status": "ok", "service": "amos" }))
 }
 
 /// Bearer (or `?token=` for `<img>` loads, which can't set headers) auth on
