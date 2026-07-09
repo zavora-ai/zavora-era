@@ -373,7 +373,8 @@ accounting/product roots of some UX failures.
 
 ### 6.1 P0 — Broken happy paths
 
-- ⬜ **Tracked goods product → post invoice** (see §4.2 inventory link).  
+- ✅ **Tracked goods product → post invoice** *(fixed 2026-07-09 — see §4.2:
+  create AND edit now create/link the stock item).*  
 - ⬜ **Desktop-only shell.** Fixed 260px sidebar + `pl-[260px]`, no hamburger
   (`AppShell.tsx`, `Sidebar.tsx`) — phone/tablet unusable.  
 - ⬜ **Header search is decorative.** “Search anything…” + ⌘K with **no handler**
@@ -600,11 +601,13 @@ accounting/product roots of some UX failures.
 
 ## 8. Operations & quality
 
-- ⬜ **P1 — PR CI quality gate.** Only `.github/workflows/deploy.yml` (deploy on
-  `main`). Need on PR: `cargo clippy --workspace -D warnings`, build,
-  `sqlx migrate run`, `cargo test`, UI `tsc --noEmit` + eslint + build, against
-  Postgres/Redis service containers. Include **`cd amos && cargo test`** when
-  adk-rust available in CI.  
+- ✅ **P1 — PR CI quality gate.** *(Fixed 2026-07-09.)* `.github/workflows/ci.yml`
+  runs on every PR to main: cargo build + full test suite against Postgres/Redis
+  service containers (migrations run via the test harness), amos build + tests
+  (adk-rust cloned as sibling), UI `tsc --noEmit` + production build. Clippy
+  `-D warnings` deferred until the warning backlog is cleared (§8 P3). Once the
+  workflow has a green history, add the three jobs as required status checks on
+  the `main-pr` ruleset.  
 - 🟡 **P1 — Containerization & deploy.** **Exists** (`docker-compose.prod.yml`,
   Dockerfiles, deploy workflow). Remaining: readiness probes maturity, graceful
   API drain, runbooks.  
@@ -639,8 +642,9 @@ done; remaining:
 - 🟡 **Phase 5 — Dimensions tail.** Per-line bill dimensions **on bills are
   done**; supplier CN dimensions still missing (§1). Per-account capture
   controls; snapshot key account+dimension+period (Option B) if volume warrants.  
-- ⬜ **P1 — Ageing/report filters** exclude drafts / non-invoice types (align
-  with §1.1 AR ageing fix).  
+- ✅ **P1 — Ageing/report filters** exclude drafts / non-invoice types *(fixed
+  2026-07-09 with the §1.1 AR ageing fix — same commit covers dashboard +
+  ageing)*.  
 - ⬜ **P1 — VAT return multi-account** (align with §1.2).
 
 ---
