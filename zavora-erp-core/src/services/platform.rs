@@ -8,8 +8,9 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::{ErpError, ErpResult};
 use crate::platform::{
-    PlatformAuditEvent, PlatformUserRow, TenantDetail, TenantListRow, TenantOwnerRow, TenantRow,
-    TenantSummary, TenantUserSummary, ROLE_PLATFORM_SUPER_ADMIN,
+    PlatformAuditEvent, PlatformMetrics, PlatformOperatorSummary, PlatformUserRow, TenantDetail,
+    TenantListRow, TenantOwnerRow, TenantRow, TenantSummary, TenantUserSummary,
+    ROLE_PLATFORM_SUPER_ADMIN, ROLE_PLATFORM_SUPPORT,
 };
 
 /// Prefer active Owner email/name, else first active user.
@@ -655,6 +656,229 @@ pub async fn unarchive_tenant(pool: &PgPool, entity_id: Uuid) -> ErpResult<Tenan
             entity_type: "Tenant".into(),
             id: entity_id,
         })
+}
+
+// ── Operators ──────────────────────────────────────────────────────────────
+
+pub async fn list_operators(pool: &PgPool) -> ErpResult<Vec<PlatformOperatorSummary>> {
+    let rows = sqlx::query_as::<_, PlatformOperatorSummary>(
+        r#"SELECT id, email, display_name, role, is_active, last_login, created_at
+           FROM platform_users
+           ORDER BY created_at ASC"#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn create_operator(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    password: &str,
+    role: &str,
+) -> ErpResult<PlatformOperatorSummary> {
+    let email = email.trim().to_lowercase();
+    let display_name = display_name.trim();
+    if email.is_empty() || !email.contains('@') {
+        return Err(ErpError::ValidationFailed {
+            message: "Valid email is required".into(),
+        });
+    }
+    if display_name.is_empty() {
+        return Err(ErpError::ValidationFailed {
+            message: "display_name is required".into(),
+        });
+    }
+    if password.len() < 8 {
+        return Err(ErpError::ValidationFailed {
+            message: "Password must be at least 8 characters".into(),
+        });
+    }
+    let role = normalize_operator_role(role)?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM platform_users WHERE lower(email) = lower($1))",
+    )
+    .bind(&email)
+    .fetch_one(pool)
+    .await?;
+    if exists {
+        return Err(ErpError::ValidationFailed {
+            message: "An operator with that email already exists".into(),
+        });
+    }
+    let id = Uuid::new_v4();
+    let hash = auth::hash_password(password)?;
+    sqlx::query(
+        r#"INSERT INTO platform_users (id, email, display_name, password_hash, role, is_active)
+           VALUES ($1, $2, $3, $4, $5, true)"#,
+    )
+    .bind(id)
+    .bind(&email)
+    .bind(display_name)
+    .bind(&hash)
+    .bind(role)
+    .execute(pool)
+    .await?;
+
+    let row = sqlx::query_as::<_, PlatformOperatorSummary>(
+        r#"SELECT id, email, display_name, role, is_active, last_login, created_at
+           FROM platform_users WHERE id = $1"#,
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn set_operator_active(
+    pool: &PgPool,
+    operator_id: Uuid,
+    is_active: bool,
+    actor_id: Uuid,
+) -> ErpResult<PlatformOperatorSummary> {
+    if operator_id == actor_id && !is_active {
+        return Err(ErpError::ValidationFailed {
+            message: "You cannot deactivate your own account".into(),
+        });
+    }
+    // Keep at least one active Super Admin.
+    if !is_active {
+        let target_role: Option<String> =
+            sqlx::query_scalar("SELECT role FROM platform_users WHERE id = $1")
+                .bind(operator_id)
+                .fetch_optional(pool)
+                .await?;
+        let Some(role) = target_role else {
+            return Err(ErpError::NotFound {
+                entity_type: "PlatformUser".into(),
+                id: operator_id,
+            });
+        };
+        if role.eq_ignore_ascii_case(ROLE_PLATFORM_SUPER_ADMIN) {
+            let active_admins: i64 = sqlx::query_scalar(
+                r#"SELECT COUNT(*) FROM platform_users
+                   WHERE is_active = true AND lower(role) = lower($1)"#,
+            )
+            .bind(ROLE_PLATFORM_SUPER_ADMIN)
+            .fetch_one(pool)
+            .await?;
+            if active_admins <= 1 {
+                return Err(ErpError::ValidationFailed {
+                    message: "Cannot deactivate the last active Super Admin".into(),
+                });
+            }
+        }
+    }
+
+    let updated = sqlx::query("UPDATE platform_users SET is_active = $2 WHERE id = $1")
+        .bind(operator_id)
+        .bind(is_active)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if updated == 0 {
+        return Err(ErpError::NotFound {
+            entity_type: "PlatformUser".into(),
+            id: operator_id,
+        });
+    }
+    let row = sqlx::query_as::<_, PlatformOperatorSummary>(
+        r#"SELECT id, email, display_name, role, is_active, last_login, created_at
+           FROM platform_users WHERE id = $1"#,
+    )
+    .bind(operator_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
+fn normalize_operator_role(role: &str) -> ErpResult<&'static str> {
+    match role.trim() {
+        "" | "PlatformSuperAdmin" => Ok(ROLE_PLATFORM_SUPER_ADMIN),
+        "PlatformSupport" => Ok(ROLE_PLATFORM_SUPPORT),
+        other if other.eq_ignore_ascii_case(ROLE_PLATFORM_SUPER_ADMIN) => {
+            Ok(ROLE_PLATFORM_SUPER_ADMIN)
+        }
+        other if other.eq_ignore_ascii_case(ROLE_PLATFORM_SUPPORT) => Ok(ROLE_PLATFORM_SUPPORT),
+        _ => Err(ErpError::ValidationFailed {
+            message: "role must be PlatformSuperAdmin or PlatformSupport".into(),
+        }),
+    }
+}
+
+// ── Metrics ────────────────────────────────────────────────────────────────
+
+pub async fn platform_metrics(pool: &PgPool) -> ErpResult<PlatformMetrics> {
+    let tenants_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tenants")
+        .fetch_one(pool)
+        .await?;
+    let tenants_suspended: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tenants WHERE suspended_at IS NOT NULL OR plan_status = 'suspended'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let tenants_archived: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE archived_at IS NOT NULL")
+            .fetch_one(pool)
+            .await?;
+    let tenants_trial: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE plan_status = 'trial'")
+            .fetch_one(pool)
+            .await?;
+    let tenants_past_due: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE plan_status = 'past_due'")
+            .fetch_one(pool)
+            .await?;
+    let tenants_with_users: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE user_count > 0")
+            .fetch_one(pool)
+            .await?;
+    let tenants_active = (tenants_total - tenants_suspended - tenants_archived).max(0);
+    let users_total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM era_users WHERE is_active = true")
+            .fetch_one(pool)
+            .await?;
+    let operators_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM platform_users")
+        .fetch_one(pool)
+        .await?;
+    let operators_active: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM platform_users WHERE is_active = true")
+            .fetch_one(pool)
+            .await?;
+    let impersonations_7d: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM platform_audit_events
+           WHERE action = 'impersonate_tenant' AND created_at > NOW() - INTERVAL '7 days'"#,
+    )
+    .fetch_one(pool)
+    .await?;
+    let suspensions_7d: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM platform_audit_events
+           WHERE action = 'suspend_tenant' AND created_at > NOW() - INTERVAL '7 days'"#,
+    )
+    .fetch_one(pool)
+    .await?;
+    let signups_7d: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM tenants WHERE created_at > NOW() - INTERVAL '7 days'"#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(PlatformMetrics {
+        tenants_total,
+        tenants_active,
+        tenants_suspended,
+        tenants_archived,
+        tenants_trial,
+        tenants_past_due,
+        tenants_with_users,
+        users_total,
+        operators_total,
+        operators_active,
+        impersonations_7d,
+        suspensions_7d,
+        signups_7d,
+    })
 }
 
 /// Ensure a tenants row exists for entity_id (sync from entity_settings if needed).

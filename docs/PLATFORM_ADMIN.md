@@ -74,17 +74,48 @@ should not auto-create operators.
 - **Audit log** tab — global recent actions
 - Tenant ERP: support banner with **Exit to platform**
 
+## Roles
+
+| Role | Can |
+|------|-----|
+| `PlatformSuperAdmin` | Full console: suspend, plan, archive, operators |
+| `PlatformSupport` | Directory, metrics, audit, Open (impersonate) — **not** suspend/plan/operators |
+
+## Phase 3 additions
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/metrics` | Tenant/operator aggregates (7d activity) |
+| GET | `/operators` | List operators (Super Admin) |
+| POST | `/operators` | Create operator |
+| POST | `/operators/{id}/set-active` | Activate / deactivate |
+| POST | `/tenants/{id}/impersonate` | **Requires** `{ reason, user_id?, read_only? }` |
+
+### Suspend gate (tenant ERP)
+
+Every authenticated ERP request checks `tenants.suspended_*`. Normal sessions are
+blocked immediately (not only at login). Support impersonation sessions may still
+enter suspended tenants.
+
+### Impersonation
+
+- `reason` required (min 5 characters), stored in audit
+- `read_only: true` → JWT role `Viewer` + middleware blocks non-GET methods
+- Banner shows reason and read-only state
+
 ## Phases
 
 | Phase | Status | Scope |
 |-------|--------|--------|
 | 0 | Shipped | Bootstrap, login, directory |
 | 1 | Shipped | Suspend / restore, impersonate |
-| 2 | This work | Detail drawer, plan, archive, audit UI, pagination, targeted Open |
+| 2 | Shipped | Detail drawer, plan, archive, audit UI, pagination, targeted Open |
+| 3 | Shipped | Suspend gate, operators, metrics, Open reason + read-only |
 
 ## Ops checklist (production)
 
 1. Set bootstrap env once; rotate password after first login if needed
-2. Restrict `/platform` at the edge (IP allowlist / VPN) in addition to auth
-3. Monitor `platform_audit_events` for `impersonate_tenant` / `suspend_tenant`
-4. Do not share platform credentials with tenant customers
+2. Create Support operators via Operators tab (do not share Super Admin passwords)
+3. Restrict `/platform` at the edge (IP allowlist / VPN) in addition to auth
+4. Monitor `platform_audit_events` for `impersonate_tenant` / `suspend_tenant`
+5. Do not share platform credentials with tenant customers

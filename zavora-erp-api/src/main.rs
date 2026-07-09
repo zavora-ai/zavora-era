@@ -209,7 +209,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/platform/auth/refresh", post(routes::platform::refresh))
         .route("/api/v1/platform/auth/logout", post(routes::platform::logout))
         .route("/api/v1/platform/me", get(routes::platform::me))
+        .route("/api/v1/platform/metrics", get(routes::platform::metrics))
         .route("/api/v1/platform/audit", get(routes::platform::list_audit))
+        .route(
+            "/api/v1/platform/operators",
+            get(routes::platform::list_operators).post(routes::platform::create_operator),
+        )
+        .route(
+            "/api/v1/platform/operators/{id}/set-active",
+            post(routes::platform::set_operator_active),
+        )
         .route("/api/v1/platform/tenants", get(routes::platform::list_tenants))
         .route(
             "/api/v1/platform/tenants/{entity_id}",
@@ -577,7 +586,10 @@ async fn main() -> anyhow::Result<()> {
             middleware::authz_layer::enforce_permissions,
         ))
         // Every route above requires a valid access token.
-        .route_layer(axum::middleware::from_fn(middleware::auth::require_authenticated));
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth::require_authenticated,
+        ));
 
     // Cap request bodies (default 5 MiB; override with MAX_BODY_BYTES) so a
     // single oversized upload can't exhaust memory. Attachment/import routes

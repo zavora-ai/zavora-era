@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 /// JWT / DB role for full platform operators.
 pub const ROLE_PLATFORM_SUPER_ADMIN: &str = "PlatformSuperAdmin";
+/// Read/support operators: directory, audit, impersonate — not suspend/plan/ops admin.
+pub const ROLE_PLATFORM_SUPPORT: &str = "PlatformSupport";
 
 /// Nil entity id embedded in platform JWTs (no tenant scope).
 pub fn platform_entity_id() -> Uuid {
@@ -18,7 +20,11 @@ pub fn platform_entity_id() -> Uuid {
 
 pub fn is_platform_role(role: &str) -> bool {
     role.eq_ignore_ascii_case(ROLE_PLATFORM_SUPER_ADMIN)
-        || role.eq_ignore_ascii_case("PlatformSupport")
+        || role.eq_ignore_ascii_case(ROLE_PLATFORM_SUPPORT)
+}
+
+pub fn is_platform_super_admin(role: &str) -> bool {
+    role.eq_ignore_ascii_case(ROLE_PLATFORM_SUPER_ADMIN)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -177,4 +183,34 @@ pub struct TenantDetail {
     pub tenant: TenantSummary,
     pub users: Vec<TenantUserSummary>,
     pub recent_audit: Vec<PlatformAuditEvent>,
+}
+
+/// Platform operator as returned to the ops UI (no password hash).
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct PlatformOperatorSummary {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Aggregate counters for the platform metrics dashboard.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlatformMetrics {
+    pub tenants_total: i64,
+    pub tenants_active: i64,
+    pub tenants_suspended: i64,
+    pub tenants_archived: i64,
+    pub tenants_trial: i64,
+    pub tenants_past_due: i64,
+    pub tenants_with_users: i64,
+    pub users_total: i64,
+    pub operators_total: i64,
+    pub operators_active: i64,
+    pub impersonations_7d: i64,
+    pub suspensions_7d: i64,
+    pub signups_7d: i64,
 }

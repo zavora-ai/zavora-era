@@ -150,6 +150,9 @@ pub struct Claims {
     /// inside `entity_id`. Audit / UI can show a support banner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub impersonator_id: Option<Uuid>,
+    /// Support session restricted to read-only tenant permissions (Viewer).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
     pub iat: i64,
     pub exp: i64,
 }
@@ -195,17 +198,21 @@ pub fn issue_token_pair(
     entity_id: Uuid,
     role: &str,
 ) -> ErpResult<TokenPair> {
-    issue_token_pair_opts(config, user_id, entity_id, role, None, None, None)
+    issue_token_pair_opts(config, user_id, entity_id, role, None, false, None, None)
 }
 
 /// Issue a short-lived support (impersonation) session for a platform operator
 /// acting as a tenant user. Default access TTL is 30 minutes; refresh 2 hours.
+///
+/// When `read_only` is true the token role is forced to `Viewer` regardless of
+/// the target user's role.
 pub fn issue_impersonation_token_pair(
     config: &JwtConfig,
     target_user_id: Uuid,
     entity_id: Uuid,
     role: &str,
     impersonator_id: Uuid,
+    read_only: bool,
 ) -> ErpResult<TokenPair> {
     // Support sessions are deliberately shorter than normal logins.
     let access_ttl = std::env::var("PLATFORM_IMPERSONATE_ACCESS_TTL_SECS")
@@ -216,12 +223,14 @@ pub fn issue_impersonation_token_pair(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(2 * 60 * 60);
+    let effective_role = if read_only { "Viewer" } else { role };
     issue_token_pair_opts(
         config,
         target_user_id,
         entity_id,
-        role,
+        effective_role,
         Some(impersonator_id),
+        read_only,
         Some(access_ttl),
         Some(refresh_ttl),
     )
@@ -233,6 +242,7 @@ fn issue_token_pair_opts(
     entity_id: Uuid,
     role: &str,
     impersonator_id: Option<Uuid>,
+    read_only: bool,
     access_ttl_secs: Option<i64>,
     refresh_ttl_secs: Option<i64>,
 ) -> ErpResult<TokenPair> {
@@ -247,6 +257,7 @@ fn issue_token_pair_opts(
         iss: config.issuer.clone(),
         jti: None,
         impersonator_id,
+        read_only,
         iat: now.timestamp(),
         exp: (now + Duration::seconds(access_ttl)).timestamp(),
     };
@@ -261,6 +272,7 @@ fn issue_token_pair_opts(
         iss: config.issuer.clone(),
         jti: Some(refresh_jti),
         impersonator_id,
+        read_only,
         iat: now.timestamp(),
         exp: refresh_expires_at.timestamp(),
     };
@@ -475,14 +487,23 @@ mod tests {
         let target = Uuid::new_v4();
         let entity = Uuid::new_v4();
         let ops = Uuid::new_v4();
-        let pair = issue_impersonation_token_pair(&cfg, target, entity, "Owner", ops).unwrap();
+        let pair =
+            issue_impersonation_token_pair(&cfg, target, entity, "Owner", ops, false).unwrap();
         assert_eq!(pair.expires_in, 30 * 60);
         let claims = decode_access_token(&cfg, &pair.access_token).unwrap();
         assert_eq!(claims.sub, target);
         assert_eq!(claims.entity_id, entity);
         assert_eq!(claims.impersonator_id, Some(ops));
+        assert!(!claims.read_only);
+        assert_eq!(claims.role, "Owner");
         let r = decode_refresh_token(&cfg, &pair.refresh_token).unwrap();
         assert_eq!(r.impersonator_id, Some(ops));
+
+        let ro =
+            issue_impersonation_token_pair(&cfg, target, entity, "Owner", ops, true).unwrap();
+        let c = decode_access_token(&cfg, &ro.access_token).unwrap();
+        assert!(c.read_only);
+        assert_eq!(c.role, "Viewer");
     }
 
     #[test]

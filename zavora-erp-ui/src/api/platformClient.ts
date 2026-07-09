@@ -112,9 +112,16 @@ export const platformArchiveTenant = (entityId: string) =>
 export const platformUnarchiveTenant = (entityId: string) =>
   platformApi.post(`/tenants/${entityId}/unarchive`, {});
 
-/** Open a short-lived support session (optional user_id for a specific staff user). */
-export const platformImpersonateTenant = (entityId: string, userId?: string) =>
-  platformApi.post(`/tenants/${entityId}/impersonate`, userId ? { user_id: userId } : {});
+/** Open a short-lived support session. `reason` is required (min 5 chars). */
+export const platformImpersonateTenant = (
+  entityId: string,
+  opts: { userId?: string; reason: string; readOnly?: boolean },
+) =>
+  platformApi.post(`/tenants/${entityId}/impersonate`, {
+    user_id: opts.userId,
+    reason: opts.reason,
+    read_only: opts.readOnly ?? false,
+  });
 
 export const platformListAudit = (params?: {
   entity_id?: string;
@@ -122,5 +129,19 @@ export const platformListAudit = (params?: {
   limit?: number;
   offset?: number;
 }) => platformApi.get('/audit', { params });
+
+export const platformMetrics = () => platformApi.get('/metrics');
+
+export const platformListOperators = () => platformApi.get('/operators');
+
+export const platformCreateOperator = (data: {
+  email: string;
+  display_name: string;
+  password: string;
+  role?: string;
+}) => platformApi.post('/operators', data);
+
+export const platformSetOperatorActive = (id: string, is_active: boolean) =>
+  platformApi.post(`/operators/${id}/set-active`, { is_active });
 
 export default platformApi;
