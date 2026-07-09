@@ -211,6 +211,7 @@ open (the WS runs its own auth-first handshake).
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | Amos web app (`?embed=1` for the ERP iframe) |
+| `GET /health` | Unauthenticated liveness (deploy probes) |
 | `GET /ws` | Realtime session (audio + JSON control) |
 | `GET /api/snapshot` | Live business snapshot from the ledger |
 | `GET /api/skills` · `/api/context` | Skills catalog · entity context |
