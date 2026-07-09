@@ -44,3 +44,4 @@ pub mod statement_pdf;
 pub mod statement_xlsx;
 pub mod attachments;
 pub mod wht;
+pub mod billing;

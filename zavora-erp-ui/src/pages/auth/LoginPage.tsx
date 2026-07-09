@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
-import { login, signup, storeSession } from '../../api/client';
+import { login, signup, storeSession, billingCheckout } from '../../api/client';
 import Logo from '../../components/brand/Logo';
 import { PRICING_PLANS, DEFAULT_PLAN_KEY } from '../../config/pricing';
 
@@ -84,7 +84,21 @@ export default function LoginPage() {
         with_sample_data: withSampleData,
         plan,
       });
-      storeAndGo(data);
+      // Store the session first so the checkout call is authenticated.
+      storeSession(data);
+      // Paid plans go through Paystack (card / M-Pesa / bank); free lands on
+      // the dashboard. A checkout failure is non-fatal — the tenant exists and
+      // is on a trial, so we still let them in and they can pay from Settings.
+      try {
+        const { data: co } = await billingCheckout(plan, `${window.location.origin}/`);
+        if (co?.authorization_url) {
+          window.location.href = co.authorization_url;
+          return;
+        }
+      } catch {
+        /* fall through to the dashboard on a trial */
+      }
+      navigate('/', { replace: true });
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Could not create the organization.');
     } finally {
@@ -273,10 +287,14 @@ export default function LoginPage() {
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Start on any plan free — change or cancel anytime.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {plan === 'free'
+                  ? 'The Free plan starts immediately — upgrade anytime.'
+                  : 'Paid plans continue to secure checkout (card, M-Pesa or bank). Change or cancel anytime.'}
+              </p>
             </div>
             <button type="submit" className="btn-primary w-full justify-center" disabled={busy}>
-              {busy ? 'Creating…' : 'Create organization & sign in'}
+              {busy ? 'Creating…' : plan === 'free' ? 'Create organization & sign in' : 'Create organization & continue to payment'}
             </button>
             <p className="text-center text-sm text-gray-500">
               Already have an account?{' '}
