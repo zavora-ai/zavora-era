@@ -39,6 +39,7 @@ const PERM_BY_HREF: Record<string, string> = {
   '/journal-entries': 'journal.read',
   '/recurring-journals': 'journal.read',
   '/assets': 'asset.read',
+  '/amortization': 'journal.read',
   '/periods': 'period.read',
   '/budgets': 'budget.read',
   '/dimensions': 'dimension.read',
@@ -105,6 +106,7 @@ export const navigation = [
   { name: 'Journal Entries', href: '/journal-entries', icon: BookMarked },
   { name: 'Recurring Journals', href: '/recurring-journals', icon: RefreshCw },
   { name: 'Fixed Assets', href: '/assets', icon: Building },
+  { name: 'Amortisation', href: '/amortization', icon: RefreshCw },
   { name: 'Opening Balances', href: '/opening-balances', icon: Scale },
   { name: 'Periods', href: '/periods', icon: CalendarClock },
 

@@ -70,6 +70,9 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("3340", "HELB Payable", AccountType::Liability, Some("3300"), false),
         acct("3350", "Housing Levy Payable", AccountType::Liability, Some("3300"), false),
         acct("3400", "Accrued Expenses", AccountType::Liability, None, false),
+        // Cash received for goods/services not yet delivered — released to
+        // revenue over time by an amortisation schedule.
+        acct("3450", "Deferred Revenue", AccountType::Liability, None, false),
         acct("3500", "Other Current Liabilities", AccountType::Liability, None, false),
         acct("3600", "Unapplied Vendor Credits", AccountType::Liability, None, false),
         // === Non-Current Liabilities (4000–4499) ===

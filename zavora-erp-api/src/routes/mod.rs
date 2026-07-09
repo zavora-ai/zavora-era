@@ -48,6 +48,7 @@ pub mod users;
 pub mod roles;
 pub mod auth_signup;
 pub mod billing;
+pub mod amortization;
 pub mod auth_tenants;
 pub mod procurement;
 pub mod approval;

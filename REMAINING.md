@@ -180,8 +180,15 @@ below break **book quality** or control-vs-subledger sign-off.
   recorded in the audit event. (Recon/tax-filed checks can be added to
   `pre_close_checklist` as those flows harden.)
 
-- ⬜ **P2 — Accruals / deferrals / prepaid amortisation engines.**  
-  COA has prepaid (`1400`); no first-class schedules (manual JE only).
+- ✅ **P2 — Accruals / deferrals / prepaid amortisation engines.** *(Fixed
+  2026-07-09.)* First-class amortisation schedules (`services/amortization.rs`,
+  migration `055`): a prepaid-expense or deferred-revenue schedule spreads an
+  upfront amount over N months, auto-posting each installment via the hourly
+  scheduler with idempotent catch-up (mirrors depreciation), the last period
+  absorbing the rounding remainder so the holding account clears exactly. New
+  3450 Deferred Revenue account; Accounting -> Amortisation UI (create / run /
+  cancel). Verified live: a 120k/12-month prepaid posted 7 catch-up months of
+  DR 7400 / CR 1400 10,000 each.
 
 - ⬜ **P2 — Cash flow (indirect) relies on fixed account ranges + plug.**  
   Approximate vs auditor worksheet (`services/reporting.rs` cash flow). Custom

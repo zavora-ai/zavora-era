@@ -55,6 +55,7 @@ pub mod period;
 pub mod tax;
 pub mod fx;
 pub mod assets;
+pub mod amortization;
 pub mod inventory;
 pub mod reporting;
 pub mod notifications;
