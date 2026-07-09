@@ -360,17 +360,25 @@ coverage/security gaps only here.
   the listed origins so the refresh cookie works. Verified: foreign origins get
   no `access-control-allow-origin`. **Set `CORS_ALLOWED_ORIGINS` in the prod
   deploy env.**  
-- ⬜ **P1 — M-Pesa callback authenticity.** Idempotency + orphan recovery done;
-  **no** IP allowlist / signature validation
-  (`routes/payments.rs` `mpesa_callback`, `payments/daraja.rs`).  
+- ✅ **P1 — M-Pesa callback authenticity.** *(Fixed 2026-07-09.)* The callback
+  now verifies a URL secret (`MPESA_CALLBACK_SECRET`, embedded in the registered
+  callback URL as `?token=`) and an optional source-IP allowlist
+  (`MPESA_CALLBACK_ALLOWED_IPS`) before touching the ledger. Verified: bad/absent
+  token → 401, correct token → proceeds. **Set `MPESA_CALLBACK_SECRET` in prod.**  
 - ⬜ **P1 — TLS termination** + secrets in managed store (startup secret
   validation already fails fast). Prod Caddy in `docker-compose.prod.yml` is
   the intended TLS edge — document/ops still incomplete.  
-- ⬜ **P2 — Rate limiting & body limits** on login, webhooks, uploads generally.
-  Signup has Redis rate limit (`routes/auth_signup.rs`); not global
-  (`governor` / `DefaultBodyLimit`).  
-- ⬜ **P2 — Graceful API shutdown drain** (Amos has graceful shutdown; API called
-  out historically as missing).
+- ✅ **P2 — Rate limiting & body limits.** *(Fixed 2026-07-09.)* Per-IP
+  fixed-window rate limit on the credential routes (login, register, signup,
+  forgot-password, portal register/login) via a small in-memory limiter
+  (`middleware/rate_limit.rs`; `LOGIN_RATE_LIMIT` / `_WINDOW_SECS`, 0 disables).
+  Request bodies capped globally (`DefaultBodyLimit`, default 5 MiB,
+  `MAX_BODY_BYTES`). Verified: 4th rapid login → 429. (Signup keeps its own
+  Redis limiter.)  
+- ✅ **P2 — Graceful API shutdown drain.** *(Fixed 2026-07-09.)* `axum::serve`
+  now uses `.with_graceful_shutdown` on SIGINT/SIGTERM — in-flight requests
+  drain (a mid-flight posting commits) before exit. Verified: SIGTERM logs the
+  drain and exits cleanly.
 
 ---
 
