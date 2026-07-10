@@ -1,18 +1,26 @@
-import { Search } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import UserMenu from './UserMenu';
 import NotificationInbox from './NotificationInbox';
 import TenantSwitcher from './TenantSwitcher';
 import { OPEN_COMMAND_PALETTE } from './CommandPalette';
 
-export default function Header() {
+export default function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const openPalette = () => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE));
   return (
-    <header className="sticky top-0 z-40 h-14 bg-white/80 backdrop-blur-md border-b border-gray-100 flex items-center justify-between px-6 gap-4">
-      {/* Tenant switcher + search */}
-      <div className="flex items-center gap-3 flex-1 min-w-0">
+    <header className="sticky top-0 z-40 h-14 bg-white/80 backdrop-blur-md border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 gap-3 lg:gap-4">
+      {/* Menu (mobile) + tenant switcher + search */}
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="lg:hidden -ml-1 p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors shrink-0"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
         <TenantSwitcher />
-        <div className="w-px h-6 bg-gray-100" />
-        <div className="flex-1 max-w-md">
+        <div className="hidden sm:block w-px h-6 bg-gray-100" />
+        <div className="hidden sm:block flex-1 max-w-md">
           <button
             type="button"
             onClick={openPalette}
@@ -31,7 +39,16 @@ export default function Header() {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 shrink-0">
+        {/* Search icon shortcut on mobile (palette has no ⌘K on touch) */}
+        <button
+          type="button"
+          onClick={openPalette}
+          className="sm:hidden p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+          aria-label="Search"
+        >
+          <Search className="w-5 h-5" />
+        </button>
         <NotificationInbox />
         <div className="w-px h-6 bg-gray-100 mx-1" />
         <UserMenu />
