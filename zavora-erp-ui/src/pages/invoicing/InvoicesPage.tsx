@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from '../../components/toast/ToastProvider';
+import ProviderPreflight from '../../components/ProviderPreflight';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates, getFxRates, getSettings } from '../../api/client';
@@ -256,6 +257,7 @@ function SendInvoiceModal({ invoice, customer, onClose, onDone }: { invoice: any
 
           {mode === 'email' ? (
             <>
+              <ProviderPreflight channel="email" />
               <div>
                 <label className="label">Recipient email *</label>
                 <input className="input" type="email" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="customer@example.com" />

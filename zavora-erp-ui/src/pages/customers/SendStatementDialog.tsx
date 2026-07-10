@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { sendCustomerStatement } from '../../api/client';
 import type { Customer } from '../../types';
 import Modal from '../../components/shared/Modal';
+import ProviderPreflight from '../../components/ProviderPreflight';
 import { Mail, MessageCircle, Phone, AlertCircle, CheckCircle, Send } from 'lucide-react';
 
 type Channel = 'email' | 'whatsapp' | 'sms';
@@ -72,6 +73,8 @@ export default function SendStatementDialog({ customer, onClose }: { customer: C
                 })}
               </div>
             </div>
+
+            <ProviderPreflight channel={channel} />
 
             <div className="bg-gray-50 rounded-lg p-3 text-sm">
               {selected.contact ? (
