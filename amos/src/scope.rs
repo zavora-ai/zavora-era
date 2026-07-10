@@ -126,7 +126,30 @@ impl ScopedTool {
                 .await;
         }
     }
+
+    /// Inject the session user's access token into an ERP tool's arguments so
+    /// mcp-erp uses it as the request bearer (making the human the ledger
+    /// actor). Only ERP tools take it — `browser_*` tools don't, and would
+    /// reject an unknown arg. ScopedTool wraps only ERP + browser MCP tools, so
+    /// "not a browser tool" == "an ERP tool". Ambient routines pass
+    /// `session: None` and so run as the service account, by design.
+    async fn with_user_token(&self, mut args: serde_json::Value) -> serde_json::Value {
+        if self.inner.name().starts_with("browser_") {
+            return args;
+        }
+        let Some(session) = &self.session else { return args };
+        let Some(token) = session.user_token().await else { return args };
+        if let Some(obj) = args.as_object_mut() {
+            obj.insert(USER_TOKEN_ARG.to_string(), serde_json::Value::String(token));
+        }
+        args
+    }
 }
+
+/// The argument name that carries the session user's access token to mcp-erp.
+/// Must match `mcp-erp`'s `server::USER_TOKEN_ARG`; mcp-erp strips it before
+/// the typed tool input deserializes.
+const USER_TOKEN_ARG: &str = "__user_token";
 
 #[async_trait]
 impl Tool for ScopedTool {
@@ -154,6 +177,12 @@ impl Tool for ScopedTool {
                     }
                 }
                 self.record(self.inner.name(), AuditOutcome::Allowed).await;
+                // User-scoped ERP auth: thread the session user's access token
+                // to mcp-erp (as `__user_token`) so the ledger actor is the
+                // human, not the service account. Injected AFTER the confirm
+                // preview so the token never appears on the approval card, and
+                // it is not in any tool's schema so the model never sets it.
+                let args = self.with_user_token(args).await;
                 self.inner.execute(ctx, args).await
             }
             Err(denied) => {
@@ -169,6 +198,70 @@ impl Tool for ScopedTool {
                 }))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod inject_tests {
+    use super::*;
+    use crate::state::SessionState;
+
+    struct DummyTool {
+        name: String,
+    }
+    #[async_trait]
+    impl Tool for DummyTool {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn description(&self) -> &str {
+            "dummy"
+        }
+        async fn execute(&self, _ctx: Arc<dyn ToolContext>, args: serde_json::Value) -> adk_core::Result<serde_json::Value> {
+            Ok(args)
+        }
+    }
+
+    fn scoped(name: &str, session: Option<Arc<SessionState>>) -> ScopedTool {
+        ScopedTool {
+            inner: Arc::new(DummyTool { name: name.to_string() }),
+            granted: Arc::new(vec!["erp:read".into(), "erp:write".into(), "ledger:post".into()]),
+            user_id: "u".into(),
+            session_id: "s".into(),
+            audit: None,
+            session,
+        }
+    }
+
+    #[tokio::test]
+    async fn injects_token_for_erp_tool() {
+        let session = Arc::new(SessionState::new());
+        session.set_user_token("jwt-xyz".into()).await;
+        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
+        assert_eq!(out["__user_token"], "jwt-xyz", "ERP tool gets the user token");
+        assert_eq!(out["id"], "b1", "existing args preserved");
+    }
+
+    #[tokio::test]
+    async fn no_token_for_browser_tool() {
+        let session = Arc::new(SessionState::new());
+        session.set_user_token("jwt-xyz".into()).await;
+        let out = scoped("browser_click", Some(session)).with_user_token(serde_json::json!({"ref": "e1"})).await;
+        assert!(out.get("__user_token").is_none(), "browser tools must not get the token");
+    }
+
+    #[tokio::test]
+    async fn no_token_when_session_absent() {
+        // Ambient routines pass session: None → service account, by design.
+        let out = scoped("post_bill", None).with_user_token(serde_json::json!({"id": "b1"})).await;
+        assert!(out.get("__user_token").is_none());
+    }
+
+    #[tokio::test]
+    async fn no_token_when_session_has_none() {
+        let session = Arc::new(SessionState::new()); // token never set
+        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
+        assert!(out.get("__user_token").is_none());
     }
 }
 
