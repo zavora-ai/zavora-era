@@ -5,7 +5,7 @@ import {
 } from '../../api/client';
 import { workToday } from '../../utils/workDate';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CREATE, ROLES_APPROVE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -24,6 +24,7 @@ export default function TendersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [bidsFor, setBidsFor] = useState<Tender | null>(null);
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
 
   const { data: tenders = [], isLoading } = useQuery<Tender[]>({
     queryKey: ['tenders'],
@@ -43,7 +44,7 @@ export default function TendersPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {r.status === 'draft' && hasRole(ROLES_CREATE) && (
+          {r.status === 'draft' && can('tender.create') && (
             <button onClick={() => publishMut.mutate(r.id)} disabled={publishMut.isPending} className="btn-primary text-xs py-1 px-2" title="Open for bids">
               <Send className="w-3 h-3" /> Publish
             </button>
@@ -63,7 +64,7 @@ export default function TendersPage() {
       <PageHeader
         title="Tenders / RFQs"
         subtitle="Publish a request for quotation, collect vendor bids, and award the winner — which raises the LPO automatically."
-        actions={hasRole(ROLES_CREATE) ? (
+        actions={can('tender.create') ? (
           <button onClick={() => setShowCreate(true)} className="btn-primary">
             <Plus className="w-4 h-4" /> New Tender
           </button>
@@ -181,7 +182,8 @@ function BidsModal({ tender, onClose }: { tender: Tender; onClose: () => void })
   const { data: vendors = [] } = useQuery<any[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then((r) => (Array.isArray(r.data) ? r.data : [])) });
   const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? `${id.slice(0, 8)}…`;
 
-  const canAward = hasRole(ROLES_APPROVE) && tender.status === 'open';
+  const { can } = usePermissions();
+  const canAward = can('tender.award') && tender.status === 'open';
   const lowest = bids.length ? Math.min(...bids.map((b) => Number(b.total_amount))) : null;
 
   return (

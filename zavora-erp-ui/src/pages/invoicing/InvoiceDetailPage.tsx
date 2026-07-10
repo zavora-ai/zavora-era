@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceKra, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import Attachments from '../../components/shared/Attachments';
@@ -34,6 +34,7 @@ export default function InvoiceDetailPage() {
   const queryClient = useQueryClient();
   const [showCreditNote, setShowCreditNote] = useState(false);
   const [showTransmit, setShowTransmit] = useState(false);
+  const { can } = usePermissions();
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -122,14 +123,14 @@ export default function InvoiceDetailPage() {
             <Link to={`/documents/invoice/${id}`} className="btn-secondary">
               <FileText className="w-4 h-4" /> Preview
             </Link>
-            {invoice.status === 'draft' && hasRole(ROLES_POST) && (
+            {invoice.status === 'draft' && can('invoice.post') && (
               <button onClick={() => postMutation.mutate()} className="btn-primary" disabled={postMutation.isPending}>
                 <CheckCircle className="w-4 h-4" /> {postMutation.isPending ? 'Posting...' : 'Post Invoice'}
               </button>
             )}
             {(invoice.status === 'sent' || invoice.status === 'viewed') && (
               <>
-                {hasRole(ROLES_SEND) && (
+                {can('invoice.send') && (
                   <button onClick={() => sendMutation.mutate()} className="btn-secondary" disabled={sendMutation.isPending}>
                     <Send className="w-4 h-4" /> Resend
                   </button>
@@ -139,14 +140,14 @@ export default function InvoiceDetailPage() {
                 </button>
               </>
             )}
-            {invoice.status !== 'draft' && invoice.status !== 'voided' && hasRole(ROLES_CREATE) && (
+            {invoice.status !== 'draft' && invoice.status !== 'voided' && can('credit_note.create') && (
               <button onClick={() => setShowCreditNote(true)} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
                 <ReceiptText className="w-4 h-4" /> Credit Note
               </button>
             )}
             {invoice.invoice_type !== 'CreditNote'
               && invoice.status !== 'draft' && invoice.status !== 'voided'
-              && invoice.etims_status !== 'transmitted' && hasRole(ROLES_SEND) && (
+              && invoice.etims_status !== 'transmitted' && can('invoice.send') && (
               <button onClick={() => setShowTransmit(true)} className="btn-secondary text-indigo-600 border-indigo-200 hover:bg-indigo-50">
                 <ShieldCheck className="w-4 h-4" /> Transmit to eTIMS
               </button>

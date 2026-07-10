@@ -5,7 +5,7 @@ import { getJournalEntries, createJournalEntry, getAccounts, reverseJournalEntry
 import type { JournalEntry, Account } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
-import { hasRole, ROLES_POST } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
@@ -27,6 +27,8 @@ export default function JournalEntriesPage() {
   const entries: JournalEntry[] = resp?.data ?? [];
   const total: number = resp?.total_count ?? 0;
 
+  const { can } = usePermissions();
+
   const columns: Column<JournalEntry>[] = [
     { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status}</span> },
     { key: 'number', header: 'Entry #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
@@ -39,7 +41,7 @@ export default function JournalEntriesPage() {
       key: 'actions', header: '',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          {r.status === 'posted' && hasRole(ROLES_POST) && (
+          {r.status === 'posted' && can('journal.reverse') && (
             <button
               onClick={() => { setNotice(null); setReverseTarget(r); }}
               className="btn-secondary text-xs py-1 px-2"
@@ -59,7 +61,7 @@ export default function JournalEntriesPage() {
         title="Journal Entries"
         subtitle="Manual journal entries — double-entry bookkeeping"
         actions={
-          hasRole(ROLES_POST) ? (
+          can('journal.post') ? (
             <button onClick={() => setShowCreate(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> New Journal Entry
             </button>

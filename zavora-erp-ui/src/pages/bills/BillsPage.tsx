@@ -6,7 +6,7 @@ import type { Bill, Vendor, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
 import { dueDateFromTerms, paymentTermsLabel } from '../../utils/paymentTerms';
-import { hasRole, ROLES_APPROVE, ROLES_CREATE, ROLES_POST } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
@@ -45,6 +45,7 @@ export default function BillsPage() {
   const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
   const toast = useToast();
+  const { can } = usePermissions();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bills'] });
   const mutError = (fallback: string) => (e: any) => toast.fromError(e, fallback);
   const approveMut = useMutation({ mutationFn: (id: string) => approveBill(id), onSuccess: invalidate, onError: mutError('Failed to approve bill.') });
@@ -105,19 +106,19 @@ export default function BillsPage() {
           </Link>
           {/* Attachments available at every status — the source document
               (e.g. an OCR-captured invoice) should be viewable before posting. */}
-          {hasRole(ROLES_CREATE) && (
+          {can('bill.create') && (
             <button onClick={() => setAttachBill(r)} className="btn-secondary text-xs py-1 px-2" title="Attachments">
               <Paperclip className="w-3 h-3" />
             </button>
           )}
           {r.status === 'draft' && (
             <>
-              {hasRole(ROLES_APPROVE) && (
+              {can('bill.approve') && (
                 <button onClick={() => approveMut.mutate(r.id)} disabled={approveMut.isPending} className="btn-success text-xs py-1 px-2" title="Approve bill">
                   <CheckCircle className="w-3 h-3" /> Approve
                 </button>
               )}
-              {hasRole(ROLES_APPROVE) && hasRole(ROLES_POST) && (
+              {can('bill.approve') && can('bill.post') && (
                 <button onClick={() => approveAndPostMut.mutate(r.id)} disabled={approveAndPostMut.isPending} className="btn-primary text-xs py-1 px-2" title="Approve and post to the ledger in one step">
                   Approve & Post
                 </button>
@@ -130,7 +131,7 @@ export default function BillsPage() {
               </button>
             </>
           )}
-          {r.status === 'approved' && hasRole(ROLES_POST) && (
+          {r.status === 'approved' && can('bill.post') && (
             <button onClick={() => postMut.mutate(r.id)} disabled={postMut.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
               Post
             </button>
@@ -144,7 +145,7 @@ export default function BillsPage() {
               Pay
             </button>
           )}
-          {(r.status === 'posted' || r.status === 'paid') && hasRole(ROLES_CREATE) && (
+          {(r.status === 'posted' || r.status === 'paid') && can('supplier_credit.create') && (
             <>
               <button onClick={() => setScnBill(r)} className="btn-secondary text-xs py-1 px-2 text-red-600" title="Issue supplier credit note">
                 <ReceiptText className="w-3 h-3" /> Credit Note

@@ -6,7 +6,7 @@ import {
   getPeriods, getPayslipPdf, getEmployees, listEarningTypes, listDeductionTypes,
 } from '../../api/client';
 import { formatCurrency } from '../../utils/format';
-import { hasRole, ROLES_APPROVE, ROLES_POST } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import { Play, CheckCircle, BookOpen, Users, Trash2, RefreshCw, Plus, ArrowLeft, Wallet } from 'lucide-react';
@@ -20,6 +20,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function PayrollPage() {
   const qc = useQueryClient();
+  const { can } = usePermissions();
   const [selected, setSelected] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [periodId, setPeriodId] = useState('');
@@ -184,10 +185,10 @@ function RunDetail({ id, onBack, onErr, qc }: { id: string; onBack: () => void; 
           </div>
           <div className="flex gap-2">
             {isDraft && <button onClick={() => recomputeMut.mutate()} className="btn-secondary" disabled={recomputeMut.isPending}><RefreshCw className="w-4 h-4" /> Recompute</button>}
-            {isDraft && hasRole(ROLES_APPROVE) && <button onClick={() => approveMut.mutate()} className="btn-success"><CheckCircle className="w-4 h-4" /> Approve</button>}
+            {isDraft && can('pay_run.approve') && <button onClick={() => approveMut.mutate()} className="btn-success"><CheckCircle className="w-4 h-4" /> Approve</button>}
             {isDraft && <button onClick={() => deleteMut.mutate()} className="btn-danger"><Trash2 className="w-4 h-4" /> Delete</button>}
-            {run.status === 'approved' && hasRole(ROLES_POST) && <button onClick={() => postMut.mutate()} className="btn-primary"><BookOpen className="w-4 h-4" /> Post to GL</button>}
-            {run.status === 'posted' && hasRole(ROLES_POST) && <button onClick={() => paidMut.mutate()} className="btn-success"><Wallet className="w-4 h-4" /> Mark Paid</button>}
+            {run.status === 'approved' && can('pay_run.post') && <button onClick={() => postMut.mutate()} className="btn-primary"><BookOpen className="w-4 h-4" /> Post to GL</button>}
+            {run.status === 'posted' && can('pay_run.pay') && <button onClick={() => paidMut.mutate()} className="btn-success"><Wallet className="w-4 h-4" /> Mark Paid</button>}
           </div>
         </div>
 

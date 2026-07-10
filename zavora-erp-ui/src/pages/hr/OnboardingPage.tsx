@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getOnboardingCases, createOnboarding, getOnboardingCase, setOnboardingTask, completeOnboarding, getEmployees } from '../../api/client';
-import { hasRole, ROLES_MANAGE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { workToday } from '../../utils/workDate';
@@ -9,7 +9,8 @@ import { Plus, CheckCircle2, Circle, UserPlus } from 'lucide-react';
 
 export default function OnboardingPage() {
   const qc = useQueryClient();
-  const canManage = hasRole(ROLES_MANAGE);
+  const { can } = usePermissions();
+  const canManage = can('onboarding.update');
   const [showNew, setShowNew] = useState(false);
   const [openCase, setOpenCase] = useState<string | null>(null);
   const { data: cases = [] } = useQuery<any[]>({ queryKey: ['onboarding'], queryFn: () => getOnboardingCases().then(r => r.data) });

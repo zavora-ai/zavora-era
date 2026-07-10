@@ -6,7 +6,7 @@ import {
   approveRequisition, rejectRequisition, convertRequisition, getVendors,
 } from '../../api/client';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CREATE, ROLES_APPROVE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -22,6 +22,7 @@ interface PRLine { id: string; description: string; quantity: string; uom: strin
 
 export default function RequisitionsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const { can } = usePermissions();
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const { data: prs = [], isLoading } = useQuery<Requisition[]>({
@@ -43,7 +44,7 @@ export default function RequisitionsPage() {
       <PageHeader
         title="Purchase Requisitions"
         subtitle="Raise an internal request to buy. Once approved, a buyer converts it into a tender or a purchase order."
-        actions={hasRole(ROLES_CREATE) ? (
+        actions={can('requisition.create') ? (
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> New Requisition</button>
         ) : undefined}
       />
@@ -145,6 +146,7 @@ function CreatePRModal({ onClose }: { onClose: () => void }) {
 function PRDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { can } = usePermissions();
   const { data } = useQuery({ queryKey: ['requisition', id], queryFn: () => getRequisition(id).then((r) => r.data) });
   const pr: Requisition | undefined = data?.requisition;
   const lines: PRLine[] = data?.lines ?? [];
@@ -201,12 +203,12 @@ function PRDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="flex items-center justify-between pt-3 border-t gap-3">
           <button type="button" onClick={onClose} className="btn-secondary">Close</button>
           <div className="flex gap-2">
-            {pr.status === 'draft' && hasRole(ROLES_CREATE) && (
+            {pr.status === 'draft' && can('requisition.create') && (
               <button className="btn-primary" disabled={act.isPending} onClick={() => act.mutate(() => submitRequisition(id))}>
                 <Send className="w-4 h-4" /> Submit for approval
               </button>
             )}
-            {pr.status === 'submitted' && hasRole(ROLES_APPROVE) && (
+            {pr.status === 'submitted' && can('requisition.approve') && (
               <>
                 <button className="btn-secondary text-red-600" disabled={act.isPending} onClick={() => { const reason = window.prompt('Reason for rejection?') ?? undefined; act.mutate(() => rejectRequisition(id, reason)); }}>
                   <X className="w-4 h-4" /> Reject
@@ -216,7 +218,7 @@ function PRDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 </button>
               </>
             )}
-            {pr.status === 'approved' && hasRole(ROLES_CREATE) && (
+            {pr.status === 'approved' && can('requisition.convert') && (
               <button className="btn-primary" onClick={() => setConverting(true)}><ArrowRightLeft className="w-4 h-4" /> Convert</button>
             )}
           </div>
