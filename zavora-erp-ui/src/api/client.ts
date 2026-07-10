@@ -335,6 +335,8 @@ export const generateReport = (data: any) => api.post('/reports', data);
 
 // === Settings ===
 export const getSettings = () => api.get('/settings');
+/** Auto-load latest Central Bank of Kenya daily indicative FX rates. */
+export const syncCbkRates = () => api.post<{ date: string; base: string; updated: number; currencies: string[] }>('/fx-rates/sync-cbk', {});
 
 // === Public invoice pay-link (no auth; the token is the credential) ===
 export interface PublicInvoiceView {

@@ -256,6 +256,7 @@ pub const ROUTE_PERMISSIONS: &[(&str, &str, Access)] = &[
     ("POST", "/api/v1/amortization/{id}/cancel", Access::Perm("journal.post")),
     ("GET", "/api/v1/fx-rates", Access::Perm("fx_rate.read")),
     ("POST", "/api/v1/fx-rates", Access::Perm("fx_rate.create")),
+    ("POST", "/api/v1/fx-rates/sync-cbk", Access::Perm("fx_rate.create")),
     ("DELETE", "/api/v1/fx-rates/{id}", Access::Perm("fx_rate.delete")),
     ("POST", "/api/v1/fx/revaluation", Access::Perm("fx_rate.run")),
     ("GET", "/api/v1/audit", Access::Perm("audit.read")),

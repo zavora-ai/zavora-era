@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getFxRates, upsertFxRate, deleteFxRate, runFxRevaluation } from '../../api/client';
+import { getFxRates, upsertFxRate, deleteFxRate, runFxRevaluation, syncCbkRates } from '../../api/client';
 import type { ExchangeRateEntry } from '../../types';
 import { formatDate } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
-import { Plus, RefreshCw, Pencil, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Pencil, Trash2, Download } from 'lucide-react';
 
 export default function FxRatesPage() {
   const [showForm, setShowForm] = useState(false);
@@ -20,6 +20,16 @@ export default function FxRatesPage() {
   });
 
   const toast = useToast();
+  const cbkMutation = useMutation({
+    mutationFn: () => syncCbkRates(),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ['fx-rates'] });
+      const d = r.data;
+      toast.success(`Loaded ${d.updated} CBK rate${d.updated === 1 ? '' : 's'} (as at ${d.date}).`);
+    },
+    onError: (e: any) => toast.fromError(e, 'Could not load CBK rates.'),
+  });
+
   const revalMutation = useMutation({
     mutationFn: () => runFxRevaluation(),
     onSuccess: () => {
@@ -108,6 +118,15 @@ export default function FxRatesPage() {
         subtitle="Manage FX rates for multi-currency transactions and period-end revaluation"
         actions={
           <>
+            <button
+              onClick={() => cbkMutation.mutate()}
+              className="btn-secondary"
+              disabled={cbkMutation.isPending}
+              title="Auto-load today's Central Bank of Kenya indicative rates"
+            >
+              <Download className={`w-4 h-4 ${cbkMutation.isPending ? 'animate-pulse' : ''}`} />
+              {cbkMutation.isPending ? 'Loading…' : 'Load CBK rates'}
+            </button>
             <button
               onClick={() => revalMutation.mutate()}
               className="btn-secondary"

@@ -41,6 +41,18 @@ pub async fn upsert(
     }
 }
 
+/// POST /fx-rates/sync-cbk — auto-load the latest Central Bank of Kenya daily
+/// indicative rates for the tenant's base currency (source="CBK").
+pub async fn sync_cbk(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match svc::sync_cbk_rates(&state.engine, ctx.entity_id).await {
+        Ok(summary) => Ok(Json(serde_json::to_value(summary).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
 /// DELETE /fx-rates/{id} — remove a single exchange-rate row, scoped to the tenant.
 pub async fn delete(
     ctx: AuthContext,
