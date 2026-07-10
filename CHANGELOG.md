@@ -8,6 +8,24 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-09 — Platform Super Admin Phase 4 (billing directory sync)
+
+Paystack / subscription status now mirrors onto `tenants.plan_key` /
+`plan_status` so the ops console stays accurate. Startup backfill from
+`entity_settings.subscription`; ops suspend still overrides billing status.
+
+### 2026-07-09 — Platform Super Admin Phase 3
+
+Hardening and multi-operator ops console.
+
+#### Added
+- **Suspend gate** on every authenticated tenant ERP request (support sessions exempt).
+- **Operators** API/UI: list, create (`PlatformSuperAdmin` \| `PlatformSupport`), activate/deactivate (cannot deactivate last Super Admin or self).
+- **Metrics** dashboard: tenant counts, users, 7d signups / impersonations / suspensions.
+- **Impersonation** requires a reason (≥5 chars); optional **read-only** (Viewer + block mutating HTTP methods).
+- Support role cannot suspend, change plan, archive, or manage operators.
+- Docs: `docs/PLATFORM_ADMIN.md` Phase 3 section.
+
 ### 2026-07-09 — Platform Super Admin (ops plane)
 
 Multi-tenant operator console, separate from tenant ERP identity and RBAC.

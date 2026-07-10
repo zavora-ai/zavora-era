@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getTransactions,
@@ -24,6 +25,7 @@ export default function TransactionsPage() {
   const [manualAssignTxn, setManualAssignTxn] = useState<CategorisationTransaction | null>(null);
 
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const { data: transactions = [], isLoading } = useQuery<CategorisationTransaction[]>({
     queryKey: ['transactions', filter],
@@ -61,7 +63,7 @@ export default function TransactionsPage() {
       (t) => t.suggestion?.account_code && t.status === 'uncategorised',
     );
     if (withSuggestions.length === 0) {
-      alert('No AI suggestions to apply on the current list.');
+      toast.info('No AI suggestions to apply on the current list.');
       return;
     }
     if (!window.confirm(`Apply AI suggestions to ${withSuggestions.length} transaction(s)?`)) return;

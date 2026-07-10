@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getEtimsConfig, saveEtimsConfig, initializeEtims } from '../../api/client';
 import { Receipt, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -11,6 +12,7 @@ interface EtimsDevice {
 
 export default function EtimsPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { data: dev, isLoading } = useQuery<EtimsDevice>({ queryKey: ['etims-config'], queryFn: () => getEtimsConfig().then((r) => r.data) });
 
   const [form, setForm] = useState({ enabled: false, environment: 'sandbox', pin: '', bhf_id: '00', dvc_srl_no: '' });
@@ -21,12 +23,12 @@ export default function EtimsPage() {
   const save = useMutation({
     mutationFn: () => saveEtimsConfig(form),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['etims-config'] }),
-    onError: (e: any) => window.alert(e?.response?.data?.error || 'Could not save.'),
+    onError: (e: any) => toast.fromError(e, 'Could not save.'),
   });
   const init = useMutation({
     mutationFn: () => initializeEtims(),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['etims-config'] }); window.alert('Device initialised with KRA.'); },
-    onError: (e: any) => window.alert(e?.response?.data?.error || 'Initialisation failed.'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['etims-config'] }); toast.success('Device initialised with KRA.'); },
+    onError: (e: any) => toast.fromError(e, 'Initialisation failed.'),
   });
 
   if (isLoading) return <p className="text-sm text-gray-500 py-12 text-center">Loading…</p>;

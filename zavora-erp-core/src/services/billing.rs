@@ -285,7 +285,8 @@ async fn charge_authorization(secret: &str, email: &str, auth_code: &str, amount
 
 /// Merge a patch into entity_settings.subscription, preserving existing keys
 /// (so a status update doesn't wipe the stored authorization). When `plan` is
-/// given it's also mirrored into branding.plan.
+/// given it's also mirrored into branding.plan. Also syncs the platform
+/// tenants directory (plan_key / plan_status) for the ops console.
 async fn merge_subscription(
     engine: &ErpEngine,
     entity_id: Uuid,
@@ -306,6 +307,22 @@ async fn merge_subscription(
     .execute(engine.pool())
     .await?;
     engine.invalidate_config(entity_id).await;
+
+    // Platform directory: keep ops console plan badges in sync with billing.
+    let status = patch.get("status").and_then(|v| v.as_str());
+    let plan_key = plan.or_else(|| patch.get("plan").and_then(|v| v.as_str()));
+    if plan_key.is_some() || status.is_some() {
+        if let Err(e) = crate::services::platform::sync_tenant_billing(
+            engine.pool(),
+            entity_id,
+            plan_key,
+            status,
+        )
+        .await
+        {
+            tracing::warn!(%entity_id, error = %e, "platform tenant billing sync failed");
+        }
+    }
     Ok(())
 }
 
@@ -335,11 +352,20 @@ async fn set_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::platform::map_subscription_status;
 
     #[test]
     fn plan_prices_are_defined() {
         assert_eq!(plan_by_key("free").unwrap().monthly_kes, 0);
         assert_eq!(plan_by_key("business").unwrap().monthly_kes, 6_900);
         assert!(plan_by_key("nonsense").is_none());
+    }
+
+    #[test]
+    fn subscription_status_maps_for_platform_directory() {
+        assert_eq!(map_subscription_status("trialing"), "trial");
+        assert_eq!(map_subscription_status("active"), "active");
+        assert_eq!(map_subscription_status("past_due"), "past_due");
+        assert_eq!(map_subscription_status("cancelled"), "active");
     }
 }

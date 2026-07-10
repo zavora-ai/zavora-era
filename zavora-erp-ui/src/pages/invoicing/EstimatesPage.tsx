@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getEstimates, createEstimate, updateEstimate, deleteEstimate, getEstimate, convertEstimate, sendEstimate, acceptEstimate, declineEstimate, getCustomers, getProducts } from '../../api/client';
 import type { Estimate, Customer, Product } from '../../types';
@@ -28,6 +29,7 @@ export default function EstimatesPage() {
   const estimates: Estimate[] = resp?.data ?? [];
   const estimatesTotal: number = resp?.total_count ?? 0;
 
+  const toast = useToast();
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
     onSuccess: (resp: any) => {
@@ -38,7 +40,7 @@ export default function EstimatesPage() {
       const invoiceId = resp?.data?.invoice_id;
       if (invoiceId) navigate(`/invoices?highlight=${invoiceId}`);
     },
-    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to convert estimate.'),
+    onError: (e: any) => toast.fromError(e, 'Failed to convert estimate.'),
   });
   const sendMutation = useMutation({
     mutationFn: (id: string) => sendEstimate(id),

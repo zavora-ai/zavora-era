@@ -4,7 +4,7 @@ import {
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
   RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles,
-  Gavel, ShoppingCart, UserPlus, Shield
+  Gavel, ShoppingCart, UserPlus, Shield, X
 } from 'lucide-react';
 import clsx from 'clsx';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -132,7 +132,7 @@ export const navigation = [
   { name: 'Notifications', href: '/notifications', icon: BellRing },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { can, loaded } = usePermissions();
 
   // Hide a nav item when the user demonstrably lacks its permission. Until
@@ -156,72 +156,99 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 w-[260px] bg-[#0f0f1a] flex flex-col">
-      {/* Logo */}
-      <div className="flex h-16 items-center px-5 border-b border-white/5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Calculator className="w-4.5 h-4.5 text-white" />
+    <>
+      {/* Mobile backdrop — tap to dismiss the drawer */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={clsx(
+          'fixed inset-y-0 left-0 z-50 w-[260px] bg-[#0f0f1a] flex flex-col transition-transform duration-200 ease-out lg:translate-x-0',
+          open ? 'translate-x-0' : '-translate-x-full'
+        )}
+        aria-label="Primary navigation"
+      >
+        {/* Logo */}
+        <div className="flex h-16 items-center justify-between px-5 border-b border-white/5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Calculator className="w-4.5 h-4.5 text-white" />
+            </div>
+            <div>
+              <span className="text-[15px] font-bold text-white tracking-tight">Zavora ERP</span>
+            </div>
           </div>
-          <div>
-            <span className="text-[15px] font-bold text-white tracking-tight">Zavora ERP</span>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="lg:hidden -mr-1 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Close navigation menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      </div>
 
-      {/* Amos — AI Accountant */}
-      <div className="px-3 pt-3">
-        <NavLink
-          to="/amos"
-          className={({ isActive }) =>
-            clsx(
-              'flex items-center gap-2.5 px-3 py-[9px] rounded-lg text-[13px] font-semibold text-white bg-gradient-to-r shadow-lg shadow-indigo-900/30 transition-all duration-150',
-              isActive
-                ? 'from-indigo-500 to-purple-500'
-                : 'from-indigo-600/80 to-purple-600/70 hover:from-indigo-500/90 hover:to-purple-500/80'
-            )
-          }
-        >
-          <Sparkles className="w-[18px] h-[18px] shrink-0" />
-          <span className="flex-1">Amos — AI Accountant</span>
-        </NavLink>
-      </div>
+        {/* Amos — AI Accountant */}
+        <div className="px-3 pt-3">
+          <NavLink
+            to="/amos"
+            onClick={onClose}
+            className={({ isActive }) =>
+              clsx(
+                'flex items-center gap-2.5 px-3 py-[9px] rounded-lg text-[13px] font-semibold text-white bg-gradient-to-r shadow-lg shadow-indigo-900/30 transition-all duration-150',
+                isActive
+                  ? 'from-indigo-500 to-purple-500'
+                  : 'from-indigo-600/80 to-purple-600/70 hover:from-indigo-500/90 hover:to-purple-500/80'
+              )
+            }
+          >
+            <Sparkles className="w-[18px] h-[18px] shrink-0" />
+            <span className="flex-1">Amos — AI Accountant</span>
+          </NavLink>
+        </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-        {navigation.map((item, idx) => {
-          if ('divider' in item && item.divider) {
-            if (!dividerHasVisibleItems(idx)) return null;
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+          {navigation.map((item, idx) => {
+            if ('divider' in item && item.divider) {
+              if (!dividerHasVisibleItems(idx)) return null;
+              return (
+                <div key={idx} className="pt-4 pb-1 px-3">
+                  {item.label && (
+                    <span className="text-[10px] font-semibold tracking-widest text-gray-500 uppercase">{item.label}</span>
+                  )}
+                </div>
+              );
+            }
+            const navItem = item as { name: string; href: string; icon: any };
+            if (!visible(navItem.href)) return null;
             return (
-              <div key={idx} className="pt-4 pb-1 px-3">
-                {item.label && (
-                  <span className="text-[10px] font-semibold tracking-widest text-gray-500 uppercase">{item.label}</span>
-                )}
-              </div>
+              <NavLink
+                key={navItem.name}
+                to={navItem.href}
+                end={navItem.href === '/'}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  clsx(
+                    'flex items-center gap-2.5 px-3 py-[7px] rounded-lg text-[13px] font-medium transition-all duration-150',
+                    isActive
+                      ? 'bg-white/[0.08] text-white shadow-sm shadow-white/5'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.04]'
+                  )
+                }
+              >
+                <navItem.icon className="w-[18px] h-[18px] shrink-0" />
+                {navItem.name}
+              </NavLink>
             );
-          }
-          const navItem = item as { name: string; href: string; icon: any };
-          if (!visible(navItem.href)) return null;
-          return (
-            <NavLink
-              key={navItem.name}
-              to={navItem.href}
-              end={navItem.href === '/'}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-2.5 px-3 py-[7px] rounded-lg text-[13px] font-medium transition-all duration-150',
-                  isActive
-                    ? 'bg-white/[0.08] text-white shadow-sm shadow-white/5'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.04]'
-                )
-              }
-            >
-              <navItem.icon className="w-[18px] h-[18px] shrink-0" />
-              {navItem.name}
-            </NavLink>
-          );
-        })}
-      </nav>
-    </aside>
+          })}
+        </nav>
+      </aside>
+    </>
   );
 }

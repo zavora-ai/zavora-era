@@ -27,7 +27,16 @@ pub async fn build_runner(
         Some(ops) => ops.prompt_block().await,
         None => "(ambient operations are not configured)".to_string(),
     };
+    // Company persona: pull the real tenant facts (name, currency, VAT status,
+    // fiscal year) from the ERP so Amos never claims to be a hardcoded company.
+    // Best-effort: on any error we pass Null and company_context() yields
+    // neutral fallbacks, so a persona is always produced.
+    let settings = state.erp.settings().await.unwrap_or(serde_json::Value::Null);
+    let (company_name, company_context) = persona::company_context(&settings);
+
     let instruction = persona::system_instruction(state)
+        .replace("{company_name}", &company_name)
+        .replace("{company_context}", &company_context)
         .replace("{memories}", &state.memory.profile_block(6).await)
         .replace("{ops}", &ops_block)
         .replace("{now}", &clock.read().await.instruction_block());

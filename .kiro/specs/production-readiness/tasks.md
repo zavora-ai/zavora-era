@@ -245,7 +245,7 @@ This plan brings Zavora ERP from functional prototype to production-grade deploy
   - [~] 14.1 Wire all Settings tabs to API persistence
     - Company tab: save branding and company details to `entity_settings`
     - Tax tab: save VAT registration, rates, WHT configuration
-    - Payments tab: save M-Pesa paybill, Flutterwave keys, bank transfer preferences
+    - Payments tab: save M-Pesa paybill, Paystack keys, bank transfer preferences
     - Document Numbers tab: save sequence prefixes, start numbers, year_reset flags via `PUT /api/v1/settings/sequences`
     - Extend `engine.reload_config()` to refresh all config sections after save
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_

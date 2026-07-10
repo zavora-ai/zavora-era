@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { bootstrapAuth, getAccessToken } from './api/client';
 import AppShell from './components/layout/AppShell';
 import PublicInvoicePage from './pages/pay/PublicInvoicePage';
+import { ToastProvider } from './components/toast/ToastProvider';
 import LoginPage from './pages/auth/LoginPage';
 import SetPasswordPage from './pages/auth/SetPasswordPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -132,6 +133,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ToastProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -250,6 +252,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

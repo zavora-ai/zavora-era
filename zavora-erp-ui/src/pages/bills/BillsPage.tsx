@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBills, getBill, createBill, updateBill, deleteBill, approveBill, postBill, getVendors, getProducts, getDimensions, createSupplierCreditNote, getFxRates, getSettings } from '../../api/client';
 import type { Bill, Vendor, Product } from '../../types';
@@ -43,9 +44,9 @@ export default function BillsPage() {
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const vendorName = (id?: string) => vendors.find(v => v.id === id)?.name ?? `${id?.slice(0, 8)}…`;
 
+  const toast = useToast();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bills'] });
-  const mutError = (fallback: string) => (e: any) =>
-    alert(e?.response?.data?.error || e?.response?.data?.message || fallback);
+  const mutError = (fallback: string) => (e: any) => toast.fromError(e, fallback);
   const approveMut = useMutation({ mutationFn: (id: string) => approveBill(id), onSuccess: invalidate, onError: mutError('Failed to approve bill.') });
   const postMut = useMutation({ mutationFn: (id: string) => postBill(id), onSuccess: invalidate, onError: mutError('Failed to post bill.') });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteBill(id), onSuccess: invalidate, onError: mutError('Failed to delete draft.') });

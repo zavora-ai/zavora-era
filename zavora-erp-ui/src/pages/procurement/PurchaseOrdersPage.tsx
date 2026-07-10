@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPurchaseOrders, getPurchaseOrder, getPurchaseOrderPdf, createPurchaseOrder, getVendors, getPoMatch, getGoodsReceipts, createGoodsReceipt, sendPurchaseOrder } from '../../api/client';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
@@ -198,10 +199,11 @@ function PODetailModal({ id, vendorName, onClose }: { id: string; vendorName: (i
   const po: PurchaseOrder | undefined = data?.purchase_order;
   const lines: POLine[] = data?.lines ?? [];
   const [receiving, setReceiving] = useState(false);
+  const toast = useToast();
   const sendMutation = useMutation({
     mutationFn: (email: string) => sendPurchaseOrder(id, email ? { recipient_email: email } : {}),
-    onSuccess: (r) => window.alert(r.data?.sent_to ? `LPO emailed to ${r.data.sent_to}` : 'No email on file for this vendor — the send was recorded.'),
-    onError: () => window.alert('Could not send the LPO.'),
+    onSuccess: (r) => toast.success(r.data?.sent_to ? `LPO emailed to ${r.data.sent_to}` : 'No email on file for this vendor — the send was recorded.'),
+    onError: () => toast.error('Could not send the LPO.'),
   });
   const { data: match } = useQuery({ queryKey: ['po-match', id], queryFn: () => getPoMatch(id).then((r) => r.data) });
   const { data: grns = [] } = useQuery<any[]>({ queryKey: ['po-grns', id], queryFn: () => getGoodsReceipts(id).then((r) => (Array.isArray(r.data) ? r.data : [])) });
