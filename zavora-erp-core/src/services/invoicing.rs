@@ -1810,8 +1810,15 @@ pub async fn send_invoice(
         B64.encode(&pdf_bytes)
     };
 
-    // Formatted HTML email body.
-    let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex);
+    // Formatted HTML email body. Include an online pay link when a public base
+    // URL is configured and the invoice still has a balance to collect.
+    let pay_url = match (std::env::var("PUBLIC_BASE_URL").ok().filter(|s| !s.trim().is_empty()), &invoice.public_token) {
+        (Some(base), Some(token)) if invoice.balance_due > Decimal::ZERO => {
+            Some(format!("{}/pay/{}", base.trim_end_matches('/'), token))
+        }
+        _ => None,
+    };
+    let body = render_invoice_email_html(&org_name, &invoice, &customer.name, req.message.as_deref(), &accent_hex, pay_url.as_deref());
     let subject = format!("Invoice {} from {}", invoice.number, org_name);
 
     // Resolve the tenant's configured channels for InvoiceSent. This is an
@@ -1881,17 +1888,33 @@ async fn load_template(
 }
 
 /// Render a clean, branded HTML email body for an invoice.
+/// Renders the optional "Pay online" call-to-action for invoice emails. Empty
+/// string when there's no public pay link (e.g. `PUBLIC_BASE_URL` unset or the
+/// invoice is fully paid).
+fn pay_button_html(pay_url: Option<&str>, accent_hex: &str) -> String {
+    pay_url
+        .map(|u| format!(
+            r#"<div style="text-align:center;margin:4px 0 20px"><a href="{url}" style="display:inline-block;background:{accent};color:#fff;text-decoration:none;font-weight:bold;padding:12px 28px;border-radius:8px">Pay online</a></div>"#,
+            url = html_escape(u),
+            accent = html_escape(accent_hex),
+        ))
+        .unwrap_or_default()
+}
+
 fn render_invoice_email_html(
     org_name: &str,
     invoice: &InvoiceRow,
     customer_name: &str,
     message: Option<&str>,
     accent_hex: &str,
+    pay_url: Option<&str>,
 ) -> String {
     let intro = message
         .filter(|m| !m.trim().is_empty())
         .map(|m| format!("<p style=\"margin:0 0 16px;color:#374151\">{}</p>", html_escape(m)))
         .unwrap_or_default();
+    // A "Pay online" call-to-action, only when a public pay link is available.
+    let pay_button = pay_button_html(pay_url, accent_hex);
     format!(
         r#"<!DOCTYPE html><html><body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:24px">
@@ -1912,6 +1935,7 @@ fn render_invoice_email_html(
           <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;color:#111827;font-weight:bold">Amount due</td>
               <td style="padding:10px 0;border-top:1px solid #e5e7eb;text-align:right;color:{accent};font-weight:bold;font-size:18px">{currency} {balance}</td></tr>
         </table>
+        {pay_button}
         <p style="margin:0;color:#9ca3af;font-size:12px">Thank you for your business.</p>
       </div>
     </div>
@@ -1922,6 +1946,7 @@ fn render_invoice_email_html(
         org = html_escape(org_name),
         customer = html_escape(customer_name),
         intro = intro,
+        pay_button = pay_button,
         number = html_escape(&invoice.number),
         issue = invoice.issue_date,
         due = invoice.due_date,
@@ -2458,3 +2483,28 @@ pub async fn mark_invoice_etims_transmitted(
 // (transmitted to KRA eTIMS or not) can only be cancelled or reduced via a
 // credit note that references it (see `create_credit_note`). Drafts are
 // removed with `delete_invoice_draft`.
+
+#[cfg(test)]
+mod pay_link_tests {
+    use super::pay_button_html;
+
+    #[test]
+    fn pay_button_present_only_with_url() {
+        // No link → no button.
+        assert_eq!(pay_button_html(None, "#1a56db"), "");
+
+        // With link → an anchor pointing at the pay URL.
+        let html = pay_button_html(Some("https://erp.zavora.ai/pay/abc123"), "#1a56db");
+        assert!(html.contains("Pay online"), "should render the CTA label");
+        assert!(html.contains("href=\"https://erp.zavora.ai/pay/abc123\""), "should link to the pay URL");
+        assert!(html.contains("#1a56db"), "should use the brand accent colour");
+    }
+
+    #[test]
+    fn pay_button_escapes_url() {
+        // A URL with an ampersand must be HTML-escaped, not injected raw.
+        let html = pay_button_html(Some("https://x.test/pay/t?a=1&b=2"), "#000");
+        assert!(html.contains("a=1&amp;b=2"));
+        assert!(!html.contains("a=1&b=2"));
+    }
+}

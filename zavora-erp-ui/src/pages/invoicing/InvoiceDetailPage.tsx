@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceKra, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf } from '../../api/client';
+import { getInvoice, postInvoice, sendInvoice, createCreditNote, transmitInvoiceKra, getAuditForObject, getPayments, mpesaStkPush, getInvoiceDocumentPdf, getInvoicePayLink } from '../../api/client';
 import type { Invoice, Payment, AuditEventEntry } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { hasRole, ROLES_POST, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
@@ -10,7 +10,7 @@ import Modal from '../../components/shared/Modal';
 import Attachments from '../../components/shared/Attachments';
 import {
   ArrowLeft, Send, CheckCircle, CreditCard,
-  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck, FileText
+  Clock, User, Calendar, Hash, Download, ReceiptText, Phone, Loader2, ShieldCheck, FileText, Link2, Check
 } from 'lucide-react';
 
 interface InvoiceLineRow {
@@ -37,6 +37,21 @@ export default function InvoiceDetailPage() {
   const [showMpesaModal, setShowMpesaModal] = useState(false);
   const [mpesaNotification, setMpesaNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [payLinkCopied, setPayLinkCopied] = useState(false);
+
+  // Copy the customer-facing public pay link to the clipboard for sharing.
+  const copyPayLink = async () => {
+    if (!id) return;
+    try {
+      const r = await getInvoicePayLink(id);
+      const url = `${window.location.origin}${r.data.path}`;
+      await navigator.clipboard.writeText(url);
+      setPayLinkCopied(true);
+      setTimeout(() => setPayLinkCopied(false), 2000);
+    } catch {
+      /* endpoint failure is non-critical; button simply does nothing */
+    }
+  };
 
   // Download the same server-rendered PDF used by the preview, named by the
   // invoice number (via the response's Content-Disposition).
@@ -142,6 +157,12 @@ export default function InvoiceDetailPage() {
             {invoice.status !== 'draft' && invoice.status !== 'voided' && hasRole(ROLES_CREATE) && (
               <button onClick={() => setShowCreditNote(true)} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
                 <ReceiptText className="w-4 h-4" /> Credit Note
+              </button>
+            )}
+            {invoice.status !== 'draft' && invoice.status !== 'voided' && Number(invoice.balance_due) > 0 && (
+              <button onClick={copyPayLink} className="btn-secondary" title="Copy the customer pay link">
+                {payLinkCopied ? <Check className="w-4 h-4 text-green-600" /> : <Link2 className="w-4 h-4" />}
+                {payLinkCopied ? 'Link copied' : 'Copy pay link'}
               </button>
             )}
             {invoice.invoice_type !== 'CreditNote'
