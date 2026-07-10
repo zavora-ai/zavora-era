@@ -3,7 +3,7 @@ import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPurchaseOrders, getPurchaseOrder, getPurchaseOrderPdf, createPurchaseOrder, getVendors, getPoMatch, getGoodsReceipts, createGoodsReceipt, sendPurchaseOrder } from '../../api/client';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -33,6 +33,7 @@ interface POLine {
 
 export default function PurchaseOrdersPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
+  const { can } = usePermissions();
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: pos = [], isLoading } = useQuery<PurchaseOrder[]>({
@@ -64,7 +65,7 @@ export default function PurchaseOrdersPage() {
       <PageHeader
         title="Purchase Orders (LPO)"
         subtitle="Raised from awarded tenders, or directly against a vendor. Vendors lodge invoices from the portal; for off-portal vendors, staff enter the bill on the AP side."
-        actions={hasRole(ROLES_CREATE) ? (
+        actions={can('purchase_order.create') ? (
           <button onClick={() => setShowCreate(true)} className="btn-primary">
             <Plus className="w-4 h-4" /> New Purchase Order
           </button>
@@ -200,6 +201,7 @@ function PODetailModal({ id, vendorName, onClose }: { id: string; vendorName: (i
   const lines: POLine[] = data?.lines ?? [];
   const [receiving, setReceiving] = useState(false);
   const toast = useToast();
+  const { can } = usePermissions();
   const sendMutation = useMutation({
     mutationFn: (email: string) => sendPurchaseOrder(id, email ? { recipient_email: email } : {}),
     onSuccess: (r) => toast.success(r.data?.sent_to ? `LPO emailed to ${r.data.sent_to}` : 'No email on file for this vendor — the send was recorded.'),
@@ -287,14 +289,14 @@ function PODetailModal({ id, vendorName, onClose }: { id: string; vendorName: (i
               <Download className="w-4 h-4" /> Download PDF
             </button>
             <div className="flex gap-2">
-              {hasRole(ROLES_CREATE) && (
+              {can('purchase_order.send') && (
                 <button type="button" disabled={sendMutation.isPending}
                   onClick={() => { const email = window.prompt('Send LPO to which email? (leave blank to use the vendor on file)') ?? ''; if (email !== null) sendMutation.mutate(email); }}
                   className="btn-secondary">
                   <Mail className="w-4 h-4" /> {sendMutation.isPending ? 'Sending…' : 'Email to vendor'}
                 </button>
               )}
-              {hasRole(ROLES_CREATE) && (
+              {can('purchase_order.create') && (
                 <button type="button" onClick={() => setReceiving(true)} className="btn-primary bg-emerald-600 hover:bg-emerald-700">
                   <PackageCheck className="w-4 h-4" /> Receive goods
                 </button>

@@ -10,7 +10,7 @@ import {
 import type { Vendor, Bill, Account, SupplierCreditNote } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
-import { hasRole, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -40,7 +40,7 @@ export default function SupplierCreditNotesPage() {
         title="Supplier Credit Notes"
         subtitle="Record credits issued by suppliers against bills (reverses AP and input VAT)"
         actions={
-          hasRole(ROLES_CREATE) ? (
+          can('supplier_credit.create') ? (
             <button onClick={() => setShowCreate(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> New Supplier Credit Note
             </button>
@@ -68,6 +68,7 @@ interface LineForm {
 
 function CreateModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: bills = [] } = useQuery<Bill[]>({ queryKey: ['bills', 'all'], queryFn: () => getBills({ limit: 500 }).then(r => r.data.data ?? r.data) });
   const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });

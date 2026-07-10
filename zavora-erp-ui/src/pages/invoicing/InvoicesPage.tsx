@@ -7,7 +7,7 @@ import type { Invoice, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
 import { dueDateFromTerms, paymentTermsLabel } from '../../utils/paymentTerms';
-import { hasRole, ROLES_POST, ROLES_SEND } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
@@ -55,6 +55,7 @@ export default function InvoicesPage() {
   const [sendInv, setSendInv] = useState<any | null>(null);
 
   const toast = useToast();
+  const { can } = usePermissions();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
   // Surface post/delete failures (credit-limit, stock, closed-period) instead of
   // swallowing them — these were previously silent onSuccess-only mutations.
@@ -104,7 +105,7 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {r.status === 'draft' && (
             <>
-              {hasRole(ROLES_POST) && (
+              {can('invoice.post') && (
                 <button onClick={() => postMutation.mutate(r.id)} disabled={postMutation.isPending} className="btn-primary text-xs py-1 px-2" title="Post to the ledger">
                   Post
                 </button>
@@ -117,7 +118,7 @@ export default function InvoicesPage() {
               </button>
             </>
           )}
-          {isPostedLike(r.status) && !(r as any).sent_at && hasRole(ROLES_SEND) && (
+          {isPostedLike(r.status) && !(r as any).sent_at && can('invoice.send') && (
             <button onClick={() => setSendInv(r)} className="btn-secondary text-xs py-1 px-2" title="Send to customer (email + PDF) or mark as sent">
               <Send className="w-3 h-3" /> Send
             </button>
@@ -131,7 +132,7 @@ export default function InvoicesPage() {
               Pay
             </button>
           )}
-          {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && hasRole(ROLES_POST) && (
+          {Number(r.balance_due) > 0 && r.status !== 'draft' && r.status !== 'voided' && can('invoice.post') && (
             <button onClick={() => setWriteOffInv(r)} className="btn-secondary text-xs py-1 px-2 text-amber-700" title="Write off as bad debt">
               Write off
             </button>
