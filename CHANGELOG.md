@@ -8,6 +8,59 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-10 — Go-live UX, portals, multi-company, warehousing & ops
+
+A run of merged PRs (#79–#93) closing product-honesty, UX and ops gaps that
+`REMAINING.md` (reconciled 2026-07-09) still listed as open.
+
+#### Added
+- **Public invoice view + pay portal** (PR #85/#86): a tokenised `/pay/:token`
+  page stamps `viewed_at` on open and initialises Paystack checkout; copy/send
+  a pay-link from the invoice. Closes the Specs "portal open stamps `viewed_at`"
+  + "invoice status viewed" + "customer portal pay-online" gaps.
+- **CBK daily FX auto-load** (PR #89): `services/fx.rs` `sync_cbk_rates`, a
+  daily-guarded scheduler job, `POST /fx-rates/sync-cbk`, and a "Load CBK rates"
+  button (`FX_PROVIDER_URL`, default frankfurter.dev). Closes "CBK FX auto-load".
+- **Intercompany + group consolidation** (PR #90): IC control accounts (1250
+  IC Receivable, 3030 IC Payable, 5180 IC Income, 7160 IC Charges),
+  `services/intercompany.rs` (both-sided charge) + `services/consolidation.rs`
+  (consolidate with IC elimination), `/consolidation/*` routes, and group
+  management UI. Deepens the §1.2 consolidation item (IC elimination now real;
+  ownership %/goodwill still open).
+- **Optional multi-warehouse + 3PL** (PR #92): migration `060` (`warehouses`
+  own/3PL, `warehouse_stock`, `warehouse_transfers`, backfill a default MAIN per
+  entity), `services/warehousing.rs`, non-breaking stock-delta hooks into
+  receive/issue/adjust (invariant `SUM(warehouse_stock)=on_hand`), `/warehouses`
+  API, and a Warehouses UI. Closes the §3 multi-warehouse gap (WAC-only; FIFO
+  still a follow-up).
+- **Backup/restore runbook** (PR #93): `docs/BACKUP_RUNBOOK.md` — pg_dump/
+  pg_restore incl. `amos_*` + pgvector `memory_entries`, a verify drill, and a
+  destructive-migration review. Round-trip verified live (119/119 tables).
+  Closes §8 "Backups & migration safety".
+
+#### Changed
+- **Responsive shell** (PR #80/#91): off-canvas sidebar drawer on mobile,
+  `PageHeader` stacks, all tab bars / wide rows use `overflow-x-auto` — no
+  page-level horizontal scroll at 390px. Closes §6.1 "Desktop-only shell".
+- **Global toasts** (PR #81): `ToastProvider` (`success/error/info/fromError`)
+  replaces `window.alert` across POS, products, FX, assets, banking, etc.
+  Closes §6.2 "no global toast / inconsistent feedback".
+- **Send pre-flight** (PR #84): invoice/estimate send warns when the email/SMS
+  provider is unconfigured and links to Notification providers. Closes §6.2
+  "send without delivery config".
+- **RBAC action buttons** (PR #83): per-page Post/Send/Approve/etc. buttons now
+  gate on `usePermissions().can('<resource>.<action>')` instead of coarse
+  `hasRole`. Narrows §6.1 "RBAC UI vs API drift".
+- **Amos dynamic company persona** (PR #82): `{company_context}` (name,
+  currency, VAT flag, fiscal year) is pulled from `/settings` at session build,
+  so Amos never claims to be a hardcoded company. Closes §7.2 "hardcoded
+  persona".
+- **Amos role→scope + Customer block** (PR #87): Editor now gets write (was
+  mis-mapped read-only); Customer portal role blocked like Vendor/Employee.
+  Narrows §7.2 "coarse role→scope map".
+- **Paystack docs reconciliation** (PR #79): REMAINING/Specs corrected to show
+  card payments + subscription billing as shipped (Paystack, not Flutterwave).
+
 ### 2026-07-09 — Platform Super Admin Phase 4 (billing directory sync)
 
 Paystack / subscription status now mirrors onto `tenants.plan_key` /
