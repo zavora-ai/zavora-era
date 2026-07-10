@@ -148,6 +148,8 @@ pub struct InvoiceRow {
     pub paid_at: Option<DateTime<Utc>>,
     pub template_id: Option<Uuid>,
     pub notes: Option<String>,
+    #[sqlx(default)]
+    pub public_token: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
