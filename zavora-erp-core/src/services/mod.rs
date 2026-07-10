@@ -50,3 +50,4 @@ pub mod amortization;
 pub mod public_invoice;
 pub mod intercompany;
 pub mod consolidation;
+pub mod warehousing;

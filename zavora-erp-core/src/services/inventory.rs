@@ -193,6 +193,9 @@ pub async fn receive_inventory_in_tx(
     .execute(&mut **tx)
     .await?;
 
+    // Attribute the receipt to a warehouse (default when unspecified).
+    crate::services::warehousing::apply_stock_delta_tx(tx, entity_id, req.item_id, req.warehouse_id, req.quantity).await?;
+
     Ok(movement_id)
 }
 
@@ -244,6 +247,9 @@ pub async fn adjust_inventory(
         .bind(entity_id)
         .execute(&mut *tx)
         .await?;
+
+    // Mirror the count variance onto the default warehouse's stock.
+    crate::services::warehousing::apply_stock_delta_tx(&mut tx, entity_id, req.item_id, None, variance).await?;
 
     sqlx::query(
         r#"INSERT INTO stock_movements (id, entity_id, item_id, movement_type, date, quantity, unit_cost, total_cost, notes, created_by, created_at)
@@ -410,6 +416,9 @@ pub async fn issue_inventory_in_tx(
     .bind(Utc::now())
     .execute(&mut **tx)
     .await?;
+
+    // Deduct from a warehouse (default when unspecified) to mirror the issue.
+    crate::services::warehousing::apply_stock_delta_tx(tx, entity_id, req.item_id, req.warehouse_id, -req.quantity).await?;
 
     Ok(IssueInventoryResult {
         movement_id,
