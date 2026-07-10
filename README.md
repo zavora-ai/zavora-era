@@ -313,6 +313,13 @@ DB-backed integration/property tests use `TEST_DATABASE_URL` / `TEST_REDIS_URL`
 when set, otherwise the docker-compose defaults; they skip (rather than fail)
 when infrastructure is unreachable.
 
+## Operations
+
+- **Backup & restore + migration safety:** [`docs/BACKUP_RUNBOOK.md`](docs/BACKUP_RUNBOOK.md)
+  — what to back up (the `zavora_era` DB incl. `amos_*` + pgvector `memory_entries`),
+  `pg_dump`/`pg_restore` procedures, a verify-your-backup drill, and a
+  destructive-migration review checklist.
+
 ## License
 
 Proprietary — Zavora Technologies Ltd
