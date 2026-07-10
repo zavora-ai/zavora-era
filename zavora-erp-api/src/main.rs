@@ -525,6 +525,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/inventory/receive", post(routes::inventory::receive))
         .route("/api/v1/inventory/issue", post(routes::inventory::issue))
         .route("/api/v1/inventory/adjust", post(routes::inventory::adjust))
+        .route("/api/v1/warehouses", get(routes::warehouses::list).post(routes::warehouses::create))
+        .route("/api/v1/warehouses/transfer", post(routes::warehouses::transfer))
+        .route("/api/v1/warehouses/{id}", axum::routing::put(routes::warehouses::update))
+        .route("/api/v1/warehouses/{id}/stock", get(routes::warehouses::stock_in_warehouse))
+        .route("/api/v1/inventory/{item_id}/warehouse-stock", get(routes::warehouses::item_stock))
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))

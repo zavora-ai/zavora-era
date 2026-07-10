@@ -348,6 +348,7 @@ const MODULES = [
     points: [
       'Requisitions → tenders or POs → goods receipt → 3-way match',
       'Live stock levels, valuations and mobile stock counts',
+      'Multi-warehouse &amp; 3PL: track stock by location and transfer between them',
       'Open-commitment register &amp; budget-vs-actual control',
       'Vendor portal, debit notes and approval spend-limits',
     ] },

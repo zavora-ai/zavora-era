@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getInventory, createInventoryItem, receiveInventory, issueInventory, adjustInventory, getAccounts } from '../../api/client';
+import { getInventory, createInventoryItem, receiveInventory, issueInventory, adjustInventory, getAccounts, getWarehouses } from '../../api/client';
 import type { InventoryItem } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/format';
 import PageHeader from '../../components/shared/PageHeader';
@@ -235,6 +235,8 @@ function CreateItemModal({ onClose }: { onClose: () => void }) {
 function ReceiveStockModal({ items, onClose }: { items: InventoryItem[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ item_id: '', quantity: '', unit_cost: '' });
+  const [warehouseId, setWarehouseId] = useState('');
+  const { data: warehouses = [] } = useQuery<any[]>({ queryKey: ['warehouses'], queryFn: () => getWarehouses().then((r) => Array.isArray(r.data) ? r.data : []) });
 
   const mutation = useMutation({
     mutationFn: (data: any) => receiveInventory(data),
@@ -247,6 +249,7 @@ function ReceiveStockModal({ items, onClose }: { items: InventoryItem[]; onClose
       item_id: form.item_id,
       quantity: parseFloat(form.quantity),
       unit_cost: parseFloat(form.unit_cost),
+      warehouse_id: warehouseId || undefined,
     });
   };
 
@@ -272,6 +275,15 @@ function ReceiveStockModal({ items, onClose }: { items: InventoryItem[]; onClose
             <input type="number" step="0.01" className="input" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: e.target.value })} placeholder="0.00" required />
           </div>
         </div>
+        {warehouses.length > 0 && (
+          <div>
+            <label className="label">Warehouse</label>
+            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              <option value="">Default warehouse</option>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code}){w.kind === '3pl' ? ' · 3PL' : ''}</option>)}
+            </select>
+          </div>
+        )}
         <div className="flex justify-end gap-3 pt-4 border-t">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" className="btn-success" disabled={mutation.isPending || !form.item_id || !form.quantity || !form.unit_cost}>

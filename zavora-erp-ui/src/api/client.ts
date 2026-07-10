@@ -402,10 +402,21 @@ export const reconcileStatement = (id: string) => api.post(`/bank/reconcile/${id
 export const confirmMatch = (data: any) => api.post('/bank/confirm-match', data);
 
 // === Inventory ===
-export const getInventory = () => api.get('/inventory');
-export const createInventoryItem = (data: any) => api.post('/inventory', data);
+export const getInventory = () => api.get('/inventory');export const createInventoryItem = (data: any) => api.post('/inventory', data);
 export const receiveInventory = (data: any) => api.post('/inventory/receive', data);
 export const issueInventory = (data: any) => api.post('/inventory/issue', data);
+
+// === Warehousing (optional multi-warehouse + 3PL) ===
+export interface Warehouse { id: string; code: string; name: string; kind: string; provider?: string; location?: string; is_default: boolean; is_active: boolean }
+export const getWarehouses = () => api.get<Warehouse[]>('/warehouses');
+export const createWarehouse = (data: { code: string; name: string; kind?: string; provider?: string; location?: string; is_default?: boolean }) =>
+  api.post<Warehouse>('/warehouses', data);
+export const updateWarehouse = (id: string, data: { name?: string; provider?: string; location?: string; is_active?: boolean }) =>
+  api.put(`/warehouses/${id}`, data);
+export const transferStock = (data: { item_id: string; from_warehouse_id: string; to_warehouse_id: string; quantity: number; notes?: string }) =>
+  api.post('/warehouses/transfer', data);
+export const getWarehouseStock = (warehouseId: string) => api.get(`/warehouses/${warehouseId}/stock`);
+export const getItemWarehouseStock = (itemId: string) => api.get(`/inventory/${itemId}/warehouse-stock`);
 
 // ── Point of Sale ────────────────────────────────────────────────────────────
 export const getPosSession = () => api.get('/pos/session');
