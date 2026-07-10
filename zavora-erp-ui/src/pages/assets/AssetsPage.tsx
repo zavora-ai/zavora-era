@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { getAssets, createAsset, runDepreciation, getAccounts } from '../../api/client';
@@ -25,15 +26,16 @@ export default function AssetsPage() {
     queryFn: () => getAssets().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
+  const toast = useToast();
   const depreciationMutation = useMutation({
     mutationFn: () => runDepreciation(),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
       queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
       const n = res?.data?.depreciated ?? 0;
-      alert(n > 0 ? `Posted depreciation for ${n} asset${n === 1 ? '' : 's'}.` : 'No assets were due for depreciation.');
+      toast.success(n > 0 ? `Posted depreciation for ${n} asset${n === 1 ? '' : 's'}.` : 'No assets were due for depreciation.');
     },
-    onError: (e: any) => alert(e?.response?.data?.error || 'Depreciation run failed.'),
+    onError: (e: any) => toast.fromError(e, 'Depreciation run failed.'),
   });
 
   const columns: Column<FixedAsset>[] = [

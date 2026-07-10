@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPosSession, getPosSessions, getZReport, closePosSession } from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -78,6 +79,7 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
 
 function CloseModal({ session, onClose }: { session: any; onClose: () => void }) {
   const qc = useQueryClient();
+  const toast = useToast();
   const { data: z } = useQuery({ queryKey: ['z-report', session.id], queryFn: () => getZReport(session.id).then((r) => r.data) });
   const [counted, setCounted] = useState(0);
   const [result, setResult] = useState<any>(null);
@@ -85,7 +87,7 @@ function CloseModal({ session, onClose }: { session: any; onClose: () => void })
   const mut = useMutation({
     mutationFn: () => closePosSession(session.id, { counted_cash: Number(counted) }),
     onSuccess: (r) => { setResult(r.data); qc.invalidateQueries({ queryKey: ['pos-session'] }); qc.invalidateQueries({ queryKey: ['pos-sessions'] }); },
-    onError: (e: any) => window.alert(e?.response?.data?.error || 'Close failed.'),
+    onError: (e: any) => toast.fromError(e, 'Close failed.'),
   });
 
   if (result) {

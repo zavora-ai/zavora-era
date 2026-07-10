@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getFxRates, upsertFxRate, deleteFxRate, runFxRevaluation } from '../../api/client';
 import type { ExchangeRateEntry } from '../../types';
@@ -18,20 +19,21 @@ export default function FxRatesPage() {
     queryFn: () => getFxRates().then(r => Array.isArray(r.data) ? r.data : []),
   });
 
+  const toast = useToast();
   const revalMutation = useMutation({
     mutationFn: () => runFxRevaluation(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fx-rates'] });
       queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
-      alert('FX revaluation posted, with an auto-reversal in the next period.');
+      toast.success('FX revaluation posted, with an auto-reversal in the next period.');
     },
-    onError: (e: any) => alert(e?.response?.data?.error || 'FX revaluation failed.'),
+    onError: (e: any) => toast.fromError(e, 'FX revaluation failed.'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteFxRate(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fx-rates'] }),
-    onError: (e: any) => alert(e?.response?.data?.error || 'Failed to delete rate.'),
+    onError: (e: any) => toast.fromError(e, 'Failed to delete rate.'),
   });
 
   const openCreate = () => { setEditing(null); setShowForm(true); };
@@ -136,6 +138,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'KES'];
 
 function RateModal({ rate, onClose }: { rate: ExchangeRateEntry | null; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const isEdit = !!rate;
   const [form, setForm] = useState({
     // Default foreign → local (KES base): the common case is recording a
@@ -152,7 +155,7 @@ function RateModal({ rate, onClose }: { rate: ExchangeRateEntry | null; onClose:
   const mutation = useMutation({
     mutationFn: (data: any) => upsertFxRate(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fx-rates'] }); onClose(); },
-    onError: (e: any) => alert(e?.response?.data?.error || 'Failed to save rate.'),
+    onError: (e: any) => toast.fromError(e, 'Failed to save rate.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
