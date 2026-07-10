@@ -168,6 +168,33 @@ pub async fn advance_leave_balances(engine: &ErpEngine, entity_id: Uuid) -> ErpR
     Ok(n)
 }
 
+/// Auto-load CBK daily indicative FX rates for ALL tenants — at most once per
+/// day. Idempotent: guarded by whether any CBK-sourced rate already exists for
+/// today, so the hourly tick only hits the external feed once each day.
+pub async fn sync_cbk_rates_all(engine: &ErpEngine) -> ErpResult<u32> {
+    let already: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM exchange_rates WHERE source = 'CBK' AND rate_date = CURRENT_DATE)",
+    )
+    .fetch_one(engine.pool())
+    .await
+    .unwrap_or(false);
+    if already {
+        return Ok(0); // today's rates already loaded
+    }
+
+    let mut total = 0u32;
+    for entity_id in all_entity_ids(engine).await? {
+        match crate::services::fx::sync_cbk_rates(engine, entity_id).await {
+            Ok(s) => total += s.updated as u32,
+            Err(e) => tracing::warn!("CBK rate sync failed for entity {}: {}", entity_id, e),
+        }
+    }
+    if total > 0 {
+        tracing::info!("CBK rate auto-load: upserted {} rate(s) across tenants", total);
+    }
+    Ok(total)
+}
+
 /// Post due recurring journals for ALL tenants.
 pub async fn process_recurring_journals_all(engine: &ErpEngine) -> ErpResult<u32> {
     let mut total = 0u32;

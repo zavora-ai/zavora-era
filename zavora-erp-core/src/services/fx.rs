@@ -41,6 +41,108 @@ pub async fn upsert_rate(engine: &ErpEngine, entity_id: Uuid, req: UpsertRateReq
     })
 }
 
+// ── CBK (Central Bank of Kenya) daily rate auto-load ──────────────────────────
+//
+// The CBK does not expose a first-class REST API, so we consume its official
+// daily indicative rates via the open-source Frankfurter service, which
+// republishes the CBK feed (base https://api.frankfurter.dev, provider=CBK).
+// The feed is EUR-pivoted; we derive each foreign→base cross-rate and upsert
+// with source="CBK". Configurable via FX_PROVIDER_URL (e.g. a self-hosted
+// Frankfurter) for air-gapped deploys.
+
+/// One row of the Frankfurter `/v2/rates` payload (base=EUR, quote=X).
+#[derive(Debug, Clone, serde::Deserialize)]
+struct FrankfurterRate {
+    date: String,
+    #[allow(dead_code)]
+    base: String,
+    quote: String,
+    rate: f64,
+}
+
+/// Summary of a CBK rate sync.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CbkSyncSummary {
+    pub date: NaiveDate,
+    pub base: String,
+    pub updated: usize,
+    pub currencies: Vec<String>,
+}
+
+/// Derive foreign→`base` cross-rates from the EUR-pivoted CBK feed.
+/// The feed gives `rate` = units of `quote` per 1 EUR, so:
+///   X→base = (EUR→base) / (EUR→X)  (i.e. how many `base` units 1 X buys).
+/// Pure + total (no I/O) so it is unit-testable. Returns the feed date and the
+/// list of (currency, rate) pairs, base excluded.
+fn cross_rates_for_base(rows: &[FrankfurterRate], base: &str) -> Option<(NaiveDate, Vec<(String, Decimal)>)> {
+    let eur_to_base = rows.iter().find(|r| r.quote.eq_ignore_ascii_case(base))?.rate;
+    if eur_to_base <= 0.0 {
+        return None;
+    }
+    let date = rows.first().and_then(|r| NaiveDate::parse_from_str(&r.date, "%Y-%m-%d").ok())?;
+    let mut out = Vec::new();
+    for r in rows {
+        if r.quote.eq_ignore_ascii_case(base) || r.rate <= 0.0 {
+            continue;
+        }
+        let x_to_base = eur_to_base / r.rate;
+        if let Some(d) = Decimal::from_f64_retain(x_to_base) {
+            out.push((r.quote.to_uppercase(), d.round_dp(6)));
+        }
+    }
+    Some((date, out))
+}
+
+/// Fetch the CBK rate table (via Frankfurter).
+async fn fetch_cbk_rows() -> ErpResult<Vec<FrankfurterRate>> {
+    let base_url = std::env::var("FX_PROVIDER_URL")
+        .unwrap_or_else(|_| "https://api.frankfurter.dev".to_string());
+    let url = format!("{}/v2/rates?providers=CBK", base_url.trim_end_matches('/'));
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|e| ErpError::ValidationFailed { message: format!("CBK rate feed unreachable: {e}") })?;
+    if !resp.status().is_success() {
+        return Err(ErpError::ValidationFailed {
+            message: format!("CBK rate feed returned HTTP {}", resp.status()),
+        });
+    }
+    resp.json::<Vec<FrankfurterRate>>()
+        .await
+        .map_err(|e| ErpError::ValidationFailed { message: format!("CBK rate feed response invalid: {e}") })
+}
+
+/// Auto-load the latest CBK indicative rates for an entity: fetch the feed,
+/// derive foreign→base cross-rates, and upsert them (source="CBK", Spot).
+pub async fn sync_cbk_rates(engine: &ErpEngine, entity_id: Uuid) -> ErpResult<CbkSyncSummary> {
+    let base = engine.config_for(entity_id).await?.base_currency.clone();
+    let rows = fetch_cbk_rows().await?;
+    let (date, crosses) = cross_rates_for_base(&rows, &base).ok_or_else(|| ErpError::ValidationFailed {
+        message: format!("CBK feed carries no rate for base currency {base}"),
+    })?;
+
+    let mut currencies = Vec::with_capacity(crosses.len());
+    for (ccy, rate) in crosses {
+        upsert_rate(
+            engine,
+            entity_id,
+            UpsertRateRequest {
+                from_ccy: ccy.clone(),
+                to_ccy: base.clone(),
+                rate_date: date,
+                rate_type: RateType::Spot,
+                rate,
+                source: "CBK".to_string(),
+            },
+        )
+        .await?;
+        currencies.push(ccy);
+    }
+    Ok(CbkSyncSummary { date, base, updated: currencies.len(), currencies })
+}
+
 /// Run FX revaluation for a period.
 ///
 /// This function:
@@ -357,4 +459,43 @@ struct FcyBalanceRow {
     currency: String,
     balance_fcy: Decimal,
     balance_lcy: Decimal,
+}
+
+#[cfg(test)]
+mod cbk_tests {
+    use super::{cross_rates_for_base, FrankfurterRate};
+    use rust_decimal::Decimal;
+
+    fn row(quote: &str, rate: f64) -> FrankfurterRate {
+        FrankfurterRate { date: "2026-07-10".into(), base: "EUR".into(), quote: quote.into(), rate }
+    }
+
+    #[test]
+    fn derives_foreign_to_kes_cross_rates() {
+        // EUR-pivoted feed: 1 EUR = 147.76 KES = 1.1437 USD = 0.85199 GBP.
+        let rows = vec![row("KES", 147.76), row("USD", 1.1437), row("GBP", 0.85199), row("EUR", 1.0)];
+        let (date, crosses) = cross_rates_for_base(&rows, "KES").expect("KES present");
+        assert_eq!(date.to_string(), "2026-07-10");
+        // Base itself is excluded.
+        assert!(!crosses.iter().any(|(c, _)| c == "KES"), "base excluded");
+        // USD→KES ≈ 147.76 / 1.1437 ≈ 129.19.
+        let usd = crosses.iter().find(|(c, _)| c == "USD").expect("USD").1;
+        assert!((usd - Decimal::new(12919, 2)).abs() < Decimal::new(2, 2), "USD/KES ~129.19, got {usd}");
+        // GBP→KES ≈ 147.76 / 0.85199 ≈ 173.43.
+        let gbp = crosses.iter().find(|(c, _)| c == "GBP").expect("GBP").1;
+        assert!((gbp - Decimal::new(17343, 2)).abs() < Decimal::new(5, 2), "GBP/KES ~173.43, got {gbp}");
+    }
+
+    #[test]
+    fn returns_none_when_base_absent() {
+        let rows = vec![row("USD", 1.1437), row("GBP", 0.85199)];
+        assert!(cross_rates_for_base(&rows, "KES").is_none());
+    }
+
+    #[test]
+    fn skips_nonpositive_rates() {
+        let rows = vec![row("KES", 147.76), row("USD", 0.0), row("GBP", 0.85199)];
+        let (_d, crosses) = cross_rates_for_base(&rows, "KES").unwrap();
+        assert!(!crosses.iter().any(|(c, _)| c == "USD"), "zero-rate currency skipped");
+    }
 }

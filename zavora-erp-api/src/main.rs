@@ -142,6 +142,12 @@ async fn main() -> anyhow::Result<()> {
             if let Err(e) = zavora_erp_core::services::scheduler::process_recurring_journals_all(&scheduler_engine).await {
                 tracing::error!("Recurring journal error: {}", e);
             }
+            // Auto-load CBK daily indicative FX rates for all tenants (once/day; idempotent).
+            match zavora_erp_core::services::scheduler::sync_cbk_rates_all(&scheduler_engine).await {
+                Ok(n) if n > 0 => tracing::info!("CBK FX rates auto-loaded: {} rate(s)", n),
+                Ok(_) => {}
+                Err(e) => tracing::error!("CBK FX auto-load error: {}", e),
+            }
             // Month-end depreciation for all tenants (idempotent; books the prior month).
             match zavora_erp_core::services::scheduler::process_depreciation(&scheduler_engine).await {
                 Ok(n) if n > 0 => tracing::info!("Depreciation posted for {} asset(s)", n),
@@ -528,6 +534,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/amortization/{id}/cancel", post(routes::amortization::cancel))
         // FX Rates
         .route("/api/v1/fx-rates", get(routes::fx::list).post(routes::fx::upsert))
+        .route("/api/v1/fx-rates/sync-cbk", post(routes::fx::sync_cbk))
         .route("/api/v1/fx-rates/{id}", delete(routes::fx::delete))
         .route("/api/v1/fx/revaluation", post(routes::fx::revaluation))
         // Audit
