@@ -198,7 +198,7 @@ The current state has functional business logic for invoicing, bills, payments, 
 
 1. WHEN the user edits Company settings and clicks Save, THE API_Server SHALL persist the branding and company details to the entity_settings table
 2. WHEN the user edits Tax settings and clicks Save, THE API_Server SHALL persist VAT registration, rates, and WHT configuration
-3. WHEN the user edits Payment settings and clicks Save, THE API_Server SHALL persist M-Pesa paybill, Flutterwave keys, and bank transfer preferences
+3. WHEN the user edits Payment settings and clicks Save, THE API_Server SHALL persist M-Pesa paybill, Paystack keys, and bank transfer preferences
 4. WHEN the user edits Document Number settings and clicks Save, THE API_Server SHALL persist sequence prefixes, start numbers, and year_reset flags
 5. WHEN settings are saved successfully, THE API_Server SHALL trigger a configuration reload so changes take effect without server restart
 
