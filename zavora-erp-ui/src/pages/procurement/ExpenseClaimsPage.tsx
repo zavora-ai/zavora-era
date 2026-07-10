@@ -6,7 +6,7 @@ import {
   approveExpenseClaim, rejectExpenseClaim,
 } from '../../api/client';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CREATE, ROLES_APPROVE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -22,6 +22,8 @@ export default function ExpenseClaimsPage() {
     queryKey: ['expense-claims'], queryFn: () => getExpenseClaims().then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
 
+  const { can } = usePermissions();
+
   const columns: Column<Claim>[] = [
     { key: 'status', header: 'Status', render: (r) => <span className={statusColor(r.status)}>{r.status}</span> },
     { key: 'number', header: 'Claim #', render: (r) => <span className="font-medium text-blue-600">{r.number}</span> },
@@ -33,7 +35,7 @@ export default function ExpenseClaimsPage() {
   return (
     <div>
       <PageHeader title="Expense Claims" subtitle="Submit out-of-pocket expenses for approval and reimbursement."
-        actions={hasRole(ROLES_CREATE) ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> New Claim</button> : undefined} />
+        actions={can('expense_claim.create') ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> New Claim</button> : undefined} />
       <DataTable columns={columns} data={claims} loading={isLoading} onRowClick={(r) => setDetailId(r.id)} emptyMessage="No expense claims yet." />
       {showCreate && <CreateClaimModal onClose={() => setShowCreate(false)} />}
       {detailId && <ClaimDetailModal id={detailId} onClose={() => setDetailId(null)} />}
@@ -102,6 +104,7 @@ function ClaimDetailModal({ id, onClose }: { id: string; onClose: () => void }) 
   const lines: ClaimLine[] = data?.lines ?? [];
   const inv = () => { qc.invalidateQueries({ queryKey: ['expense-claims'] }); qc.invalidateQueries({ queryKey: ['expense-claim', id] }); };
   const toast = useToast();
+  const { can } = usePermissions();
   const act = useMutation({ mutationFn: (fn: () => Promise<any>) => fn(), onSuccess: inv, onError: (e: any) => toast.fromError(e, 'Action failed.') });
 
   if (!claim) return <Modal open={true} onClose={onClose} title="Expense Claim"><p className="text-sm text-gray-500 py-8 text-center">Loading…</p></Modal>;
@@ -124,8 +127,8 @@ function ClaimDetailModal({ id, onClose }: { id: string; onClose: () => void }) 
         <div className="flex items-center justify-between pt-3 border-t">
           <button type="button" onClick={onClose} className="btn-secondary">Close</button>
           <div className="flex gap-2">
-            {claim.status === 'draft' && hasRole(ROLES_CREATE) && <button className="btn-primary" disabled={act.isPending} onClick={() => act.mutate(() => submitExpenseClaim(id))}><Send className="w-4 h-4" /> Submit</button>}
-            {claim.status === 'submitted' && hasRole(ROLES_APPROVE) && (<>
+            {claim.status === 'draft' && can('expense_claim.create') && <button className="btn-primary" disabled={act.isPending} onClick={() => act.mutate(() => submitExpenseClaim(id))}><Send className="w-4 h-4" /> Submit</button>}
+            {claim.status === 'submitted' && can('expense_claim.approve') && (<>
               <button className="btn-secondary text-red-600" disabled={act.isPending} onClick={() => { const reason = window.prompt('Reason for rejection?') ?? undefined; act.mutate(() => rejectExpenseClaim(id, reason)); }}><X className="w-4 h-4" /> Reject</button>
               <button className="btn-primary bg-emerald-600 hover:bg-emerald-700" disabled={act.isPending} onClick={() => act.mutate(() => approveExpenseClaim(id))}><Check className="w-4 h-4" /> Approve</button>
             </>)}

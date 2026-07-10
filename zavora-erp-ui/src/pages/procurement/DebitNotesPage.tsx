@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getDebitNotes, createDebitNote, getVendors } from '../../api/client';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import Modal from '../../components/shared/Modal';
@@ -28,7 +28,7 @@ export default function DebitNotesPage() {
   return (
     <div>
       <PageHeader title="Debit Notes" subtitle="Supplier returns and overcharge claims. Issuing a debit note reduces what you owe the vendor."
-        actions={hasRole(ROLES_CREATE) ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> New Debit Note</button> : undefined} />
+        actions={can('debit_note.create') ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> New Debit Note</button> : undefined} />
       <DataTable columns={columns} data={notes} loading={isLoading} emptyMessage="No debit notes yet." />
       {showCreate && <CreateDNModal vendors={vendors} onClose={() => setShowCreate(false)} />}
     </div>
@@ -37,6 +37,7 @@ export default function DebitNotesPage() {
 
 function CreateDNModal({ vendors, onClose }: { vendors: any[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const { can } = usePermissions();
   const [vendorId, setVendorId] = useState('');
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState([{ description: '', quantity: 1, unit_price: 0, account_code: '' }]);

@@ -5,7 +5,7 @@ import { getEstimates, createEstimate, updateEstimate, deleteEstimate, getEstima
 import type { Estimate, Customer, Product } from '../../types';
 import { formatCurrency, formatDate, statusColor } from '../../utils/format';
 import { workToday } from '../../utils/workDate';
-import { hasRole, ROLES_SEND, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import PaginationControls from '../../components/shared/PaginationControls';
@@ -30,6 +30,7 @@ export default function EstimatesPage() {
   const estimatesTotal: number = resp?.total_count ?? 0;
 
   const toast = useToast();
+  const { can } = usePermissions();
   const convertMutation = useMutation({
     mutationFn: (id: string) => convertEstimate(id),
     onSuccess: (resp: any) => {
@@ -89,7 +90,7 @@ export default function EstimatesPage() {
           >
             <Eye className="w-3 h-3" />
           </Link>
-          {hasRole(ROLES_CREATE) && r.status === 'draft' && (
+          {can('estimate.update') && r.status === 'draft' && (
             <button
               onClick={(e) => { e.stopPropagation(); setEditId(r.id); }}
               className="btn-secondary text-xs py-1 px-2"
@@ -98,7 +99,7 @@ export default function EstimatesPage() {
               <Pencil className="w-3 h-3" /> Edit
             </button>
           )}
-          {hasRole(ROLES_SEND) && r.status === 'draft' && (
+          {can('estimate.send') && r.status === 'draft' && (
             <button
               onClick={(e) => { e.stopPropagation(); sendMutation.mutate(r.id); }}
               className="btn-secondary text-xs py-1 px-2"
@@ -108,7 +109,7 @@ export default function EstimatesPage() {
               <Send className="w-3 h-3" /> Send
             </button>
           )}
-          {hasRole(ROLES_SEND) && (r.status === 'draft' || r.status === 'sent') && (
+          {can('estimate.send') && (r.status === 'draft' || r.status === 'sent') && (
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); acceptMutation.mutate(r.id); }}
@@ -128,7 +129,7 @@ export default function EstimatesPage() {
               </button>
             </>
           )}
-          {hasRole(ROLES_SEND) && (r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && (
+          {can('estimate.convert') && (r.status === 'accepted' || r.status === 'sent' || r.status === 'draft') && (
             <button
               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(r.id); }}
               className="btn-success text-xs py-1 px-2"
@@ -138,7 +139,7 @@ export default function EstimatesPage() {
               <ArrowRight className="w-3 h-3" /> Convert
             </button>
           )}
-          {hasRole(ROLES_CREATE) && r.status === 'draft' && (
+          {can('estimate.delete') && r.status === 'draft' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
