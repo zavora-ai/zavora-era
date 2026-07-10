@@ -94,6 +94,16 @@ pub struct PostingSetup {
     pub housing_levy_payable: String,
     /// Net pay due to employees (wages payable / accrued).
     pub net_pay_payable: String,
+
+    // --- Intercompany (multi-company groups) ---
+    /// Amounts owed to this company by sister group companies (asset control).
+    pub intercompany_receivable: String,
+    /// Amounts this company owes sister group companies (liability control).
+    pub intercompany_payable: String,
+    /// Income from charging a sister group company (eliminated on consolidation).
+    pub intercompany_income: String,
+    /// Cost of being charged by a sister group company (eliminated on consolidation).
+    pub intercompany_expense: String,
 }
 
 impl Default for PostingSetup {
@@ -149,6 +159,10 @@ impl Default for PostingSetup {
             helb_payable: "3340".to_string(),
             housing_levy_payable: "3350".to_string(),
             net_pay_payable: "3400".to_string(),
+            intercompany_receivable: "1250".to_string(),
+            intercompany_payable: "3030".to_string(),
+            intercompany_income: "5180".to_string(),
+            intercompany_expense: "7160".to_string(),
         }
     }
 }
