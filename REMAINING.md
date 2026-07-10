@@ -20,9 +20,11 @@ against `feat/portals-page` / main tip ≈ `85ecf01`._
 > restore runbook (§8, #93), responsive shell (§6.1, #80/#91), global toasts
 > (§6.2, #81), send pre-flight (§6.2, #84), `can()` action buttons (§6.1, #83),
 > Amos dynamic company persona (§7.2, #82), Amos role→scope + Customer block
-> (§7.2, #87). **The remaining P0 is Amos service-account RBAC (§7.1)** — the
-> ledger actor is still the service user; needs the cross-repo user-scoped MCP
-> auth. Next P1 ops: bank auto-feeds (§3), eTIMS prod maturity (§2).
+> (§7.2, #87), and **user-scoped MCP auth — the §7.1 P0** (ledger actor is now
+> the human, not the service account; cross-repo amos + mcp-erp). The remaining
+> go-live P1 ops are **bank auto-feeds (§3)** and **eTIMS prod maturity (§2)**;
+> the Amos P0 still needs a coordinated amos+mcp-erp release + client token
+> refresh over the `context` frame (§7.1).
 
 > **Independent validation (2026-07-09, second pass).** Ten of the highest-severity
 > claims were re-verified line-by-line against main. **All ten confirmed real** —
@@ -569,21 +571,27 @@ accounting/product roots of some UX failures.
   pass no session handle and stay deliberately unattended (eTIMS sweep).
   `AMOS_CONFIRM_WRITES=0` is the explicit demo/dev escape hatch.
 
-- ⬜ **P0 — Tool execution as service account bypasses human ERP RBAC.**  
-  mcp-erp logs in as `ZAVORA_*` (`mcp.json` / `erp.rs`). Session scopes are a
-  pre-filter only; API sees Accountant-class service user. Ledger actor ≠ human
-  confirmer. Compliance relies on Amos transcript/`amos_audit_events`, not ERP
-  actor. *Mitigated 2026-07-09 by the confirm-before-write code gate above
-  (every posting now has a recorded human click behind it), but the ERP actor
-  is still the service user.*  
-  **Fix design (cross-repo, do as its own change):** amos retains the session
-  JWT from the WS handshake and injects it per tool call (`__user_token` arg
-  added AFTER the model turn, stripped from anything echoed back);
-  `mcp-erp/src/zavora.rs` uses it as the bearer for that request, falling back
-  to the service login. Open issue to solve first: access tokens live 15 min —
-  the embedded shell must push refreshed tokens over the existing `context`
-  WS frame or writes start 401ing mid-session. Needs coordinated releases of
-  amos + mcp-erp (`amos/Dockerfile` pins `MCP_ERP_REF`).
+- ✅ **P0 — Tool execution as service account bypasses human ERP RBAC.**
+  *(Implemented 2026-07-10 — user-scoped MCP auth, cross-repo amos + mcp-erp.)*
+  Amos now threads the session user's verified access token into every ERP tool
+  call as a stripped `__user_token` arg (injected in `ScopedTool` AFTER the
+  model turn + the confirm preview, so the model never sees it and it is never
+  echoed); mcp-erp's manual `ServerHandler::call_tool` pulls it out before the
+  typed input deserializes and binds it to a **task-local** (concurrency-safe
+  across the one shared mcp-erp process), and `ZavoraBackend::request` uses it
+  as the bearer for that call — **falling back to the service login on a 401**
+  (expired token) or when absent (ambient routines, which run as the service
+  account by design). **The ERP now records the human as the actor.** Verified
+  live: a `create_customer` with a user token landed in that user's entity
+  (`234537c2…`) while the same call without a token landed in the service
+  account's entity (`d3aa0afa…`) — proving the per-call bearer. Unit tests pin
+  extraction/stripping (mcp-erp) and injection (amos ERP-only, browser/routine
+  skipped).
+  **Remaining to fully close:** (1) **coordinated release** of amos + mcp-erp
+  (`amos/Dockerfile` pins `MCP_ERP_REF`); (2) the embedded ERP shell should push
+  refreshed access tokens over the existing `context` WS frame (server side
+  already accepts + verifies them) so long sessions keep acting as the user
+  rather than degrading to the service account after ~15 min.
 
 ### 7.2 P1 — Roles, persona, multi-tenant product, plans
 
@@ -664,7 +672,9 @@ accounting/product roots of some UX failures.
 
 1. ✅ Complete `required_scopes` + regression test (P0) — done 2026-07-09.  
 2. ✅ Hard confirm gate for ledger writes in live sessions (P0) — done 2026-07-09.  
-3. ⬅️ **User-scoped MCP auth / audit actor = human (P0/P1) — NEXT, still open.**  
+3. ✅ User-scoped MCP auth / audit actor = human (P0/P1) — implemented
+   2026-07-10 (amos + mcp-erp); pending coordinated release + client token
+   refresh over the `context` frame.
 4. 🟡 Scopes from permissions + block Customer; fix Editor/custom (P1) —
    Customer blocked + Editor fixed (#87); permissions-derived scopes still open.  
 5. ✅ Dynamic `{company_context}` from settings (P1) — done 2026-07-10 (#82).  

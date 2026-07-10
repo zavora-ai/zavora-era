@@ -252,6 +252,9 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 /// work-as-of date) carried on the handshake frame.
 struct Handshake {
     principal: crate::auth::Principal,
+    /// The verified access token itself — threaded into ERP tool calls so the
+    /// ledger actor is the human. `None` only in the dev/unauth path.
+    token: Option<String>,
     timezone: Option<String>,
     work_date: Option<String>,
     plan: Option<String>,
@@ -300,6 +303,8 @@ where
     };
     let str_field = |k: &str| frame.as_ref().and_then(|m| m.get(k)).and_then(|v| v.as_str()).map(String::from);
     let token = str_field("token");
+    // Keep a copy for the session bearer before the match consumes `token`.
+    let session_token = token.clone().filter(|t| !t.trim().is_empty());
     let timezone = str_field("timezone");
     let work_date = str_field("work_date");
     let plan = str_field("plan");
@@ -318,7 +323,9 @@ where
         }
         _ => return Err(Refusal::new("no_auth", "Sign in to the ERP to use Amos.")),
     };
-    Ok(Handshake { principal, timezone, work_date, plan })
+    // The verified access token rides into the session so ERP tool calls carry
+    // it as `__user_token` (dev/unauth path has no token → service account).
+    Ok(Handshake { principal, token: session_token, timezone, work_date, plan })
 }
 
 async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
@@ -359,6 +366,10 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
         }
     };
     let principal = handshake.principal;
+    // The session user's access token, threaded into ERP tool calls so the
+    // ledger actor is the human (set on the session below; refreshed over the
+    // `context` frame as the ~15-min token rolls over).
+    let handshake_token = handshake.token;
     // Per-user timezone + work-as-of (posting) date, from the handshake. Shared
     // so a mid-session `context` frame (the user changing their work-date) can
     // update the clock the current_datetime tool reads.
@@ -391,6 +402,10 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // active skill. Never shared across sessions — two people (or two tabs)
     // each see only their own plan and evidence.
     let session = Arc::new(SessionState::new());
+    // Seed the session's ERP bearer so tool calls act as this user.
+    if let Some(tok) = handshake_token {
+        session.set_user_token(tok).await;
+    }
 
     // Fresh runner per browser session, scoped to this principal.
     let runner = match agent::build_runner(&state, &session, principal.clone(), attachments.clone(), clock.clone(), entitlements).await {
@@ -453,6 +468,9 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     let attachments_ingest = attachments.clone();
     let clock_ingest = clock.clone();
     let session_confirm = session.clone();
+    // Verifier clone so a mid-session `context` frame can validate a refreshed
+    // access token against the served entity before adopting it as the bearer.
+    let verifier = state.verifier.clone();
     let voice_enabled = entitlements.voice;
     let send_handle = tokio::spawn(async move {
         let mut voice_upsold = false;
@@ -528,6 +546,17 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                 let updated = crate::clock::SessionClock::from_handshake(tz, wd);
                                 info!("🕑 context update: tz {} · posting date {}", updated.tz.name(), updated.effective_posting_date());
                                 *clock_ingest.write().await = updated;
+                                // A refreshed access token (the embedded shell
+                                // pushes a new one before the old ~15-min token
+                                // expires) keeps mid-session ERP writes acting
+                                // as the user. Verify it against the served
+                                // entity before adopting it.
+                                if let Some(tok) = msg.get("token").and_then(|v| v.as_str()) {
+                                    if !tok.trim().is_empty() && verifier.verify(tok).is_ok() {
+                                        session_confirm.set_user_token(tok.to_string()).await;
+                                        info!("🔑 session ERP token refreshed");
+                                    }
+                                }
                             }
                             Some("confirm") => {
                                 // Approve/Deny click for a pending posting —

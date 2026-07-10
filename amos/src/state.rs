@@ -83,6 +83,13 @@ pub struct SessionState {
     pub showcase: RwLock<Vec<ShowcaseStep>>,
     /// Write-confirmation gate for this session's posting tools.
     pub confirmations: Confirmations,
+    /// The session user's current ERP access token. Injected into every ERP
+    /// tool call (as `__user_token`) so mcp-erp acts AS the human, not the
+    /// service account — the ledger actor is the person who approved the write.
+    /// Set at the WS handshake and refreshed over the `context` frame (access
+    /// tokens live ~15 min); `None` (e.g. dev/unauth) ⇒ service-account
+    /// fallback in mcp-erp.
+    pub user_token: RwLock<Option<String>>,
     /// JSON messages pushed to THIS session's UI websocket only.
     pub push: broadcast::Sender<String>,
 }
@@ -95,8 +102,19 @@ impl SessionState {
             tasks: RwLock::new(Vec::new()),
             showcase: RwLock::new(Vec::new()),
             confirmations: Confirmations::default(),
+            user_token: RwLock::new(None),
             push,
         }
+    }
+
+    /// Set/refresh the session user's ERP access token.
+    pub async fn set_user_token(&self, token: String) {
+        *self.user_token.write().await = Some(token);
+    }
+
+    /// The current user access token, if any.
+    pub async fn user_token(&self) -> Option<String> {
+        self.user_token.read().await.clone()
     }
 
     /// Push a JSON message to this session's UI (ignores "no receivers").

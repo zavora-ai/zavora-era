@@ -8,6 +8,34 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-10 — Amos user-scoped MCP auth (P0: ledger actor = the human)
+
+Closes the §7.1 P0. Amos tool calls previously hit the ERP as the shared
+`ZAVORA_*` service account, so the ledger actor was never the human who
+approved the write. Now the session user's verified access token is threaded
+per tool call so the ERP records the person.
+
+#### Changed
+- **amos** (`scope.rs`, `state.rs`, `routes.rs`): the session captures the
+  handshake access token; `ScopedTool` injects it into ERP tool calls as a
+  `__user_token` argument **after** the model turn and the confirm preview (so
+  the model never sees it and it never lands on the approval card); `browser_*`
+  tools and ambient routines (`session: None`) are skipped (routines run as the
+  service account by design). Refreshed tokens are accepted + verified over the
+  existing `context` WS frame.
+- **mcp-erp** (`server.rs`, `zavora.rs`; separate repo): a manual
+  `ServerHandler::call_tool` extracts + strips `__user_token` before the typed
+  input deserializes and binds it to a **task-local** (concurrency-safe across
+  the single shared mcp-erp process); `ZavoraBackend::request` uses it as the
+  bearer, **falling back to the service login on a 401 or when absent**.
+
+Verified: extraction/stripping + injection unit tests (both repos); a live
+`create_customer` with a user token landed in that user's entity while the same
+call without a token landed in the service account's entity — proving the
+per-call bearer and that the human is the recorded actor. Full closure needs a
+coordinated amos+mcp-erp release and the embedded shell pushing token refreshes
+over the `context` frame.
+
 ### 2026-07-10 — Go-live UX, portals, multi-company, warehousing & ops
 
 A run of merged PRs (#79–#93) closing product-honesty, UX and ops gaps that
