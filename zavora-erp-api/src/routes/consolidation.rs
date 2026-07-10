@@ -289,3 +289,152 @@ pub async fn trial_balance(
         "difference": difference,
     })))
 }
+
+// ── Multi-company groups + intercompany + group consolidation ────────────────
+
+use axum::extract::Path;
+use zavora_erp_core::services::consolidation as consol;
+use zavora_erp_core::services::intercompany as ic;
+
+/// Entity ids the current user may act on.
+async fn authorized_ids(state: &AppState, user_id: Uuid) -> Vec<Uuid> {
+    authorized_entities(state, user_id).await.into_iter().map(|(id, ..)| id).collect()
+}
+
+/// POST /consolidation/groups — create a company group.
+pub async fn create_group(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ic::CreateGroupRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    match ic::create_group(&state.engine, req, ctx.user_id).await {
+        Ok(g) => Ok(Json(serde_json::to_value(g).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// GET /consolidation/groups — list groups (with members the user can see).
+pub async fn list_groups(ctx: AuthContext, State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let _ = ctx;
+    let groups = ic::list_groups(&state.engine).await.unwrap_or_default();
+    Json(serde_json::to_value(groups).unwrap_or_default())
+}
+
+/// GET /consolidation/groups/{id}/members
+pub async fn list_members(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Json<serde_json::Value> {
+    let allowed = authorized_ids(&state, ctx.user_id).await;
+    let members: Vec<_> = ic::group_members(&state.engine, group_id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| allowed.contains(&m.entity_id))
+        .collect();
+    Json(serde_json::to_value(members).unwrap_or_default())
+}
+
+/// POST /consolidation/groups/{id}/members — add an entity the user administers.
+pub async fn add_member(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+    Json(req): Json<ic::AddMemberRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    if !authorized_ids(&state, ctx.user_id).await.contains(&req.entity_id) {
+        return Err(err_response(zavora_erp_core::ErpError::Unauthorized {
+            message: "You can only add companies you belong to".into(),
+        }));
+    }
+    match ic::add_member(&state.engine, group_id, req).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "added" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// DELETE /consolidation/groups/{id}/members/{entity_id}
+pub async fn remove_member(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path((group_id, entity_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let _ = ctx;
+    match ic::remove_member(&state.engine, group_id, entity_id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "removed" }))),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// POST /consolidation/intercompany — post a both-sided intercompany charge.
+pub async fn post_intercompany(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ic::IntercompanyChargeRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let allowed = authorized_ids(&state, ctx.user_id).await;
+    if !allowed.contains(&req.from_entity_id) || !allowed.contains(&req.to_entity_id) {
+        return Err(err_response(zavora_erp_core::ErpError::Unauthorized {
+            message: "You must belong to both companies to post an intercompany charge".into(),
+        }));
+    }
+    match ic::post_intercompany_charge(&state.engine, req, ctx.user_id).await {
+        Ok(t) => Ok(Json(serde_json::to_value(t).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}
+
+/// GET /consolidation/intercompany — recent intercompany transactions.
+pub async fn list_intercompany(ctx: AuthContext, State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let allowed = authorized_ids(&state, ctx.user_id).await;
+    let txns = ic::list_intercompany(&state.engine, &allowed).await.unwrap_or_default();
+    Json(serde_json::to_value(txns).unwrap_or_default())
+}
+
+#[derive(serde::Deserialize)]
+pub struct GroupConsolidateRequest {
+    pub group_id: Uuid,
+    pub as_at: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    pub presentation_currency: Option<String>,
+}
+
+/// POST /consolidation/group-trial-balance — consolidate a group with precise
+/// intercompany elimination (authorized members only).
+pub async fn group_trial_balance(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<GroupConsolidateRequest>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let allowed = authorized_ids(&state, ctx.user_id).await;
+    let members: Vec<consol::ConsolMember> = ic::group_members(&state.engine, req.group_id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| allowed.contains(&m.entity_id))
+        .map(|m| consol::ConsolMember {
+            entity_id: m.entity_id,
+            name: m.name.unwrap_or_else(|| "(unnamed)".into()),
+            base_currency: m.base_currency.unwrap_or_else(|| "KES".into()),
+            ownership_pct: m.ownership_pct,
+        })
+        .collect();
+
+    if members.is_empty() {
+        return Err(err_response(zavora_erp_core::ErpError::ValidationFailed {
+            message: "This group has no companies you can access".into(),
+        }));
+    }
+
+    let as_at = req.as_at.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let presentation = req
+        .presentation_currency
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or_else(|| members[0].base_currency.clone());
+
+    match consol::consolidate(&state.engine, &members, as_at, &presentation).await {
+        Ok(report) => Ok(Json(serde_json::to_value(report).unwrap_or_default())),
+        Err(e) => Err(err_response(e)),
+    }
+}

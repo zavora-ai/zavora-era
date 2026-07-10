@@ -25,6 +25,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("1040", "Bank Account - USD", AccountType::Asset, Some("1000"), false),
         acct("1100", "Accounts Receivable", AccountType::Asset, None, true),
         acct("1200", "Trade Debtors", AccountType::Asset, Some("1100"), true),
+        acct("1250", "Intercompany Receivable", AccountType::Asset, Some("1100"), true),
         acct("1300", "VAT Input (Claimable)", AccountType::Asset, None, false),
         // WHT credits withheld by customers on services income (claimable against
         // the year's corporate income tax) — common for Kenyan service providers.
@@ -58,6 +59,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         // Stock received against a PO but not yet billed by the vendor —
         // credited at goods receipt, cleared when the vendor bill posts.
         acct("3020", "Goods Received Not Invoiced", AccountType::Liability, Some("3000"), false),
+        acct("3030", "Intercompany Payable", AccountType::Liability, Some("3000"), true),
         acct("3100", "VAT Output (Payable)", AccountType::Liability, None, false),
         acct("3200", "WHT Payable", AccountType::Liability, None, false),
         acct("3210", "WHT Payable - Vendors", AccountType::Liability, Some("3200"), false),
@@ -88,6 +90,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("5000", "Sales Revenue", AccountType::Revenue, None, false),
         acct("5100", "Service Revenue", AccountType::Revenue, None, false),
         acct("5200", "Other Income", AccountType::Revenue, None, false),
+        acct("5180", "Intercompany Income", AccountType::Revenue, None, false),
         acct("5250", "Royalty Income", AccountType::Revenue, None, false),
         acct("5300", "Discounts Allowed", AccountType::ContraRevenue, None, false),
         acct("5400", "Sales Returns", AccountType::ContraRevenue, None, false),
@@ -102,6 +105,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("7020", "Employer NSSF Contribution", AccountType::Expense, Some("7000"), false),
         acct("7030", "Employer Housing Levy", AccountType::Expense, Some("7000"), false),
         acct("7100", "Rent Expense", AccountType::Expense, Some("7000"), false),
+        acct("7160", "Intercompany Charges", AccountType::Expense, Some("7000"), false),
         acct("7200", "Utilities", AccountType::Expense, Some("7000"), false),
         acct("7300", "Office Supplies", AccountType::Expense, Some("7000"), false),
         // Cloud, hosting, domains, AI tooling and other SaaS subscriptions.
