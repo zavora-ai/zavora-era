@@ -29,11 +29,11 @@ export default function LeavePage() {
   return (
     <div>
       <PageHeader title="Leave" subtitle="Requests, balances, leave types and holidays" />
-      <div className="flex gap-1 border-b border-gray-200 mb-5">
+      <div className="flex gap-1 border-b border-gray-200 mb-5 overflow-x-auto">
         {([['requests','Requests'],['calendar','Calendar'],['balances','Balances'],['types','Leave Types'],['holidays','Holidays']] as [Tab,string][])
           .map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
               tab === k ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {label}
           </button>
@@ -69,7 +69,7 @@ function RequestsTab({ canApprove, canManage }: { canApprove: boolean; canManage
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex gap-1">
           {['', 'Pending', 'Approved', 'Declined'].map(s => (
             <button key={s || 'all'} onClick={() => setFilter(s)}
@@ -86,7 +86,7 @@ function RequestsTab({ canApprove, canManage }: { canApprove: boolean; canManage
         </div>
         {canManage && <button className="btn-primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" /> New Request</button>}
       </div>
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr>
@@ -188,7 +188,7 @@ function CalendarTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
           <button className="btn-secondary py-1" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
           <span className="font-medium text-gray-800 w-40 text-center">{monthLabel}</span>
@@ -248,7 +248,7 @@ function BalancesTab() {
         {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
       </select>
       {emp && (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
               <tr><th className="text-left px-4 py-2.5">Type</th><th className="text-right px-4 py-2.5">Entitled</th><th className="text-right px-4 py-2.5">Accrued</th><th className="text-right px-4 py-2.5">Taken</th><th className="text-right px-4 py-2.5">Pending</th><th className="text-right px-4 py-2.5">Available</th></tr>
@@ -283,7 +283,7 @@ function TypesTab({ canManage }: { canManage: boolean }) {
   return (
     <div>
       {canManage && <div className="flex justify-end mb-3"><button className="btn-primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" /> New Type</button></div>}
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr><th className="text-left px-4 py-2.5">Name</th><th className="text-left px-4 py-2.5">Code</th><th className="text-right px-4 py-2.5">Days/yr</th><th className="text-left px-4 py-2.5">Accrual</th><th className="text-left px-4 py-2.5">Paid</th><th className="text-left px-4 py-2.5">Active</th></tr>
@@ -362,7 +362,7 @@ function HolidaysTab({ canManage }: { canManage: boolean }) {
           <button className="btn-primary" disabled={!form.name || addMut.isPending} onClick={() => addMut.mutate()}><Plus className="w-4 h-4" /> Add</button>
         </div>
       )}
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase"><tr><th className="text-left px-4 py-2.5">Date</th><th className="text-left px-4 py-2.5">Name</th><th className="text-left px-4 py-2.5">Recurring</th><th className="px-4 py-2.5"></th></tr></thead>
           <tbody className="divide-y divide-gray-100">

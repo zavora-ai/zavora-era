@@ -56,7 +56,7 @@ export default function CustomerPortal() {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        <div className="flex gap-1 border-b border-gray-200 mb-5">
+        <div className="flex gap-1 border-b border-gray-200 mb-5 overflow-x-auto">
           {nav.map(([k, label, Icon]) => (
             <button key={k} onClick={() => setView(k)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px flex items-center gap-1.5 ${

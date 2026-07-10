@@ -113,7 +113,7 @@ export default function CrmPage() {
         ) : undefined}
       />
 
-      <div className="flex gap-1 border-b border-gray-200 mb-6">
+      <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
         {(['overview', 'pipeline', 'leads', 'activities'] as Tab[]).map((t) => (
           <button
             key={t}

@@ -105,7 +105,7 @@ export default function TransactionsPage() {
 
       {/* Filter tabs */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1 border-b border-gray-200">
+        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
           {(['uncategorised', 'posted', 'excluded', 'all'] as FilterStatus[]).map((f) => (
             <button
               key={f}
