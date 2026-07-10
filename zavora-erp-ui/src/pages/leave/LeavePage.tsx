@@ -6,7 +6,7 @@ import {
   getLeaveRequests, approveLeave, declineLeave, createLeaveRequest,
   getLeaveBalances, getEmployees,
 } from '../../api/client';
-import { hasRole, ROLES_APPROVE, ROLES_MANAGE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { workToday } from '../../utils/workDate';
@@ -22,8 +22,9 @@ const statusColor = (s: string) =>
 
 export default function LeavePage() {
   const [tab, setTab] = useState<Tab>('requests');
-  const canManage = hasRole(ROLES_MANAGE);
-  const canApprove = hasRole(ROLES_APPROVE);
+  const { can } = usePermissions();
+  const canManage = can('leave.create');
+  const canApprove = can('leave.approve');
 
   return (
     <div>

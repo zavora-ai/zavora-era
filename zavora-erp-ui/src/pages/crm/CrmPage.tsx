@@ -8,7 +8,7 @@ import {
   getCrmAnalytics,
 } from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/format';
-import { hasRole, ROLES_CREATE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import StatCard from '../../components/shared/StatCard';
 import DataTable, { type Column } from '../../components/shared/DataTable';
@@ -49,7 +49,8 @@ async function refreshCrm(qc: QueryClient, keys: string[][]) {
 export default function CrmPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('overview');
-  const canWrite = hasRole(ROLES_CREATE);
+  const { can } = usePermissions();
+  const canWrite = can('crm.config');
 
   const { data: settings, isLoading: settingsLoading } = useQuery<Settings>({
     queryKey: ['crm-settings'],

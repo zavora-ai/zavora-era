@@ -352,6 +352,8 @@ export interface PublicInvoiceView {
 export const getPublicInvoice = (token: string) => api.get<PublicInvoiceView>(`/public/invoices/${token}`);
 export const payPublicInvoice = (token: string, body: { email?: string; callback_url?: string }) =>
   api.post<{ authorization_url: string; reference: string }>(`/public/invoices/${token}/pay`, body);
+/** Staff-side: fetch the shareable public pay-link path for an invoice. */
+export const getInvoicePayLink = (id: string) => api.get<{ token: string; path: string }>(`/invoices/${id}/pay-link`);
 export const updateSettings = (data: any) => api.put('/settings', data);
 
 // === Transactions (categorisation queue) ===

@@ -3,7 +3,7 @@ import {
   getVendorApplications, approveVendorApplication, rejectVendorApplication,
 } from '../../api/client';
 import { formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_APPROVE } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable, { type Column } from '../../components/shared/DataTable';
 import { CheckCircle, XCircle } from 'lucide-react';
@@ -22,7 +22,8 @@ interface VendorApplication {
 
 export default function VendorApplicationsPage() {
   const queryClient = useQueryClient();
-  const canApprove = hasRole(ROLES_APPROVE);
+  const { can } = usePermissions();
+  const canApprove = can('vendor_application.approve');
 
   const { data: apps = [], isLoading } = useQuery<VendorApplication[]>({
     queryKey: ['vendor-applications'],

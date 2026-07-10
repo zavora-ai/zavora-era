@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPeriods, generatePeriods, closePeriod, reopenPeriod, yearEndClose } from '../../api/client';
 import type { FiscalPeriod } from '../../types';
 import { formatDate, statusColor } from '../../utils/format';
-import { hasRole, ROLES_CLOSE_PERIOD } from '../../utils/roles';
+import { usePermissions } from '../../hooks/usePermissions';
 import PageHeader from '../../components/shared/PageHeader';
 import Modal from '../../components/shared/Modal';
 import { CalendarClock, Lock, Unlock, Plus, AlertCircle, Archive } from 'lucide-react';
@@ -26,6 +26,7 @@ export default function PeriodsPage() {
   const [yearEndTarget, setYearEndTarget] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
 
   const { data: periods = [], isLoading } = useQuery<FiscalPeriod[]>({
     queryKey: ['periods'],
@@ -62,7 +63,7 @@ export default function PeriodsPage() {
         title="Fiscal Periods"
         subtitle="Close periods to lock the books — soft close warns, hard close prevents all postings"
         actions={
-          hasRole(ROLES_CLOSE_PERIOD) ? (
+          can('period.close') ? (
             <button onClick={() => setShowGenerate(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> Generate Periods
             </button>
@@ -97,7 +98,7 @@ export default function PeriodsPage() {
               <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
                 <CalendarClock className="w-4 h-4 text-gray-500" />
                 <h2 className="text-sm font-semibold text-gray-900">FY {year}</h2>
-                {hasRole(ROLES_CLOSE_PERIOD) &&
+                {can('period.close') &&
                   groups[year].length > 0 &&
                   groups[year].every((p) => p.status === 'hard_closed') && (
                     <button
@@ -135,7 +136,7 @@ export default function PeriodsPage() {
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <div className="flex items-center justify-end gap-1">
-                            {(p.status === 'open' || p.status === 'future') && hasRole(ROLES_CLOSE_PERIOD) && (
+                            {(p.status === 'open' || p.status === 'future') && can('period.close') && (
                               <button
                                 onClick={() => closeMutation.mutate({ id: p.id, close_type: 'Soft' })}
                                 className="btn-secondary text-xs py-1 px-2"
@@ -145,7 +146,7 @@ export default function PeriodsPage() {
                                 <Lock className="w-3 h-3" /> Soft Close
                               </button>
                             )}
-                            {p.status === 'soft_closed' && hasRole(ROLES_CLOSE_PERIOD) && (
+                            {p.status === 'soft_closed' && can('period.close') && (
                               <>
                                 <button
                                   onClick={() => closeMutation.mutate({ id: p.id, close_type: 'Hard' })}

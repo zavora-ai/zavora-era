@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSettings, updateSettings } from '../../api/client';
 import type { ErpConfig, DocumentSequences } from '../../types';
@@ -16,7 +17,12 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data: config, isLoading, isError, refetch } = useQuery<ErpConfig>({ queryKey: ['settings'], queryFn: () => getSettings().then(r => r.data) });
 
-  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting' | 'posting-groups' | 'notifications' | 'providers' | 'subscription'>('company');
+  const [searchParams] = useSearchParams();
+  const TAB_KEYS = ['company', 'tax', 'payments', 'sequences', 'posting', 'posting-groups', 'notifications', 'providers', 'subscription'] as const;
+  const urlTab = searchParams.get('tab');
+  const [tab, setTab] = useState<'company' | 'tax' | 'payments' | 'sequences' | 'posting' | 'posting-groups' | 'notifications' | 'providers' | 'subscription'>(
+    (TAB_KEYS as readonly string[]).includes(urlTab ?? '') ? (urlTab as any) : 'company'
+  );
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Controlled form state for each tab
