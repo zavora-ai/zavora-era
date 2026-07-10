@@ -8,9 +8,21 @@ changelog rather than leaving stale ticks behind.
 Legend: ⬜ not started · 🟡 partial · ✅ done (kept briefly for context, then moved to CHANGELOG)  
 Priority: **P0** blocker / correctness · **P1** before go-live · **P2** fast-follow · **P3** polish
 
-_Last reconciled against the codebase: **2026-07-09**_  
+_Last reconciled against the codebase: **2026-07-10**_  
 _Source: four-pass audit (product/functional · accounting · UX E2E · **Amos AI**)
 against `feat/portals-page` / main tip ≈ `85ecf01`._
+
+> **Reconciled 2026-07-10 (PRs #79–#93).** A run of merged PRs closed several
+> items this file listed open on 2026-07-09 — now flipped to ✅ inline and
+> logged in [`CHANGELOG.md`](CHANGELOG.md) (2026-07-10): public invoice view/pay
+> + `viewed_at` (§3, #85/#86), CBK FX auto-load (§3, #89), intercompany + group
+> consolidation (§1.2, #90), optional multi-warehouse + 3PL (§3, #92), backup/
+> restore runbook (§8, #93), responsive shell (§6.1, #80/#91), global toasts
+> (§6.2, #81), send pre-flight (§6.2, #84), `can()` action buttons (§6.1, #83),
+> Amos dynamic company persona (§7.2, #82), Amos role→scope + Customer block
+> (§7.2, #87). **The remaining P0 is Amos service-account RBAC (§7.1)** — the
+> ledger actor is still the service user; needs the cross-repo user-scoped MCP
+> auth. Next P1 ops: bank auto-feeds (§3), eTIMS prod maturity (§2).
 
 > **Independent validation (2026-07-09, second pass).** Ten of the highest-severity
 > claims were re-verified line-by-line against main. **All ten confirmed real** —
@@ -74,6 +86,11 @@ These were incorrectly still open in older backlog files; verified present:
 | Prod Docker + compose + deploy workflow | `docker-compose.prod.yml`, `zavora-erp-api/Dockerfile`, `amos/Dockerfile`, `.github/workflows/deploy.yml` |
 | **Card payments (Paystack)** — initialise → hosted `authorization_url` → HMAC-signed `charge.success` webhook records money; reusable auth codes | `zavora-erp-core/src/payments/paystack.rs`, `routes/payments.rs` (`paystack_initialize`, public `paystack_webhook`), migration `053_paystack.sql`, PR #72 (replaces the Flutterwave stub) |
 | **SaaS subscription billing (Paystack)** — Free activates instantly; paid plans checkout at signup; status mirrors to `tenants.plan_key`; auto-renewals via reusable auth codes; manage-subscription screen | `zavora-erp-core/src/services/billing.rs`, `routes/billing.rs`, `SubscriptionTab.tsx`, migration `054_subscription_billing.sql`, PRs #73/#74 |
+| **Public invoice view/pay portal + `viewed_at`** — tokenised `/pay/:token` page stamps `viewed_at`, Paystack checkout, copy/send pay-link | `services/public_invoice.rs`, migration `058_invoice_public_token.sql`, `PublicInvoicePage.tsx`, PRs #85/#86 |
+| **CBK daily FX auto-load** — scheduler-driven rate sync + manual button | `services/fx.rs` `sync_cbk_rates`, `POST /fx-rates/sync-cbk`, `FxRatesPage.tsx`, PR #89 |
+| **Intercompany + group consolidation** — both-sided IC charge, IC control accounts, consolidation with IC elimination, group-management UI | `services/intercompany.rs`, `services/consolidation.rs`, `routes/consolidation.rs`, migration `059_intercompany.sql`, PR #90 |
+| **Optional multi-warehouse + 3PL** — warehouses (own/3PL), per-warehouse stock, transfers; non-breaking hooks keep `SUM(warehouse_stock)=on_hand` | `services/warehousing.rs`, `routes/warehouses.rs`, migration `060_warehousing.sql`, `WarehousesPage.tsx`, PR #92 |
+| **Backup/restore runbook + migration safety** | `docs/BACKUP_RUNBOOK.md`, PR #93 |
 
 ---
 
@@ -196,9 +213,12 @@ below break **book quality** or control-vs-subledger sign-off.
   Approximate vs auditor worksheet (`services/reporting.rs` cash flow). Custom
   COA misses ranges.
 
-- ⬜ **P2 — Consolidation depth.**  
-  Multi-entity TB + intercompany AR/AP elim by shared KRA PIN
-  (`routes/consolidation.rs`). No ownership %, goodwill, full equity elim.
+- 🟡 **P2 — Consolidation depth.** *(Deepened 2026-07-10, PR #90.)*
+  Intercompany accounting (`services/intercompany.rs`, IC control accounts
+  1250/3030/5180/7160) + group consolidation with **IC elimination**
+  (`services/consolidation.rs`, `/consolidation/*`) + group-management UI now
+  shipped. Still open: **ownership %, goodwill, full equity elimination** for
+  partial/minority holdings.
 
 - ⬜ **P2 — Opening balances do not seed AR/AP subledger documents.**  
   Opening TB JE only (`routes/onboarding.rs` `post_opening_balances`).
@@ -260,14 +280,18 @@ From [`Specs.md`](Specs.md) and marketing vs code:
   Specs claim auto-import. Reality: **manual** statement import
   (CSV/MT940/OFX/PDF/Excel) only (`services/bank.rs`, Banking UI).
 
-- ⬜ **P1 — CBK FX rates auto-load.**  
-  Specs claim auto-loaded. Reality: manual FX rates (`FxRatesPage.tsx`); Amos
-  may web-search rates but does not write CBK feed.
+- ✅ **P1 — CBK FX rates auto-load.** *(Shipped 2026-07-10, PR #89.)*
+  `services/fx.rs` `sync_cbk_rates` + a daily-guarded scheduler job
+  (`sync_cbk_rates_all` on the hourly tick), `POST /fx-rates/sync-cbk`, and a
+  "Load CBK rates" button on the Fx page. `FX_PROVIDER_URL` (default
+  `https://api.frankfurter.dev`).
 
-- ⬜ **P1 — Public invoice / payment portal + `viewed_at`.**  
-  Specs: portal open stamps `viewed_at`. Column exists
-  (`invoicing/invoice.rs`, migration `001`); **never set**. No public pay-link
-  page. Customer portal is view/tickets only (`CustomerPortal.tsx`).
+- ✅ **P1 — Public invoice / payment portal + `viewed_at`.** *(Shipped
+  2026-07-10, PR #85/#86.)* A tokenised public `/pay/:token` page
+  (`services/public_invoice.rs`, migration `058`) stamps `viewed_at` on open and
+  initialises Paystack checkout (reuses `paystack_initialize`); the invoice
+  detail can copy/send a pay-link. Closes the `viewed_at`, "invoice status
+  viewed", and customer-portal-pay gaps together.
 
 - ⬜ **P2 — Recurring invoice `auto_charge`.**  
   Field persisted (`recurring_invoices`, UI); **no** saved payment method or
@@ -276,18 +300,23 @@ From [`Specs.md`](Specs.md) and marketing vs code:
 - 🟡 **P2 — Inventory FIFO.**  
   Specs/model mention FIFO layers (`inventory/mod.rs`); issue/receive use **WAC
   only** (`services/inventory.rs`). UI copy still mentions FIFO
-  (`ProductsPage.tsx`).
+  (`ProductsPage.tsx`). Now also the multi-warehouse follow-up (per-warehouse
+  costing layers).
 
-- 🟡 **P2 — Multi-warehouse.**  
-  `warehouse_id` on inventory model; no warehouse master/UI (type field only in
-  UI types).
+- ✅ **P2 — Multi-warehouse.** *(Shipped 2026-07-10, PR #92.)* Optional
+  multi-warehouse + **3PL** layer on top of inventory (migration `060`:
+  `warehouses` own/3PL, `warehouse_stock`, `warehouse_transfers`;
+  `services/warehousing.rs`; non-breaking stock-delta hooks into
+  receive/issue/adjust keeping `SUM(warehouse_stock)=on_hand`; `/warehouses` API
+  + Warehouses UI). Follow-ups: per-warehouse costing/FIFO, 3PL storage-fee
+  billing, per-warehouse reorder points, in-transit transfers.
 
 - 🟡 **P2 — AI bank categorisation.**  
   Specs “AI suggestion engine”. Reality: history-based `AiSuggestion`
   (`services/bank.rs` `suggest_from_history`); not model-powered.
 
-- ⬜ **P2 — Invoice status “viewed”.**  
-  No payment portal → no viewed tracking (related to public portal gap).
+- ✅ **P2 — Invoice status "viewed".** *(Shipped 2026-07-10, PR #85.)* The
+  public pay portal now stamps `viewed_at` on open (see the portal item above).
 
 - ⬜ **P3 — Mobile native app.**  
   Specs explicit v2; web shell also not mobile-ready (§6).
@@ -406,8 +435,10 @@ accounting/product roots of some UX failures.
 
 - ✅ **Tracked goods product → post invoice** *(fixed 2026-07-09 — see §4.2:
   create AND edit now create/link the stock item).*  
-- ⬜ **Desktop-only shell.** Fixed 260px sidebar + `pl-[260px]`, no hamburger
-  (`AppShell.tsx`, `Sidebar.tsx`) — phone/tablet unusable.  
+- ✅ **Responsive shell.** *(Shipped 2026-07-10, PR #80/#91.)* Off-canvas
+  sidebar drawer on mobile / fixed rail on desktop; `PageHeader` stacks
+  (`flex-col … sm:flex-row`); all tab bars and wide rows use `overflow-x-auto` /
+  `flex-wrap` — no page-level horizontal scroll at 390px.
 - ✅ **Header search is decorative.** *(Fixed 2026-07-09.)* Now a working ⌘K
   command palette (`CommandPalette.tsx`): the header search and Cmd/Ctrl-K open
   it; type-to-filter over every app page (sourced from the sidebar nav),
@@ -416,25 +447,20 @@ accounting/product roots of some UX failures.
   fixed 2026-07-09.)* Invoice post/delete and bill approve/post/delete list
   mutations now surface the server error (`onError` → alert), so credit-limit /
   stock / closed-period failures are visible. Other list pages still to sweep.  
-- 🟡 **RBAC UI vs API drift.** *(Nav gated 2026-07-09.)* The sidebar now hides
-  destinations the user lacks the read-permission for (`usePermissions().can()`
-  + an href→permission map; unmapped items stay visible, backend still
-  enforces), and empty section headers collapse. Per-page ACTION buttons
-  (Post/Send/Approve) still lean on coarse `hasRole` — migrating those to
-  `can()` is the remaining drift.
-  <!-- superseded detail: --> Backend: granular perms + route registry.
-  Most UI buttons use coarse `hasRole(ROLES_POST|…)` (`utils/roles.ts`).
-  `usePermissions().can()` used almost only on Users/Roles pages. Custom roles
-  (e.g. “Bookkeeper”) **hide** Post/Send even when allowed, or show actions that
-  **403**. Sidebar **not filtered** by permission — Viewer sees full nav.
+- ✅ **RBAC UI vs API drift.** *(Largely closed 2026-07-10, PR #83; nav gated
+  2026-07-09.)* Per-page ACTION buttons (Post/Send/Approve/Convert/Reverse/…)
+  across invoices, bills, estimates, PRs/POs/tenders, expense claims, payroll,
+  journals, products now gate on `usePermissions().can('<resource>.<action>')`
+  instead of coarse `hasRole`; the sidebar hides destinations the user can't
+  read; backend still enforces. Residual: a full sweep of any remaining
+  `hasRole` call-sites, but the credit-limit/Bookkeeper mis-gating is resolved.
 
 ### 6.2 P1 — Misleading success / friction
 
-- ⬜ **Email/SMS/WhatsApp send without delivery config.** Send invoice modal can
-  mark sent / queue (`InvoicesPage.tsx` send flow; `send_invoice` degrades when
-  SMTP unconfigured — `services/invoicing.rs`). No pre-flight “Email not
-  configured → Notification providers” gate. Same for invites / forgot-password
-  (always-neutral success — `ForgotPasswordPage.tsx`).  
+- ✅ **Email/SMS/WhatsApp send without delivery config.** *(Shipped 2026-07-10,
+  PR #84.)* The invoice/estimate send flow shows a provider pre-flight banner
+  (`ProviderPreflight`) that warns when the channel's provider is unconfigured
+  and links to Notification providers, instead of a silent neutral "sent".
 - ⬜ **Nav overload (~50 items, 10 sections)** always shows Procurement/POS/
   Payroll/CRM for pure service SMEs (`Sidebar.tsx`).  
 - ⬜ **Invoice/bill status tab counts are page-local**, not server totals
@@ -463,12 +489,16 @@ accounting/product roots of some UX failures.
   `/amos-app`) — `AmosPage.tsx`.  
 - ⬜ **Tax remittance UI requires raw liability/bank GL codes**
   (`TaxFilingsPage.tsx`) — weak labelling for non-accountants.  
-- ⬜ **Inconsistent feedback:** mix of inline toasts (Settings), `window.alert`
-  (POS, products, FX, assets…), silent mutations. No global toast.
+- ✅ **Inconsistent feedback.** *(Shipped 2026-07-10, PR #81.)* A global
+  `ToastProvider` (`useToast().success/error/info/fromError`) replaces
+  `window.alert` across POS, products, FX, assets, banking, eTIMS,
+  amortisation, etc.; list-mutation errors surface via `onError`.
 
 ### 6.3 P2 — Portal / secondary journeys
 
-- ⬜ Customer portal: no pay; unlinked account empty state only.  
+- ✅ Customer portal pay — *(Shipped 2026-07-10, PR #85.)* the public
+  `/pay/:token` invoice page pays via Paystack. (In-portal linked-account pay
+  and unlinked empty-state polish remain.)
 - ⬜ Staff ESS: no expense claim submit.  
 - ⬜ POS: popup-blocked print; no refund UX.  
 - ⬜ Import page: customers/vendors/products CSV only; row-by-row; no opening
@@ -557,21 +587,20 @@ accounting/product roots of some UX failures.
 
 ### 7.2 P1 — Roles, persona, multi-tenant product, plans
 
-- ⬜ **P1 — Coarse role → scope map vs RBAC v2.**  
-  `Principal::scopes` (`auth.rs`): Owner/Admin/Accountant → write+post; Approver
-  → write; **else read-only**. Ignores granular permissions. **Editor** and
-  custom roles (e.g. Bookkeeper) mis-mapped.  
-  Block **Customer** portal role like Vendor/Employee (currently not in the
-  portal refuse list).  
-  Prefer scopes from `GET /auth/permissions` or JWT permission claims.
+- 🟡 **P1 — Coarse role → scope map vs RBAC v2.** *(Improved 2026-07-10,
+  PR #87: Editor now gets `erp:write` — was mis-mapped read-only; **Customer**
+  portal role now blocked like Vendor/Employee.)* `Principal::scopes`
+  (`auth.rs`) still maps by role tier (Owner/Admin/Accountant → write+post;
+  Approver/Editor → write; else read-only), not the user's *granular*
+  permissions. Residual: derive scopes from `GET /auth/permissions` / JWT
+  permission claims so bespoke roles (e.g. "Bookkeeper") are scoped exactly.
 
-- ⬜ **P1 — Hardcoded company persona.**  
-  `amos/system.md` + `AGENTS.md` assume **Zavora Technologies Ltd** (not VAT-
-  registered, FY 2025, etc.). `persona.rs` only substitutes `{ui_url}`, skills,
-  agents rules, memories, ops, now — **not** settings. UI `/api/context` has real
-  company name; model instruction does not. Wrong for any other tenant’s Amos
-  instance.  
-  **Fix:** `{company_context}` from `/settings` (name, currency, VAT flag, FY).
+- ✅ **P1 — Hardcoded company persona.** *(Shipped 2026-07-10, PR #82.)*
+  `build_runner` pulls the real tenant facts from `/settings` and
+  `persona::company_context` injects `{company_name}` + `{company_context}`
+  (name, base currency, VAT-registration flag, fiscal year) into the system
+  instruction, with neutral fallbacks on error — Amos no longer claims to be a
+  hardcoded company.
 
 - ⬜ **P1 — One Amos = one tenant (ops/product).**  
   By design (`AMOS_SERVED_ENTITY_ID` or service entity). Multi-tenant SaaS =
@@ -633,11 +662,12 @@ accounting/product roots of some UX failures.
 
 ### 7.6 Suggested Amos fix order
 
-1. Complete `required_scopes` + regression test (P0).  
-2. Hard confirm gate for ledger writes in live sessions (P0).  
-3. User-scoped MCP auth / audit actor = human (P0/P1).  
-4. Scopes from permissions + block Customer; fix Editor/custom (P1).  
-5. Dynamic `{company_context}` from settings (P1).  
+1. ✅ Complete `required_scopes` + regression test (P0) — done 2026-07-09.  
+2. ✅ Hard confirm gate for ledger writes in live sessions (P0) — done 2026-07-09.  
+3. ⬅️ **User-scoped MCP auth / audit actor = human (P0/P1) — NEXT, still open.**  
+4. 🟡 Scopes from permissions + block Customer; fix Editor/custom (P1) —
+   Customer blocked + Editor fixed (#87); permissions-derived scopes still open.  
+5. ✅ Dynamic `{company_context}` from settings (P1) — done 2026-07-10 (#82).  
 6. Refresh `docs/AMOS.md` tables (P1).  
 7. Server-bound plan claims for voice/web_search (P1).  
 8. Skills for CN/estimates/POS if product priority (P2).  
@@ -657,9 +687,12 @@ accounting/product roots of some UX failures.
 - 🟡 **P1 — Containerization & deploy.** **Exists** (`docker-compose.prod.yml`,
   Dockerfiles, deploy workflow). Remaining: readiness probes maturity, graceful
   API drain, runbooks.  
-- ⬜ **P1 — Backups & migration safety.** No `docs/BACKUP_RUNBOOK.md`;
-  pg_dump/pg_restore procedure + destructive-migration review (include
-  `amos_sessions` / `amos_audit_events` / memory tables).  
+- ✅ **P1 — Backups & migration safety.** *(Shipped 2026-07-10, PR #93.)*
+  `docs/BACKUP_RUNBOOK.md`: what to back up (the `zavora_era` DB incl.
+  `amos_sessions`/`amos_runs`/`amos_audit_events` + pgvector `memory_entries`),
+  `pg_dump -Fc`/`pg_restore` procedures (manual/prod/scheduled + off-site +
+  RPO/RTO), a verify-your-backup drill, and a destructive-migration review
+  checklist. Round-trip verified live (119/119 tables, pgvector present).  
 - 🟡 **P1 — Automated tests.** ~150–180 unit/integration-style tests across
   crates (grew past old “49”). Strong pockets: money, statutory goldens, payment
   flows, OCR parse, authz registry, some payroll/CIT, Amos skill/routine pins.
@@ -713,25 +746,28 @@ done; remaining:
 
 ### Wave B — Go-live hardening (P1)
 
-11. CORS + M-Pesa callback auth + rate limits on auth/webhooks.  
-12. PR CI (test/clippy/tsc + amos tests when feasible) before deploy.  
-13. Backup/restore runbook + drill.  
-14. Payroll insurance relief field + nearest-shilling policy + tax-pro review.  
-15. Permission-aware nav + `can()` on all action buttons.  
-16. Global mutation error toast; honest “email not configured”.  
-17. Real search or remove header search.  
-18. Responsive shell.  
-19. AR/AP control recon report; VAT return all VAT accounts; FX reval scope.  
-20. **Amos:** user-scoped MCP auth; permission-based scopes; dynamic company
-    context; refresh `docs/AMOS.md` (§7.2).
+11. ✅ CORS + M-Pesa callback auth + rate limits on auth/webhooks (2026-07-09).  
+12. ✅ PR CI (test/clippy/tsc + amos tests) before deploy (2026-07-09).  
+13. ✅ Backup/restore runbook + drill (2026-07-10, #93).  
+14. ✅ Payroll insurance relief field + nearest-shilling policy (2026-07-09; tax-pro review still advised).  
+15. ✅ Permission-aware nav + `can()` on action buttons (2026-07-09/-10, #83).  
+16. ✅ Global mutation error toast (#81); honest "email not configured" (#84) — 2026-07-10.  
+17. ✅ Real search — ⌘K command palette (2026-07-09).  
+18. ✅ Responsive shell (2026-07-10, #80/#91).  
+19. ✅ AR/AP control recon report; VAT return all VAT accounts; FX reval scope (2026-07-09).  
+20. **Amos:** 🟡 user-scoped MCP auth (**still open, the P0**); permission-based
+    scopes (partial #87); ✅ dynamic company context (#82); refresh
+    `docs/AMOS.md` (open) (§7.2).
 
 ### Wave C — Product honesty & depth (P2)
 
 21. ~~Flutterwave: implement or strip from Specs/pricing.~~ ✅ Done — shipped as
     **Paystack** card payments + subscription billing (PRs #72/#73/#74).
-22. Public invoice view/pay (M-Pesa) + `viewed_at`.  
-23. Pay shortcuts + unapplied document picker + partial credit notes.  
-24. FIFO/warehouse only if merchandising tenants need them.  
+22. ✅ Public invoice view/pay (Paystack) + `viewed_at` (2026-07-10, #85/#86).  
+23. 🟡 Pay shortcuts + unapplied document picker + partial credit notes — pay
+    shortcuts + picker done 2026-07-09; partial credit notes still open.  
+24. 🟡 FIFO/warehouse — **multi-warehouse + 3PL shipped** (2026-07-10, #92);
+    per-warehouse costing/FIFO still open.  
 25. HR ATS/timesheets only if product prioritises them.  
 26. **Amos:** tools/skills for CN, estimates, POS; plan binding; embed offline
     fallback (§7.3–7.5).  
