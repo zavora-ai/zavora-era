@@ -72,6 +72,8 @@ These were incorrectly still open in older backlog files; verified present:
 | POS sessions / sell / Z-report | `services/pos.rs`, `pages/pos/*` |
 | Amos (broad): voice+chat, MCP ERP+browser, 16 skills, 11 ambient routines, memory, session history, REST JWT auth, wrong-tenant honesty, showcase, plan entitlements | `amos/`, `docs/AMOS.md` §2–§5b, CHANGELOG Jul 2025–2026 |
 | Prod Docker + compose + deploy workflow | `docker-compose.prod.yml`, `zavora-erp-api/Dockerfile`, `amos/Dockerfile`, `.github/workflows/deploy.yml` |
+| **Card payments (Paystack)** — initialise → hosted `authorization_url` → HMAC-signed `charge.success` webhook records money; reusable auth codes | `zavora-erp-core/src/payments/paystack.rs`, `routes/payments.rs` (`paystack_initialize`, public `paystack_webhook`), migration `053_paystack.sql`, PR #72 (replaces the Flutterwave stub) |
+| **SaaS subscription billing (Paystack)** — Free activates instantly; paid plans checkout at signup; status mirrors to `tenants.plan_key`; auto-renewals via reusable auth codes; manage-subscription screen | `zavora-erp-core/src/services/billing.rs`, `routes/billing.rs`, `SubscriptionTab.tsx`, migration `054_subscription_billing.sql`, PRs #73/#74 |
 
 ---
 
@@ -243,10 +245,16 @@ below break **book quality** or control-vs-subledger sign-off.
 
 From [`Specs.md`](Specs.md) and marketing vs code:
 
-- ⬜ **P1 — Card payments (Flutterwave).**  
-  Specs claim “Card via Flutterwave”. Settings toggle + key fields only
-  (`settings/mod.rs` `flutterwave_*`, `SettingsPage.tsx`). **No charge or
-  webhook flow.** Either implement or remove from Specs/pricing/UI.
+- ✅ **P1 — Card payments.** *(Shipped — Paystack, replaces the Flutterwave stub.)*
+  `payments/paystack.rs` initialises a transaction → hosted `authorization_url`
+  → the payer pays → an HMAC-signed `charge.success` webhook
+  (`verify_signature` over the raw body) records the money, with reusable
+  authorization codes for re-charging. Routes `POST /payments/paystack/initialize`
+  + public `POST /payments/paystack/webhook`; migration `053_paystack.sql`
+  (PR #72). Settings now expose `paystack_enabled` + `paystack_public_key`
+  (secret lives only in `PAYSTACK_SECRET_KEY`). A separate **subscription-billing**
+  layer (`services/billing.rs`, migration `054`, PRs #73/#74) routes paid-plan
+  signups through Paystack checkout and mirrors status onto `tenants.plan_key`.
 
 - ⬜ **P1 — Bank auto-feeds (KCB / Equity / NCBA / open banking).**  
   Specs claim auto-import. Reality: **manual** statement import
@@ -719,7 +727,8 @@ done; remaining:
 
 ### Wave C — Product honesty & depth (P2)
 
-21. Flutterwave: implement or strip from Specs/pricing.  
+21. ~~Flutterwave: implement or strip from Specs/pricing.~~ ✅ Done — shipped as
+    **Paystack** card payments + subscription billing (PRs #72/#73/#74).
 22. Public invoice view/pay (M-Pesa) + `viewed_at`.  
 23. Pay shortcuts + unapplied document picker + partial credit notes.  
 24. FIFO/warehouse only if merchandising tenants need them.  

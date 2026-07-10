@@ -33,7 +33,7 @@ Invoicing — numbering sequences	Yes	Yes	Configurable prefix + start number
 Estimates / Quotes	Yes	Yes	Convert estimate → invoice one-click
 Recurring invoices & auto-reminders	Yes	Yes	Cron-based, configurable schedule
 Invoice status tracking (sent/viewed/paid)	Yes	Yes	Webhook delivery receipts
-Payment links — card	Yes (Stripe/card)	Yes	Card via Flutterwave
+Payment links — card	Yes (Stripe/card)	Yes	Card via Paystack
 Payment links — bank	Yes (ACH)	Yes	M-Pesa Daraja, bank transfer
 Online payment recording (auto)	Yes	Yes	M-Pesa webhook auto-reconcile
 Customer statements	Yes	Yes	PDF + email + WhatsApp
@@ -362,7 +362,7 @@ Email	send_invoice(id, Email) or auto on status → Sent	viewed_at set when paym
 WhatsApp	send_invoice(id, WhatsApp) — WhatsApp Business API MCP	Delivery receipt via webhook
 SMS	send_invoice(id, Sms) for minimal-data recipients	Delivery receipt via Africa's Talking MCP
 M-Pesa payment link	Embedded in email/WhatsApp — Daraja STK Push link	paid_at set on Daraja callback
-Card payment link	Embedded via Flutterwave payment page link	paid_at set on Flutterwave webhook
+Card payment link	Embedded via Paystack hosted payment page (authorization_url)	paid_at set on Paystack charge.success webhook
 PDF download	Customer downloads from payment portal	viewed_at set
 
 8.6  Automatic payment reminders
