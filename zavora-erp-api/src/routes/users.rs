@@ -37,6 +37,7 @@ fn token_response_ext(
     user: &AuthUserRow,
     pair: &TokenPair,
     impersonator_id: Option<Uuid>,
+    read_only: bool,
 ) -> serde_json::Value {
     // Note: the refresh token is intentionally NOT in the body — it is delivered
     // only as an httpOnly cookie so it is never exposed to JavaScript.
@@ -50,6 +51,7 @@ fn token_response_ext(
     if let Some(imp) = impersonator_id {
         user_json["impersonated_by"] = serde_json::json!(imp);
         user_json["support_session"] = serde_json::json!(true);
+        user_json["read_only"] = serde_json::json!(read_only);
     }
     serde_json::json!({
         "access_token": pair.access_token,
@@ -92,17 +94,22 @@ fn read_refresh_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
 /// Build a success response: access token + user in the body, refresh token in
 /// an httpOnly cookie.
 fn auth_success(user: &AuthUserRow, pair: &TokenPair) -> Response {
-    auth_success_ext(user, pair, None)
+    auth_success_ext(user, pair, None, false)
 }
 
-fn auth_success_ext(user: &AuthUserRow, pair: &TokenPair, impersonator_id: Option<Uuid>) -> Response {
+fn auth_success_ext(
+    user: &AuthUserRow,
+    pair: &TokenPair,
+    impersonator_id: Option<Uuid>,
+    read_only: bool,
+) -> Response {
     let max_age = (pair.refresh_expires_at - chrono::Utc::now())
         .num_seconds()
         .max(0);
     let cookie = set_refresh_cookie(&pair.refresh_token, max_age);
     (
         [(axum::http::header::SET_COOKIE, cookie)],
-        Json(token_response_ext(user, pair, impersonator_id)),
+        Json(token_response_ext(user, pair, impersonator_id, read_only)),
     )
         .into_response()
 }
@@ -268,6 +275,7 @@ pub async fn refresh(
             user.entity_id,
             &user.role,
             impersonator,
+            claims.read_only,
         )
         .map_err(er)?
     } else {
@@ -293,7 +301,12 @@ pub async fn refresh(
     .map_err(|e| er(ErpError::Database(e)))?;
     tx.commit().await.map_err(|e| er(ErpError::Database(e)))?;
 
-    Ok(auth_success_ext(&user, &pair, claims.impersonator_id))
+    Ok(auth_success_ext(
+        &user,
+        &pair,
+        claims.impersonator_id,
+        claims.read_only,
+    ))
 }
 
 /// POST /auth/logout — revoke the current refresh token and clear its cookie.

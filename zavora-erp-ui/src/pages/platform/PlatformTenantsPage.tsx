@@ -6,12 +6,16 @@ import {
   getPlatformIdentity,
   getPlatformAccessToken,
   platformArchiveTenant,
+  platformCreateOperator,
   platformGetTenant,
   platformImpersonateTenant,
   platformListAudit,
+  platformListOperators,
   platformListTenants,
   platformLogout,
   platformMe,
+  platformMetrics,
+  platformSetOperatorActive,
   platformSuspendTenant,
   platformUnarchiveTenant,
   platformUnsuspendTenant,
@@ -89,7 +93,7 @@ export default function PlatformTenantsPage() {
   const [hideEmpty, setHideEmpty] = useState(true);
   const [hideArchived, setHideArchived] = useState(true);
   const [page, setPage] = useState(0);
-  const [tab, setTab] = useState<'tenants' | 'audit'>('tenants');
+  const [tab, setTab] = useState<'tenants' | 'audit' | 'metrics' | 'operators'>('tenants');
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,6 +139,18 @@ export default function PlatformTenantsPage() {
     enabled: ready && tab === 'audit',
   });
 
+  const { data: metricsData, isLoading: metricsLoading } = useQuery({
+    queryKey: ['platform-metrics'],
+    queryFn: () => platformMetrics().then((r) => r.data?.data),
+    enabled: ready && tab === 'metrics',
+  });
+
+  const { data: operatorsData, isLoading: operatorsLoading, refetch: refetchOps } = useQuery({
+    queryKey: ['platform-operators'],
+    queryFn: () => platformListOperators().then((r) => r.data?.data ?? []),
+    enabled: ready && tab === 'operators',
+  });
+
   const { data: detailRes, isLoading: detailLoading } = useQuery({
     queryKey: ['platform-tenant', selectedId],
     queryFn: () => platformGetTenant(selectedId!).then((r) => r.data?.data as TenantDetail),
@@ -145,7 +161,8 @@ export default function PlatformTenantsPage() {
   const total: number = data?.total_count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const auditEvents: AuditEvent[] = auditData?.data ?? [];
-  const identity = (me ?? getPlatformIdentity()) as { email?: string; display_name?: string } | null;
+  const identity = (me ?? getPlatformIdentity()) as { email?: string; display_name?: string; role?: string } | null;
+  const isSuperAdmin = ((identity?.role || 'PlatformSuperAdmin')).toLowerCase() === 'platformsuperadmin';
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['platform-tenants'] });
@@ -195,19 +212,29 @@ export default function PlatformTenantsPage() {
 
   const onImpersonate = (t: Tenant, userId?: string, email?: string) => {
     const who = email ? ` as ${email}` : ' as the primary Owner';
-    const note = t.suspended
-      ? `\n\nThis tenant is suspended — you will open a short-lived support session anyway.`
-      : '';
-    if (
-      !window.confirm(
-        `Open a support session in “${t.organization_name}”${who}?\n\nThis is audited and expires in ~30 minutes.${note}`,
-      )
-    ) {
+    const reason =
+      window.prompt(
+        `Open support session in “${t.organization_name}”${who}?\n\nRequired reason (ticket / customer request, min 5 chars):`,
+        '',
+      ) ?? null;
+    if (reason === null) return;
+    if (reason.trim().length < 5) {
+      setActionError('Support session reason must be at least 5 characters.');
       return;
     }
+    const readOnly = window.confirm(
+      'Open as READ-ONLY (Viewer)?\n\nOK = read-only · Cancel = full Owner/target permissions',
+    );
+    // confirm returns true for OK (read-only). For Cancel we want full access.
+    // Actually user asked: OK = read-only is fine.
+
     setBusyId(t.entity_id);
     setActionError(null);
-    platformImpersonateTenant(t.entity_id, userId)
+    platformImpersonateTenant(t.entity_id, {
+      userId,
+      reason: reason.trim(),
+      readOnly,
+    })
       .then((resp) => {
         storeSession(resp.data);
         try {
@@ -218,6 +245,8 @@ export default function PlatformTenantsPage() {
               entity_id: resp.data?.tenant?.entity_id,
               target_email: resp.data?.user?.email,
               suspended: resp.data?.tenant?.suspended,
+              read_only: resp.data?.read_only ?? readOnly,
+              reason: reason.trim(),
             }),
           );
         } catch {
@@ -281,20 +310,23 @@ export default function PlatformTenantsPage() {
               <h1 className="text-lg font-semibold text-white">Ops console</h1>
             </div>
             <nav className="ml-6 flex gap-1 rounded-lg border border-slate-800 bg-slate-950/60 p-0.5 text-sm">
-              <button
-                type="button"
-                onClick={() => setTab('tenants')}
-                className={`rounded-md px-3 py-1.5 ${tab === 'tenants' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                Tenants
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('audit')}
-                className={`rounded-md px-3 py-1.5 ${tab === 'audit' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                Audit log
-              </button>
+              {(
+                [
+                  ['tenants', 'Tenants'],
+                  ['metrics', 'Metrics'],
+                  ['audit', 'Audit'],
+                  ...(isSuperAdmin ? ([['operators', 'Operators']] as const) : []),
+                ] as [string, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id as 'tenants' | 'audit' | 'metrics' | 'operators')}
+                  className={`rounded-md px-3 py-1.5 ${tab === id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  {label}
+                </button>
+              ))}
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
@@ -520,6 +552,45 @@ export default function PlatformTenantsPage() {
           </>
         )}
 
+
+        {tab === 'metrics' && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {metricsLoading && <p className="text-sm text-slate-500 col-span-full">Loading metrics…</p>}
+            {metricsData && (
+              <>
+                {[
+                  ['Tenants', metricsData.tenants_total],
+                  ['Active', metricsData.tenants_active],
+                  ['Suspended', metricsData.tenants_suspended],
+                  ['Archived', metricsData.tenants_archived],
+                  ['Trial', metricsData.tenants_trial],
+                  ['Past due', metricsData.tenants_past_due],
+                  ['With users', metricsData.tenants_with_users],
+                  ['Active users', metricsData.users_total],
+                  ['Operators', metricsData.operators_active + '/' + metricsData.operators_total],
+                  ['Signups (7d)', metricsData.signups_7d],
+                  ['Impersonations (7d)', metricsData.impersonations_7d],
+                  ['Suspensions (7d)', metricsData.suspensions_7d],
+                ].map(([label, val]) => (
+                  <div key={String(label)} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">{val}</p>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === 'operators' && isSuperAdmin && (
+          <OperatorsPanel
+            loading={operatorsLoading}
+            operators={operatorsData ?? []}
+            onRefresh={() => refetchOps()}
+            setActionError={setActionError}
+          />
+        )}
+
         {tab === 'audit' && (
           <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
             {auditLoading && <p className="p-8 text-center text-sm text-slate-500">Loading audit…</p>}
@@ -568,8 +639,7 @@ export default function PlatformTenantsPage() {
         )}
 
         <p className="mt-6 text-xs text-slate-600">
-          Platform Super Admin: directory, suspend/restore, archive, plan, audit, and short-lived support
-          sessions. See docs/PLATFORM_ADMIN.md.
+          Phase 3: metrics, operators, required Open reason, read-only support sessions, mid-request suspend gate. See docs/PLATFORM_ADMIN.md.
         </p>
       </main>
 
@@ -649,6 +719,7 @@ export default function PlatformTenantsPage() {
                     </dl>
                   </section>
 
+                  {isSuperAdmin && (
                   <section>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
                       Plan
@@ -691,6 +762,7 @@ export default function PlatformTenantsPage() {
                       <p className="mt-1 text-[11px] text-slate-500">Restore before changing plan status.</p>
                     )}
                   </section>
+                  )}
 
                   <section>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
@@ -705,40 +777,42 @@ export default function PlatformTenantsPage() {
                       >
                         <UserRoundSearch className="h-3.5 w-3.5" /> Open as Owner
                       </button>
-                      {detail.suspended ? (
-                        <button
-                          type="button"
-                          onClick={() => onUnsuspend(detail)}
-                          className="inline-flex items-center gap-1 rounded-md border border-emerald-900 bg-emerald-950/40 px-2.5 py-1.5 text-xs text-emerald-300"
-                        >
-                          <ShieldCheck className="h-3.5 w-3.5" /> Restore
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onSuspend(detail)}
-                          className="inline-flex items-center gap-1 rounded-md border border-red-900/80 bg-red-950/30 px-2.5 py-1.5 text-xs text-red-300"
-                        >
-                          <ShieldAlert className="h-3.5 w-3.5" /> Suspend
-                        </button>
-                      )}
-                      {detail.archived ? (
-                        <button
-                          type="button"
-                          onClick={() => onUnarchive(detail)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200"
-                        >
-                          <ArchiveRestore className="h-3.5 w-3.5" /> Unarchive
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onArchive(detail)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200"
-                        >
-                          <Archive className="h-3.5 w-3.5" /> Archive
-                        </button>
-                      )}
+                      {isSuperAdmin &&
+                        (detail.suspended ? (
+                          <button
+                            type="button"
+                            onClick={() => onUnsuspend(detail)}
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-900 bg-emerald-950/40 px-2.5 py-1.5 text-xs text-emerald-300"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" /> Restore
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onSuspend(detail)}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-900/80 bg-red-950/30 px-2.5 py-1.5 text-xs text-red-300"
+                          >
+                            <ShieldAlert className="h-3.5 w-3.5" /> Suspend
+                          </button>
+                        ))}
+                      {isSuperAdmin &&
+                        (detail.archived ? (
+                          <button
+                            type="button"
+                            onClick={() => onUnarchive(detail)}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200"
+                          >
+                            <ArchiveRestore className="h-3.5 w-3.5" /> Unarchive
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onArchive(detail)}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200"
+                          >
+                            <Archive className="h-3.5 w-3.5" /> Archive
+                          </button>
+                        ))}
                     </div>
                   </section>
 
@@ -805,6 +879,167 @@ export default function PlatformTenantsPage() {
           </aside>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function OperatorsPanel({
+  loading,
+  operators,
+  onRefresh,
+  setActionError,
+}: {
+  loading: boolean;
+  operators: {
+    id: string;
+    email: string;
+    display_name: string;
+    role: string;
+    is_active: boolean;
+    last_login?: string;
+    created_at: string;
+  }[];
+  onRefresh: () => void;
+  setActionError: (s: string | null) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('PlatformSupport');
+  const [busy, setBusy] = useState(false);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setActionError(null);
+    try {
+      await platformCreateOperator({
+        email: email.trim(),
+        display_name: name.trim(),
+        password,
+        role,
+      });
+      setEmail('');
+      setName('');
+      setPassword('');
+      onRefresh();
+    } catch (err) {
+      setActionError(extractErr(err, 'Create operator failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async (id: string, is_active: boolean) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await platformSetOperatorActive(id, is_active);
+      onRefresh();
+    } catch (err) {
+      setActionError(extractErr(err, 'Update operator failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <form
+        onSubmit={create}
+        className="rounded-xl border border-slate-800 bg-slate-900 p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+      >
+        <input
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+          placeholder="Email"
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+          placeholder="Display name"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+          placeholder="Temp password"
+          type="password"
+          required
+          minLength={8}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <select
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+        >
+          <option value="PlatformSupport">PlatformSupport</option>
+          <option value="PlatformSuperAdmin">PlatformSuperAdmin</option>
+        </select>
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+        >
+          Add operator
+        </button>
+      </form>
+
+      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+        {loading && <p className="p-8 text-center text-sm text-slate-500">Loading operators…</p>}
+        {!loading && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {operators.map((op) => (
+                <tr key={op.id} className="border-b border-slate-800/80">
+                  <td className="px-4 py-3 text-white">{op.display_name}</td>
+                  <td className="px-4 py-3 text-slate-300">{op.email}</td>
+                  <td className="px-4 py-3 text-slate-300">{op.role}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`text-xs ${op.is_active ? 'text-emerald-400' : 'text-red-400'}`}
+                    >
+                      {op.is_active ? 'active' : 'inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => toggle(op.id, !op.is_active)}
+                      className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    >
+                      {op.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {operators.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                    No operators yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

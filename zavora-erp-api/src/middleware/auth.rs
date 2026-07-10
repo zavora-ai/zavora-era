@@ -67,6 +67,10 @@ pub struct AuthContext {
     /// The raw role KEY from the token (system role name or custom-role slug).
     /// The authoritative identifier for authorization (`require_permission`).
     pub role_key: String,
+    /// Present when this is a platform support (impersonation) session.
+    pub impersonator_id: Option<Uuid>,
+    /// Support session forced to read-only (Viewer) permissions.
+    pub read_only: bool,
 }
 
 /// External principal roles that must never be accepted by the back-office auth
@@ -108,6 +112,8 @@ pub fn verify_bearer(headers: &axum::http::HeaderMap) -> Result<AuthContext, Res
         entity_id: claims.entity_id,
         role,
         role_key: claims.role.clone(),
+        impersonator_id: claims.impersonator_id,
+        read_only: claims.read_only,
     })
 }
 
@@ -115,11 +121,48 @@ pub fn verify_bearer(headers: &axum::http::HeaderMap) -> Result<AuthContext, Res
 /// endpoint can be reached without a valid access token, regardless of whether
 /// its handler extracts `AuthContext`. The verified context is stashed in the
 /// request extensions for handlers that need it (see the extractor below).
+///
+/// Phase 3: also rejects normal tenant sessions when the tenant is suspended.
+/// Platform support (impersonation) sessions may still enter suspended tenants.
 pub async fn require_authenticated(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<Response, Response> {
     let ctx = verify_bearer(req.headers())?;
+
+    // Suspend gate: every authenticated ERP request (not just login/refresh).
+    if ctx.impersonator_id.is_none() {
+        match zavora_erp_core::services::platform::is_tenant_suspended(
+            state.engine.pool(),
+            ctx.entity_id,
+        )
+        .await
+        {
+            Ok(true) => {
+                return Err(unauthorized(
+                    "This organization has been suspended. Contact support.",
+                ));
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "suspend check failed");
+                return Err(unauthorized("Unable to verify tenant status"));
+            }
+        }
+    }
+
+    // Read-only support sessions: block mutating HTTP methods at the edge.
+    if ctx.read_only && !matches!(req.method().as_str(), "GET" | "HEAD" | "OPTIONS") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "This support session is read-only"
+            })),
+        )
+            .into_response());
+    }
+
     req.extensions_mut().insert(ctx);
     Ok(next.run(req).await)
 }

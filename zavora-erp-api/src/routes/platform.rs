@@ -2,6 +2,7 @@
 //! - Phase 0: login + tenant directory
 //! - Phase 1: suspend / unsuspend + support impersonation
 //! - Phase 2: tenant detail, plan updates, archive, audit log, targeted impersonation
+//! - Phase 3: suspend gate (tenant middleware), operators, metrics, reason + read-only Open
 
 use axum::{
     extract::{Path, Query, State},
@@ -14,7 +15,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use zavora_erp_core::auth::{self, TokenPair};
-use zavora_erp_core::platform::{platform_entity_id, ROLE_PLATFORM_SUPER_ADMIN};
+use zavora_erp_core::platform::{
+    is_platform_super_admin, platform_entity_id, ROLE_PLATFORM_SUPER_ADMIN,
+};
 use zavora_erp_core::services::platform as svc;
 use zavora_erp_core::ErpError;
 
@@ -28,6 +31,18 @@ type ApiResult = Result<Response, Response>;
 
 fn er(e: ErpError) -> Response {
     super::err_response(e).into_response()
+}
+
+/// Mutations that change tenant commercial state require Super Admin.
+fn require_super_admin(ctx: &PlatformAuthContext) -> Result<(), Response> {
+    if is_platform_super_admin(&ctx.role) {
+        Ok(())
+    } else {
+        Err(er(ErpError::PermissionDenied {
+            action: "platform.admin".into(),
+            required_role: "PlatformSuperAdmin".into(),
+        }))
+    }
 }
 
 fn set_platform_refresh_cookie(pair: &TokenPair) -> String {
@@ -346,6 +361,7 @@ pub async fn suspend_tenant(
     Path(entity_id): Path<Uuid>,
     body: Option<Json<SuspendRequest>>,
 ) -> ApiResult {
+    require_super_admin(&ctx)?;
     let reason = body.and_then(|Json(b)| b.reason);
     let tenant = svc::suspend_tenant(
         state.engine.pool(),
@@ -376,6 +392,7 @@ pub async fn unsuspend_tenant(
     ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
 ) -> ApiResult {
+    require_super_admin(&ctx)?;
     let tenant = svc::unsuspend_tenant(state.engine.pool(), entity_id)
         .await
         .map_err(er)?;
@@ -408,6 +425,7 @@ pub async fn update_tenant(
     Path(entity_id): Path<Uuid>,
     Json(req): Json<UpdateTenantRequest>,
 ) -> ApiResult {
+    require_super_admin(&ctx)?;
     let plan_key = match &req.plan_key {
         None => None,
         Some(serde_json::Value::Null) => Some(None),
@@ -457,6 +475,7 @@ pub async fn archive_tenant(
     ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
 ) -> ApiResult {
+    require_super_admin(&ctx)?;
     let tenant = svc::archive_tenant(state.engine.pool(), entity_id)
         .await
         .map_err(er)?;
@@ -477,6 +496,7 @@ pub async fn unarchive_tenant(
     ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
 ) -> ApiResult {
+    require_super_admin(&ctx)?;
     let tenant = svc::unarchive_tenant(state.engine.pool(), entity_id)
         .await
         .map_err(er)?;
@@ -528,19 +548,31 @@ pub async fn list_audit(
 pub struct ImpersonateRequest {
     /// Optional specific era_users.id; defaults to primary Owner.
     pub user_id: Option<Uuid>,
+    /// Required free-text reason (ticket / customer request) — stored in audit.
+    pub reason: String,
+    /// When true, open as Viewer and block mutating HTTP methods.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// POST /api/v1/platform/tenants/{entity_id}/impersonate
 ///
 /// Issues a short-lived tenant session as the primary Owner (or a specific
-/// active user). The JWT carries `impersonator_id` so the UI can show a support banner.
+/// active user). Requires a non-empty `reason`. Optional `read_only` forces Viewer.
 /// Allowed even when the tenant is suspended so ops can still diagnose issues.
 pub async fn impersonate_tenant(
     State(state): State<Arc<AppState>>,
     ctx: PlatformAuthContext,
     Path(entity_id): Path<Uuid>,
-    body: Option<Json<ImpersonateRequest>>,
+    Json(req): Json<ImpersonateRequest>,
 ) -> ApiResult {
+    let reason = req.reason.trim().to_string();
+    if reason.len() < 5 {
+        return Err(er(ErpError::ValidationFailed {
+            message: "reason is required (min 5 characters) for support sessions".into(),
+        }));
+    }
+
     // Confirm tenant exists (and refresh counts).
     let tenant = svc::get_tenant(state.engine.pool(), entity_id)
         .await
@@ -552,8 +584,7 @@ pub async fn impersonate_tenant(
             })
         })?;
 
-    let user_id = body.and_then(|Json(b)| b.user_id);
-    let target = if let Some(uid) = user_id {
+    let target = if let Some(uid) = req.user_id {
         svc::get_impersonation_target(state.engine.pool(), entity_id, uid)
             .await
             .map_err(er)?
@@ -563,12 +594,19 @@ pub async fn impersonate_tenant(
             .map_err(er)?
     };
 
+    let session_role = if req.read_only {
+        "Viewer"
+    } else {
+        target.role.as_str()
+    };
+
     let pair = auth::issue_impersonation_token_pair(
         jwt_config(),
         target.id,
         target.entity_id,
         &target.role,
         ctx.user_id,
+        req.read_only,
     )
     .map_err(er)?;
 
@@ -592,6 +630,9 @@ pub async fn impersonate_tenant(
             "target_user_id": target.id,
             "target_email": target.email,
             "target_role": target.role,
+            "session_role": session_role,
+            "read_only": req.read_only,
+            "reason": reason,
             "organization_name": tenant.organization_name,
             "expires_in": pair.expires_in,
         })),
@@ -615,6 +656,8 @@ pub async fn impersonate_tenant(
         "token_type": "Bearer",
         "expires_in": pair.expires_in,
         "impersonation": true,
+        "read_only": req.read_only,
+        "reason": reason,
         "tenant": {
             "entity_id": tenant.entity_id,
             "organization_name": tenant.organization_name,
@@ -623,11 +666,12 @@ pub async fn impersonate_tenant(
         "user": {
             "user_id": target.id,
             "entity_id": target.entity_id,
-            "role": target.role,
+            "role": session_role,
             "display_name": target.display_name,
             "email": target.email,
             "impersonated_by": ctx.user_id,
             "support_session": true,
+            "read_only": req.read_only,
         }
     });
 
@@ -636,6 +680,111 @@ pub async fn impersonate_tenant(
         res.headers_mut().append(header::SET_COOKIE, val);
     }
     Ok(res)
+}
+
+// ── Phase 3: metrics + operators ───────────────────────────────────────────
+
+/// GET /api/v1/platform/metrics
+pub async fn metrics(
+    State(state): State<Arc<AppState>>,
+    _ctx: PlatformAuthContext,
+) -> ApiResult {
+    let m = svc::platform_metrics(state.engine.pool())
+        .await
+        .map_err(er)?;
+    Ok(Json(serde_json::json!({ "data": m })).into_response())
+}
+
+/// GET /api/v1/platform/operators
+pub async fn list_operators(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+) -> ApiResult {
+    require_super_admin(&ctx)?;
+    let data = svc::list_operators(state.engine.pool())
+        .await
+        .map_err(er)?;
+    Ok(Json(serde_json::json!({ "data": data })).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOperatorRequest {
+    pub email: String,
+    pub display_name: String,
+    pub password: String,
+    /// PlatformSuperAdmin | PlatformSupport (default SuperAdmin).
+    pub role: Option<String>,
+}
+
+/// POST /api/v1/platform/operators
+pub async fn create_operator(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+    Json(req): Json<CreateOperatorRequest>,
+) -> ApiResult {
+    require_super_admin(&ctx)?;
+    let role = req.role.as_deref().unwrap_or(ROLE_PLATFORM_SUPER_ADMIN);
+    let op = svc::create_operator(
+        state.engine.pool(),
+        &req.email,
+        &req.display_name,
+        &req.password,
+        role,
+    )
+    .await
+    .map_err(er)?;
+
+    let _ = svc::record_audit(
+        state.engine.pool(),
+        ctx.user_id,
+        "create_operator",
+        None,
+        Some(serde_json::json!({
+            "operator_id": op.id,
+            "email": op.email,
+            "role": op.role,
+        })),
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "data": op })).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetOperatorActiveRequest {
+    pub is_active: bool,
+}
+
+/// POST /api/v1/platform/operators/{id}/set-active
+pub async fn set_operator_active(
+    State(state): State<Arc<AppState>>,
+    ctx: PlatformAuthContext,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SetOperatorActiveRequest>,
+) -> ApiResult {
+    require_super_admin(&ctx)?;
+    let op = svc::set_operator_active(state.engine.pool(), id, req.is_active, ctx.user_id)
+        .await
+        .map_err(er)?;
+
+    let _ = svc::record_audit(
+        state.engine.pool(),
+        ctx.user_id,
+        if req.is_active {
+            "activate_operator"
+        } else {
+            "deactivate_operator"
+        },
+        None,
+        Some(serde_json::json!({
+            "operator_id": op.id,
+            "email": op.email,
+            "is_active": op.is_active,
+        })),
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "data": op })).into_response())
 }
 
 // Silence unused import if ROLE only used as doc reference in future.
