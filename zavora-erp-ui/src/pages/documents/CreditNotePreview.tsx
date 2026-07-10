@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoice, getCustomer, getSettings, transmitInvoiceKra } from '../../api/client';
 import type { Invoice, Customer, BrandingConfig } from '../../types';
@@ -11,12 +12,13 @@ import { ShieldCheck } from 'lucide-react';
 /** eTIMS status + real KRA transmission for a credit note (a credit/refund receipt). */
 function EtimsCreditNoteBar({ inv }: { inv: any }) {
   const qc = useQueryClient();
+  const toast = useToast();
   const status = inv.etims_status ?? 'not_transmitted';
   const transmitted = status === 'transmitted';
   const mut = useMutation({
     mutationFn: () => transmitInvoiceKra(inv.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['credit-note-preview', inv.id] }),
-    onError: (e: any) => window.alert(e?.response?.data?.error || 'Transmission failed.'),
+    onError: (e: any) => toast.fromError(e, 'Transmission failed.'),
   });
   const badge = transmitted ? 'bg-green-100 text-green-700'
     : status === 'transmission_failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600';

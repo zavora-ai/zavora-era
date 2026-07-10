@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, postInvoice, sendInvoice, writeOffInvoice, getCustomers, getProducts, getDimensions, getAccounts, getInvoiceTemplates, getFxRates, getSettings } from '../../api/client';
@@ -53,11 +54,11 @@ export default function InvoicesPage() {
   const [writeOffInv, setWriteOffInv] = useState<any | null>(null);
   const [sendInv, setSendInv] = useState<any | null>(null);
 
+  const toast = useToast();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['invoices'] });
   // Surface post/delete failures (credit-limit, stock, closed-period) instead of
   // swallowing them — these were previously silent onSuccess-only mutations.
-  const mutError = (fallback: string) => (e: any) =>
-    alert(e?.response?.data?.error || e?.response?.data?.message || fallback);
+  const mutError = (fallback: string) => (e: any) => toast.fromError(e, fallback);
   const postMutation = useMutation({ mutationFn: (id: string) => postInvoice(id), onSuccess: invalidate, onError: mutError('Failed to post invoice.') });
   const deleteMutation = useMutation({ mutationFn: (id: string) => deleteInvoice(id), onSuccess: invalidate, onError: mutError('Failed to delete draft.') });
 

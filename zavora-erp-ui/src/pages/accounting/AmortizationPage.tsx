@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAmortization, createAmortization, runAmortization, cancelAmortization, getAccounts } from '../../api/client';
 import type { Account } from '../../types';
@@ -14,6 +15,7 @@ import { Plus, Play } from 'lucide-react';
 // balance-sheet holding account into P&L.
 export default function AmortizationPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const { data: rows = [], isLoading } = useQuery<any[]>({
     queryKey: ['amortization'],
@@ -22,13 +24,13 @@ export default function AmortizationPage() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['amortization'] });
   const runMut = useMutation({
     mutationFn: () => runAmortization(),
-    onSuccess: (r: any) => { invalidate(); alert(`Posted installments for ${r.data?.posted_schedules ?? 0} schedule(s).`); },
-    onError: (e: any) => alert(e?.response?.data?.error || 'Run failed.'),
+    onSuccess: (r: any) => { invalidate(); toast.success(`Posted installments for ${r.data?.posted_schedules ?? 0} schedule(s).`); },
+    onError: (e: any) => toast.fromError(e, 'Run failed.'),
   });
   const cancelMut = useMutation({
     mutationFn: (id: string) => cancelAmortization(id),
     onSuccess: invalidate,
-    onError: (e: any) => alert(e?.response?.data?.error || 'Cancel failed.'),
+    onError: (e: any) => toast.fromError(e, 'Cancel failed.'),
   });
 
   const kindLabel = (k: string) => (k === 'deferred_revenue' ? 'Deferred revenue' : 'Prepaid expense');

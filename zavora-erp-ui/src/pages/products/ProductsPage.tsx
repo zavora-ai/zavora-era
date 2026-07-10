@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getProducts, createProduct, updateProduct, deleteProduct, assignPostingGroups, getSettings, getAccounts } from '../../api/client';
 import { PostingGroupFields } from '../../components/shared/PostingGroupFields';
@@ -15,10 +16,11 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const { data: products = [], isLoading } = useQuery<Product[]>({ queryKey: ['products'], queryFn: () => getProducts().then(r => Array.isArray(r.data) ? r.data : []) });
 
+  const toast = useToast();
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProduct(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
-    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to delete product.'),
+    onError: (e: any) => toast.fromError(e, 'Failed to delete product.'),
   });
 
   const handleDelete = (p: Product) => {
@@ -75,6 +77,7 @@ export default function ProductsPage() {
 
 function ProductFormModal({ product, onClose }: { product?: Product; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const isEdit = !!product;
   const [form, setForm] = useState({
     name: product?.name ?? '',
@@ -133,7 +136,7 @@ function ProductFormModal({ product, onClose }: { product?: Product; onClose: ()
       }
       queryClient.invalidateQueries({ queryKey: ['products'] }); onClose();
     },
-    onError: (e: any) => alert(e?.response?.data?.error || e?.response?.data?.message || 'Failed to save product.'),
+    onError: (e: any) => toast.fromError(e, 'Failed to save product.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

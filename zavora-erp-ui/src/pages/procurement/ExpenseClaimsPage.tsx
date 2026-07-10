@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getExpenseClaims, getExpenseClaim, createExpenseClaim, submitExpenseClaim,
@@ -100,7 +101,8 @@ function ClaimDetailModal({ id, onClose }: { id: string; onClose: () => void }) 
   const claim: Claim | undefined = data?.claim;
   const lines: ClaimLine[] = data?.lines ?? [];
   const inv = () => { qc.invalidateQueries({ queryKey: ['expense-claims'] }); qc.invalidateQueries({ queryKey: ['expense-claim', id] }); };
-  const act = useMutation({ mutationFn: (fn: () => Promise<any>) => fn(), onSuccess: inv, onError: (e: any) => window.alert(e?.response?.data?.error || 'Action failed.') });
+  const toast = useToast();
+  const act = useMutation({ mutationFn: (fn: () => Promise<any>) => fn(), onSuccess: inv, onError: (e: any) => toast.fromError(e, 'Action failed.') });
 
   if (!claim) return <Modal open={true} onClose={onClose} title="Expense Claim"><p className="text-sm text-gray-500 py-8 text-center">Loading…</p></Modal>;
   return (

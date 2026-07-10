@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPosSession, openPosSession, completePosSale, getProducts, getPosReceipt } from '../../api/client';
 import { formatCurrency } from '../../utils/format';
@@ -113,6 +114,7 @@ function Register({ session }: { session: any }) {
 
 function TenderModal({ sessionId, cart, total, onClose, onDone }: { sessionId: string; cart: CartLine[]; total: number; onClose: () => void; onDone: () => void }) {
   const qc = useQueryClient();
+  const toast = useToast();
   const [tender, setTender] = useState<'cash' | 'mpesa' | null>(null);
   const [tendered, setTendered] = useState(total);
   const [ref, setRef] = useState('');
@@ -128,7 +130,7 @@ function TenderModal({ sessionId, cart, total, onClose, onDone }: { sessionId: s
       lines: cart.map((l) => ({ product_id: l.product.id, quantity: l.quantity, unit_price: l.unit_price })),
     }),
     onSuccess: (r) => { setResult(r.data); qc.invalidateQueries({ queryKey: ['pos-session'] }); },
-    onError: (e: any) => window.alert(e?.response?.data?.error || 'Sale failed.'),
+    onError: (e: any) => toast.fromError(e, 'Sale failed.'),
   });
 
   if (result) return (
