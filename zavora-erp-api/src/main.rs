@@ -254,6 +254,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/payments/mpesa-callback", post(routes::payments::mpesa_callback))
         // Paystack card webhook (public; verified by x-paystack-signature HMAC).
         .route("/api/v1/payments/paystack/webhook", post(routes::payments::paystack_webhook))
+        // Public invoice pay-link (no auth; the random public_token is the
+        // credential). View stamps viewed_at; pay starts a Paystack charge.
+        .route("/api/v1/public/invoices/{token}", get(routes::public_invoice::get_public_invoice))
+        .route("/api/v1/public/invoices/{token}/pay", post(routes::public_invoice::pay_public_invoice))
         // ── Vendor portal — public auth (external `vendor_users` principal);
         //    register + login are on the throttled router above ──
         .route("/api/v1/portal/refresh", post(routes::portal_auth::refresh))

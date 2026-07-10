@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { bootstrapAuth, getAccessToken } from './api/client';
 import AppShell from './components/layout/AppShell';
+import PublicInvoicePage from './pages/pay/PublicInvoicePage';
 import { ToastProvider } from './components/toast/ToastProvider';
 import LoginPage from './pages/auth/LoginPage';
 import SetPasswordPage from './pages/auth/SetPasswordPage';
@@ -136,6 +137,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Public invoice pay-link (no auth; shareable token). */}
+          <Route path="/pay/:token" element={<PublicInvoicePage />} />
           <Route path="/set-password" element={<SetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* Platform Super Admin (Zavora ops) — separate plane from tenant ERP */}

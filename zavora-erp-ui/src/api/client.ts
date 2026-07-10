@@ -335,6 +335,23 @@ export const generateReport = (data: any) => api.post('/reports', data);
 
 // === Settings ===
 export const getSettings = () => api.get('/settings');
+
+// === Public invoice pay-link (no auth; the token is the credential) ===
+export interface PublicInvoiceView {
+  number: string;
+  company_name: string;
+  currency: string;
+  gross_total: string;
+  amount_paid: string;
+  balance_due: string;
+  status: string;
+  issue_date: string;
+  due_date: string;
+  payable: boolean;
+}
+export const getPublicInvoice = (token: string) => api.get<PublicInvoiceView>(`/public/invoices/${token}`);
+export const payPublicInvoice = (token: string, body: { email?: string; callback_url?: string }) =>
+  api.post<{ authorization_url: string; reference: string }>(`/public/invoices/${token}/pay`, body);
 export const updateSettings = (data: any) => api.put('/settings', data);
 
 // === Transactions (categorisation queue) ===
