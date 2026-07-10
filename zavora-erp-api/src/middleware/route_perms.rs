@@ -51,6 +51,7 @@ pub const ROUTE_PERMISSIONS: &[(&str, &str, Access)] = &[
     ("GET", "/api/v1/invoices", Access::Perm("invoice.read")),
     ("POST", "/api/v1/invoices", Access::Perm("invoice.create")),
     ("GET", "/api/v1/invoices/{id}", Access::Perm("invoice.read")),
+    ("GET", "/api/v1/invoices/{id}/pay-link", Access::Perm("invoice.read")),
     ("PUT", "/api/v1/invoices/{id}", Access::Perm("invoice.update")),
     ("DELETE", "/api/v1/invoices/{id}", Access::Perm("invoice.delete")),
     ("GET", "/api/v1/invoices/{id}/document", Access::Perm("invoice.read")),

@@ -28,6 +28,28 @@ pub async fn list(
     }
 }
 
+/// GET /invoices/{id}/pay-link — the invoice's public pay-link token, so staff
+/// can copy/share the customer-facing pay page (`/pay/{token}`).
+pub async fn pay_link(
+    ctx: AuthContext,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, impl axum::response::IntoResponse> {
+    let token = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT public_token FROM invoices WHERE id = $1 AND entity_id = $2",
+    )
+    .bind(id)
+    .bind(ctx.entity_id)
+    .fetch_optional(state.engine.pool())
+    .await;
+
+    match token {
+        Ok(Some(Some(t))) => Ok(Json(serde_json::json!({ "token": t, "path": format!("/pay/{t}") }))),
+        Ok(Some(None)) | Ok(None) => Err(err_response(zavora_erp_core::ErpError::NotFound { entity_type: "Invoice".into(), id })),
+        Err(e) => Err(err_response(zavora_erp_core::ErpError::Database(e))),
+    }
+}
+
 pub async fn get_one(
     ctx: AuthContext,
     State(state): State<Arc<AppState>>,
