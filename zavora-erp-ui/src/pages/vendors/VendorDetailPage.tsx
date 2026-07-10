@@ -183,7 +183,7 @@ export default function VendorDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}

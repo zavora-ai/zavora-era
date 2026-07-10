@@ -55,7 +55,7 @@ export default function BudgetsPage() {
     <div>
       <PageHeader title="Budgets" subtitle="Set budget figures per account and period; compare in the Budget vs Actual report" />
 
-      <div className="card p-4 mb-5 flex items-end gap-4">
+      <div className="card p-4 mb-5 flex flex-wrap items-end gap-4">
         <div>
           <label className="label">Period</label>
           <select className="input min-w-[14rem]" value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
@@ -69,7 +69,7 @@ export default function BudgetsPage() {
       </div>
       {save.isSuccess && <div className="mb-4 text-sm text-green-700">Saved {save.data} budget {save.data === 1 ? 'entry' : 'entries'}.</div>}
 
-      <div className="card p-5">
+      <div className="card p-5 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-gray-500 uppercase border-b">

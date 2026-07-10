@@ -172,7 +172,7 @@ export default function EstimatesPage() {
       />
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
         {(['all', 'draft', 'sent', 'accepted', 'expired', 'converted'] as const).map((s) => (
           <button
             key={s}

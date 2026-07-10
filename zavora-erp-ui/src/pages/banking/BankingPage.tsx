@@ -548,7 +548,7 @@ function ImportStatementModal({
         {!result && (
           <>
             {/* Source tabs */}
-            <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+            <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit max-w-full overflow-x-auto">
               <button type="button" onClick={() => { setMode('file'); setError(null); }} className={`px-3 py-1.5 rounded-md text-sm font-medium ${mode === 'file' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>CSV / MT940 / OFX</button>
               <button type="button" onClick={() => { setMode('pdf'); setError(null); }} className={`px-3 py-1.5 rounded-md text-sm font-medium ${mode === 'pdf' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>PDF / Excel</button>
             </div>
