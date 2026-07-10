@@ -162,6 +162,20 @@ export const saveReportSchedule = (data: { id?: string; name: string; report_typ
   api.post('/report-schedules', data);
 export const deleteReportSchedule = (id: string) => api.delete(`/report-schedules/${id}`);
 export const getConsolidationEntities = () => api.get('/consolidation/entities');
+// === Multi-company groups + intercompany + group consolidation ===
+export const getCompanyGroups = () => api.get('/consolidation/groups');
+export const createCompanyGroup = (data: { name: string; presentation_currency?: string }) =>
+  api.post('/consolidation/groups', data);
+export const getGroupMembers = (groupId: string) => api.get(`/consolidation/groups/${groupId}/members`);
+export const addGroupMember = (groupId: string, data: { entity_id: string; is_parent?: boolean; ownership_pct?: number }) =>
+  api.post(`/consolidation/groups/${groupId}/members`, data);
+export const removeGroupMember = (groupId: string, entityId: string) =>
+  api.delete(`/consolidation/groups/${groupId}/members/${entityId}`);
+export const postIntercompanyCharge = (data: { group_id?: string; from_entity_id: string; to_entity_id: string; amount: number; description?: string; tx_date?: string }) =>
+  api.post('/consolidation/intercompany', data);
+export const getIntercompany = () => api.get('/consolidation/intercompany');
+export const runGroupConsolidation = (data: { group_id: string; as_at?: string; presentation_currency?: string }) =>
+  api.post('/consolidation/group-trial-balance', data);
 // === Posting groups (BC-style matrices) ===
 export const getPostingGroups = () => api.get('/posting-groups');
 export const createPostingGroup = (data: { kind: string; code: string; name: string }) =>

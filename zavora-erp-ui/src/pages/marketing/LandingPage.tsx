@@ -366,7 +366,7 @@ const MODULES = [
     points: [
       'Trial balance, P&amp;L, balance sheet, cash flow &amp; equity',
       'AR/AP ageing, general ledger and custom report builder',
-      'Budgets, dimensions/cost-centres and multi-entity consolidation',
+      'Budgets, dimensions/cost-centres and group consolidation with intercompany eliminations',
       'Scheduled reports emailed to you automatically',
     ] },
   { icon: Landmark, title: 'Banking & reconciliation', img: '/marketing/banking.png', color: 'text-cyan-600',
@@ -376,7 +376,17 @@ const MODULES = [
       'Import statements (PDF/CSV) with smart transaction matching',
       'M-Pesa till payments captured and reconciled automatically',
       'Multi-currency accounts with automatic FX revaluation',
+      'CBK daily exchange rates loaded automatically — no manual entry',
       'Complete-and-lock periods with a full audit trail',
+    ] },
+  { icon: Building2, title: 'Multi-company & consolidation', img: '/marketing/reports.png', color: 'text-violet-600',
+    tag: 'Run the whole group in one place',
+    desc: 'Own more than one company? Group them, trade between them cleanly, and see the whole group as one — with the intercompany noise removed automatically.',
+    points: [
+      'Post an intercompany charge once — it books in BOTH companies (receivable + payable) automatically',
+      'One-click group consolidation across all your companies',
+      'Intercompany balances eliminated precisely, so the group is never overstated',
+      'Parent/subsidiary structure with ownership % and presentation-currency translation',
     ] },
 ];
 
@@ -426,6 +436,7 @@ function ComplianceBand() {
     { icon: Wallet, t: 'M-Pesa native', d: 'Till payments captured and reconciled straight into the ledger.' },
     { icon: Landmark, t: 'Statutory payroll', d: 'PAYE, NSSF, SHA, Housing Levy & HELB, effective-dated to the rates.' },
     { icon: ShieldCheck, t: 'Audit trail', d: 'Every posting attributed and immutable — approvals, limits, the lot.' },
+    { icon: Landmark, t: 'CBK FX rates', d: 'Official Central Bank of Kenya daily rates loaded automatically for multi-currency books.' },
   ];
   return (
     <section id="compliance" className="bg-white">
@@ -481,7 +492,8 @@ const COMPARE_ROWS: { feature: string; z: Cell; c: Cell[] }[] = [
   { feature: 'Point of Sale, built in', z: true, c: ['addon', false, 'addon'] },
   { feature: 'Procurement & 3-way match', z: true, c: [false, false, 'partial'] },
   { feature: 'Inventory & stock', z: true, c: [true, true, true] },
-  { feature: 'Multi-currency & consolidation', z: true, c: [true, 'partial', true] },
+  { feature: 'Multi-company: intercompany + group consolidation', z: true, c: [true, 'partial', true] },
+  { feature: 'CBK daily FX rates, auto-loaded', z: true, c: [false, false, false] },
   { feature: 'Made for Kenya out of the box', z: true, c: [false, false, 'partial'] },
 ];
 
