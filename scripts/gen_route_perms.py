@@ -157,6 +157,20 @@ HANDLER_PERM = {
     "report_schedules::list": "report_schedule.read", "report_schedules::save": "report_schedule.create",
     "report_schedules::delete": "report_schedule.delete",
     "consolidation::my_entities": "SELF", "consolidation::trial_balance": "SELF",
+    # Warehousing (reuses inventory perms)
+    "warehouses::list": "inventory.read", "warehouses::create": "inventory.adjust",
+    "warehouses::update": "inventory.adjust", "warehouses::transfer": "inventory.adjust",
+    "warehouses::stock_in_warehouse": "inventory.read", "warehouses::item_stock": "inventory.read",
+    # Manufacturing (reuses inventory perms)
+    "manufacturing::list_boms": "inventory.read", "manufacturing::get_bom": "inventory.read",
+    "manufacturing::create_bom": "inventory.adjust", "manufacturing::update_bom": "inventory.adjust",
+    "manufacturing::list_work_orders": "inventory.read", "manufacturing::get_work_order": "inventory.read",
+    "manufacturing::create_work_order": "inventory.adjust", "manufacturing::start_work_order": "inventory.adjust",
+    "manufacturing::complete_work_order": "inventory.adjust", "manufacturing::cancel_work_order": "inventory.adjust",
+    # Projects (job/project accounting)
+    "projects::list": "project.read", "projects::get_one": "project.read",
+    "projects::create": "project.manage", "projects::update": "project.manage",
+    "projects::summary": "project.read",
     # Notifications (own inbox = SELF; admin delivery/providers = notification_provider)
     "notifications::list": "SELF", "notifications::unread_count": "SELF",
     "notifications::mark_all_read": "SELF", "notifications::mark_read": "SELF",

@@ -442,6 +442,32 @@ export const startWorkOrder = (id: string) => api.post<WorkOrder>(`/work-orders/
 export const completeWorkOrder = (id: string) => api.post<WorkOrder>(`/work-orders/${id}/complete`, {});
 export const cancelWorkOrder = (id: string) => api.post(`/work-orders/${id}/cancel`, {});
 
+// ── Projects (job/project accounting) ─────────────────────────────────────────
+export interface ProjectBudgetLine { id?: string; category: string; account_code?: string | null; amount: string | number; notes?: string | null }
+export interface ProjectTask { id?: string; name: string; budget_hours: string | number; budget_amount: string | number; status: string; sort_order?: number }
+export interface Project {
+  id: string; code: string; name: string; client_id?: string | null; client_name?: string | null;
+  donor?: string | null; manager?: string | null; status: string; billing_method: string;
+  budget_amount: string; currency: string; start_date?: string | null; end_date?: string | null;
+  notes?: string | null; is_active: boolean; budget_lines: ProjectBudgetLine[]; tasks: ProjectTask[];
+}
+export interface ProjectSummary {
+  budget_total: string; revenue: string; cost: string; margin: string; budget_used_pct: string;
+  budget_vs_actual: { category: string; account_code?: string | null; budgeted: string; actual: string; variance: string }[];
+  actuals_by_account: { account_code: string; account_name: string; account_type: string; amount: string }[];
+}
+export interface CreateProjectInput {
+  code: string; name: string; client_id?: string; donor?: string; manager?: string; status?: string;
+  billing_method?: string; budget_amount?: number; currency?: string; start_date?: string; end_date?: string; notes?: string;
+  budget_lines?: { category: string; account_code?: string; amount: number; notes?: string }[];
+  tasks?: { name: string; budget_hours?: number; budget_amount?: number; status?: string }[];
+}
+export const getProjects = () => api.get<Project[]>('/projects');
+export const getProject = (id: string) => api.get<Project>(`/projects/${id}`);
+export const createProject = (data: CreateProjectInput) => api.post<{ id: string }>('/projects', data);
+export const updateProject = (id: string, data: CreateProjectInput) => api.put(`/projects/${id}`, data);
+export const getProjectSummary = (id: string) => api.get<ProjectSummary>(`/projects/${id}/summary`);
+
 // ── Point of Sale ────────────────────────────────────────────────────────────
 export const getPosSession = () => api.get('/pos/session');
 export const getPosSessions = () => api.get('/pos/sessions');

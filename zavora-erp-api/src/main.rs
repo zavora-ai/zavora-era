@@ -537,6 +537,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/work-orders/{id}/start", post(routes::manufacturing::start_work_order))
         .route("/api/v1/work-orders/{id}/complete", post(routes::manufacturing::complete_work_order))
         .route("/api/v1/work-orders/{id}/cancel", post(routes::manufacturing::cancel_work_order))
+        .route("/api/v1/projects", get(routes::projects::list).post(routes::projects::create))
+        .route("/api/v1/projects/{id}", get(routes::projects::get_one).put(routes::projects::update))
+        .route("/api/v1/projects/{id}/summary", get(routes::projects::summary))
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))

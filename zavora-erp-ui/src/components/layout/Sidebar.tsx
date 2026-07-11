@@ -4,7 +4,7 @@ import {
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
   ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building, Factory,
   RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles,
-  Gavel, ShoppingCart, UserPlus, Shield, X
+  Gavel, ShoppingCart, UserPlus, Shield, X, FolderKanban
 } from 'lucide-react';
 import clsx from 'clsx';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -30,6 +30,7 @@ const PERM_BY_HREF: Record<string, string> = {
   '/inventory': 'inventory.read',
   '/warehouses': 'inventory.read',
   '/manufacturing': 'inventory.read',
+  '/projects': 'project.read',
   '/pos/sessions': 'pos_session.read',
   '/employees': 'employee.read',
   '/onboarding': 'onboarding.read',
@@ -113,6 +114,9 @@ export const navigation = [
   { name: 'Amortisation', href: '/amortization', icon: RefreshCw },
   { name: 'Opening Balances', href: '/opening-balances', icon: Scale },
   { name: 'Periods', href: '/periods', icon: CalendarClock },
+
+  { divider: true, label: 'PROJECTS' },
+  { name: 'Projects', href: '/projects', icon: FolderKanban },
 
   { divider: true, label: 'REPORTS & ANALYSIS' },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
