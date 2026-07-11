@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Receipt, CreditCard, Users, Building2,
   Package, Landmark, Wallet, BarChart3, Settings, BookOpen, Calculator,
-  ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building,
+  ArrowLeftRight, ClipboardList, UserCheck, BookMarked, Boxes, Building, Factory,
   RefreshCw, History, Camera, UserCog, CalendarClock, FileMinus, Target, Layers, Network, Percent, Scale, Upload, CheckCircle, FileCheck, BellRing, Sparkles,
   Gavel, ShoppingCart, UserPlus, Shield, X
 } from 'lucide-react';
@@ -29,6 +29,7 @@ const PERM_BY_HREF: Record<string, string> = {
   '/products': 'product.read',
   '/inventory': 'inventory.read',
   '/warehouses': 'inventory.read',
+  '/manufacturing': 'inventory.read',
   '/pos/sessions': 'pos_session.read',
   '/employees': 'employee.read',
   '/onboarding': 'onboarding.read',
@@ -91,6 +92,7 @@ export const navigation = [
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Boxes },
   { name: 'Warehouses', href: '/warehouses', icon: Building },
+  { name: 'Manufacturing', href: '/manufacturing', icon: Factory },
   { name: 'Point of Sale', href: '/pos', icon: ShoppingCart },
   { name: 'Till Sessions', href: '/pos/sessions', icon: Landmark },
   { name: 'Stock (Mobile)', href: '/pos/stock', icon: Camera },

@@ -74,6 +74,12 @@ pub struct PostingSetup {
     /// Goods-Received-Not-Invoiced clearing. Credited when stock is received
     /// without a vendor bill (standalone receipt); the later bill debits it.
     pub inventory_clearing: String,
+    /// Work in Progress — holds component (and, textbook-wise, overhead) cost
+    /// while a work order is in production; nets to zero on completion.
+    pub work_in_progress: String,
+    /// Manufacturing overhead / labour applied to production at work-order
+    /// completion (credited as finished goods absorb the cost).
+    pub manufacturing_overhead: String,
 
     // --- Fixed assets ---
     /// Fixed-asset (cost) control account.
@@ -147,6 +153,10 @@ impl Default for PostingSetup {
             // Must NOT be the AP control (3010): receipts credited there looked
             // like vendor balances with no vendor subledger behind them.
             inventory_clearing: "3020".to_string(),
+            // Work in Progress (1510) + Manufacturing Overhead (6300), seeded in
+            // the COA template and backfilled by migration 061.
+            work_in_progress: "1510".to_string(),
+            manufacturing_overhead: "6300".to_string(),
             fixed_asset: "2500".to_string(),
             accumulated_depreciation: "2600".to_string(),
             depreciation_expense: "7600".to_string(),
