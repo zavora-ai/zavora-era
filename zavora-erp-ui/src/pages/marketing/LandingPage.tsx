@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Sparkles, ArrowRight, Check, Menu, X, ShoppingCart, FileText, Boxes,
   Wallet, BarChart3, ShieldCheck, Landmark, Bot, Zap, Receipt, Building2,
-  Paperclip, Camera,
+  Paperclip, Camera, Factory,
 } from 'lucide-react';
 import Logo from '../../components/brand/Logo';
 import MarketingFooter from './Footer';
@@ -349,9 +349,17 @@ const MODULES = [
       'Requisitions → tenders or POs → goods receipt → 3-way match',
       'Live stock levels, valuations and mobile stock counts',
       'Multi-warehouse &amp; 3PL: track stock by location and transfer between them',
-      'Light manufacturing: bills of materials &amp; work orders with material + overhead costing',
       'Open-commitment register &amp; budget-vs-actual control',
       'Vendor portal, debit notes and approval spend-limits',
+    ] },
+  { icon: Factory, title: 'Manufacturing', img: '/marketing/manufacturing.png', color: 'text-orange-600',
+    tag: 'Make what you sell',
+    desc: 'Turn raw materials into finished goods with proper costing — every production run flows through Work in Progress and posts straight to your books.',
+    points: [
+      'Bills of materials: the recipe of components (+ labour/overhead) per product',
+      'Work orders: issue components to Work in Progress, then receive finished goods at their rolled-up unit cost',
+      'Weighted-average costing — material + overhead absorbed into every unit',
+      'Produce into any warehouse; stock and the ledger update in real time',
     ] },
   { icon: Wallet, title: 'Payroll — Kenya statutory', img: '/marketing/payroll.png', color: 'text-fuchsia-600',
     tag: 'Compliant, automatically',
