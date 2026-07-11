@@ -20,7 +20,6 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function PayrollPage() {
   const qc = useQueryClient();
-  const { can } = usePermissions();
   const [selected, setSelected] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [periodId, setPeriodId] = useState('');
@@ -151,6 +150,7 @@ function RunHistory({ runs, onOpen }: { runs: any[]; onOpen: (id: string) => voi
 }
 
 function RunDetail({ id, onBack, onErr, qc }: { id: string; onBack: () => void; onErr: (e: any) => void; qc: any }) {
+  const { can } = usePermissions();
   const { data: run, refetch } = useQuery<any>({ queryKey: ['pay-run', id], queryFn: () => getPayRun(id).then(r => r.data) });
   const { data: inputs = [], refetch: refetchInputs } = useQuery<any[]>({ queryKey: ['pay-run-inputs', id], queryFn: () => listRunInputs(id).then(r => r.data) });
   const invalidate = () => { refetch(); refetchInputs(); qc.invalidateQueries({ queryKey: ['pay-runs'] }); };
