@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getBoms, createBom, updateBom, getWorkOrders, createWorkOrder,
+  getBoms, createBom, updateBom, getWorkOrders, getWorkOrder, createWorkOrder,
   startWorkOrder, completeWorkOrder, cancelWorkOrder, getInventory, getProducts, getWarehouses,
   type Bom, type WorkOrder, type Warehouse,
 } from '../../api/client';
@@ -256,23 +256,32 @@ function WorkOrderModal({ boms, onClose, onDone }: { boms: Bom[]; onClose: () =>
 }
 
 function ViewWorkOrderModal({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
+  // The list endpoint omits consumptions; fetch the full work order so the
+  // "Components consumed" table is populated. No initialData — the global
+  // 30s staleTime would otherwise treat the list row as fresh and skip the
+  // fetch. Falls back to the list row while loading.
+  const { data: full } = useQuery<WorkOrder>({
+    queryKey: ['work-order', wo.id],
+    queryFn: () => getWorkOrder(wo.id).then((r) => r.data),
+  });
+  const w = full ?? wo;
   return (
-    <Modal open={true} onClose={onClose} title={`${wo.number} — ${wo.product_name ?? wo.output_sku ?? 'work order'}`}
-      subtitle={`${wo.status.replace('_', ' ')} · producing ${num(wo.quantity)} unit${num(wo.quantity) === 1 ? '' : 's'}`} size="lg">
+    <Modal open={true} onClose={onClose} title={`${w.number} — ${w.product_name ?? w.output_sku ?? 'work order'}`}
+      subtitle={`${w.status.replace('_', ' ')} · producing ${num(w.quantity)} unit${num(w.quantity) === 1 ? '' : 's'}`} size="lg">
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3 text-center">
-          <div className="card p-3"><p className="text-xs text-gray-500">Material</p><p className="text-lg font-semibold tabular-nums">{money(wo.material_cost)}</p></div>
-          <div className="card p-3"><p className="text-xs text-gray-500">Overhead</p><p className="text-lg font-semibold tabular-nums">{money(wo.overhead_cost)}</p></div>
-          <div className="card p-3"><p className="text-xs text-gray-500">Total / unit</p><p className="text-lg font-semibold tabular-nums">{money(wo.total_cost)} <span className="text-xs text-gray-400">/ {money(wo.output_unit_cost)}</span></p></div>
+          <div className="card p-3"><p className="text-xs text-gray-500">Material</p><p className="text-lg font-semibold tabular-nums">{money(w.material_cost)}</p></div>
+          <div className="card p-3"><p className="text-xs text-gray-500">Overhead</p><p className="text-lg font-semibold tabular-nums">{money(w.overhead_cost)}</p></div>
+          <div className="card p-3"><p className="text-xs text-gray-500">Total / unit</p><p className="text-lg font-semibold tabular-nums">{money(w.total_cost)} <span className="text-xs text-gray-400">/ {money(w.output_unit_cost)}</span></p></div>
         </div>
         <div>
           <p className="label mb-1">Components consumed</p>
-          {wo.consumptions.length === 0 ? <p className="text-sm text-gray-400 py-3 text-center">Not started — components are issued when you Start the order.</p> : (
+          {w.consumptions.length === 0 ? <p className="text-sm text-gray-400 py-3 text-center">Not started — components are issued when you Start the order.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="text-xs text-gray-500 uppercase border-b"><th className="text-left py-1.5">Component</th><th className="text-right">Qty</th><th className="text-right">Unit cost</th><th className="text-right">Total</th></tr></thead>
                 <tbody>
-                  {wo.consumptions.map((c) => (
+                  {w.consumptions.map((c) => (
                     <tr key={c.id} className="border-b border-gray-50">
                       <td className="py-1.5 font-mono text-xs">{c.component_item_id.slice(0, 8)}</td>
                       <td className="text-right tabular-nums">{num(c.quantity)}</td>

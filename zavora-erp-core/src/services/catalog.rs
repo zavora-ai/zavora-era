@@ -194,6 +194,12 @@ async fn post_opening_stock(
     .execute(&mut *tx)
     .await?;
 
+    // Mirror opening stock into the default warehouse so the per-warehouse
+    // ledger stays consistent (SUM(warehouse_stock) == on_hand). Without this,
+    // an item created with opening stock had on_hand > 0 but zero warehouse
+    // stock, and a later issue (sale/production) drove warehouse_stock negative.
+    crate::services::warehousing::apply_stock_delta_tx(&mut tx, entity_id, item_id, None, quantity).await?;
+
     sqlx::query(
         r#"INSERT INTO stock_movements (id, entity_id, item_id, movement_type, date, quantity, unit_cost, total_cost, notes, created_by, created_at)
            VALUES ($1, $2, $3, 'adjustment', $4, $5, $6, $7, 'Opening stock', $8, $9)"#,

@@ -8,6 +8,44 @@ For what is **not** yet built, see [`REMAINING.md`](REMAINING.md).
 
 ## [Unreleased]
 
+### 2026-07-11 — Manufacturing v1 (BOM + Work Orders)
+
+Light manufacturing on top of the existing inventory (WAC) + warehousing +
+journal engine — for SMEs that assemble/produce goods. Non-breaking (additive).
+
+#### Added
+- **Bills of materials** (`migrations/061_manufacturing.sql`, `boms`/`bom_lines`):
+  a recipe of component items (+ optional labour/overhead per batch) for a
+  finished-good product.
+- **Work orders** (`work_orders`/`work_order_consumptions`) with a two-step
+  lifecycle: **start** issues the scaled components into Work in Progress
+  (`DR 1510 WIP / CR component inventory` at WAC), **complete** receives the
+  finished goods out of WIP at their rolled-up unit cost
+  (`DR finished-good inventory / CR 1510 WIP / CR 6300 Manufacturing Overhead`).
+  WIP nets to zero on completion.
+- New **1510 Work in Progress** account (COA template + backfill); `PostingSetup`
+  gains `work_in_progress` (1510) + `manufacturing_overhead` (6300), both
+  `#[serde(default)]` so existing settings need no migration.
+- `services/manufacturing.rs`; API `/boms` (+`/{id}`) and `/work-orders`
+  (+`/{id}`, `/start`, `/complete`, `/cancel`); a **Manufacturing** UI page
+  (Work Orders + BOM editor with a per-order cost breakdown).
+- Reuses `inventory::{issue,receive}_inventory_in_tx`, so the warehouse ledger
+  stays consistent and WAC is recomputed correctly.
+
+#### Fixed
+- **Opening stock now populates `warehouse_stock`** (`services/catalog.rs`):
+  a product created with opening stock booked `on_hand` but never the
+  per-warehouse ledger, so a later issue (sale/production) drove
+  `warehouse_stock` negative. Opening stock now lands in the default warehouse,
+  and `migrations/062_reconcile_warehouse_stock.sql` backfills any item where
+  `SUM(warehouse_stock) != on_hand` so the invariant holds again.
+
+Verified: `cargo test --workspace` 182 passed; `npm run build` (tsc -b) clean;
+live E2E — produced 10 units (material 2,160 + overhead 2,000 = 4,160, unit 416);
+WIP (1510) net = 0, the JE balances (DR 6,320 = CR 6,320), components decremented,
+finished goods received, and DB-wide `on_hand == SUM(warehouse_stock)` (0
+mismatches); browser page + cost/consumptions detail confirmed.
+
 ### 2026-07-10 — Amos user-scoped MCP auth (P0: ledger actor = the human)
 
 Closes the §7.1 P0. Amos tool calls previously hit the ERP as the shared
