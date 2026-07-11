@@ -17,6 +17,7 @@ import Modal from '../../components/shared/Modal';
 import { Plus, AlertCircle, FileMinus } from 'lucide-react';
 
 export default function SupplierCreditNotesPage() {
+  const { can } = usePermissions();
   const [showCreate, setShowCreate] = useState(false);
   const { data: notes = [], isLoading } = useQuery<SupplierCreditNote[]>({
     queryKey: ['supplier-credit-notes'],
@@ -68,7 +69,6 @@ interface LineForm {
 
 function CreateModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { can } = usePermissions();
   const { data: vendors = [] } = useQuery<Vendor[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then(r => Array.isArray(r.data) ? r.data : []) });
   const { data: bills = [] } = useQuery<Bill[]>({ queryKey: ['bills', 'all'], queryFn: () => getBills({ limit: 500 }).then(r => r.data.data ?? r.data) });
   const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: () => getAccounts().then(r => Array.isArray(r.data) ? r.data : []) });

@@ -11,6 +11,7 @@ import { Plus } from 'lucide-react';
 interface DebitNote { id: string; number: string; vendor_id: string; reason?: string; currency: string; gross_total: string; status: string; debit_note_date: string; }
 
 export default function DebitNotesPage() {
+  const { can } = usePermissions();
   const [showCreate, setShowCreate] = useState(false);
   const { data: notes = [], isLoading } = useQuery<DebitNote[]>({ queryKey: ['debit-notes'], queryFn: () => getDebitNotes().then((r) => (Array.isArray(r.data) ? r.data : [])) });
   const { data: vendors = [] } = useQuery<any[]>({ queryKey: ['vendors'], queryFn: () => getVendors().then((r) => (Array.isArray(r.data) ? r.data : [])) });
@@ -37,7 +38,6 @@ export default function DebitNotesPage() {
 
 function CreateDNModal({ vendors, onClose }: { vendors: any[]; onClose: () => void }) {
   const qc = useQueryClient();
-  const { can } = usePermissions();
   const [vendorId, setVendorId] = useState('');
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState([{ description: '', quantity: 1, unit_price: 0, account_code: '' }]);
