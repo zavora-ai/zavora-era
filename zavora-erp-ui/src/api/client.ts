@@ -418,6 +418,30 @@ export const transferStock = (data: { item_id: string; from_warehouse_id: string
 export const getWarehouseStock = (warehouseId: string) => api.get(`/warehouses/${warehouseId}/stock`);
 export const getItemWarehouseStock = (itemId: string) => api.get(`/inventory/${itemId}/warehouse-stock`);
 
+// ── Manufacturing (BOM + Work Orders) ─────────────────────────────────────────
+export interface BomLine { id: string; component_item_id: string; quantity: string; notes?: string; component_sku?: string; component_description?: string; unit_cost: string }
+export interface Bom { id: string; product_id: string; output_item_id: string; output_quantity: string; overhead_cost: string; notes?: string; is_active: boolean; product_name?: string; lines: BomLine[] }
+export interface WorkOrderConsumption { id: string; component_item_id: string; quantity: string; unit_cost: string; total_cost: string }
+export interface WorkOrder {
+  id: string; number: string; bom_id: string; output_item_id: string; quantity: string; status: string;
+  source_warehouse_id?: string; dest_warehouse_id?: string;
+  material_cost: string; overhead_cost: string; total_cost: string; output_unit_cost: string;
+  notes?: string; product_name?: string; output_sku?: string; consumptions: WorkOrderConsumption[];
+}
+export interface CreateBomInput { product_id: string; output_quantity: number; overhead_cost: number; notes?: string; lines: { component_item_id: string; quantity: number; notes?: string }[] }
+
+export const getBoms = () => api.get<Bom[]>('/boms');
+export const getBom = (id: string) => api.get<Bom>(`/boms/${id}`);
+export const createBom = (data: CreateBomInput) => api.post<{ id: string }>('/boms', data);
+export const updateBom = (id: string, data: CreateBomInput) => api.put(`/boms/${id}`, data);
+export const getWorkOrders = () => api.get<WorkOrder[]>('/work-orders');
+export const getWorkOrder = (id: string) => api.get<WorkOrder>(`/work-orders/${id}`);
+export const createWorkOrder = (data: { bom_id: string; quantity: number; source_warehouse_id?: string; dest_warehouse_id?: string; overhead_cost?: number; notes?: string }) =>
+  api.post<{ id: string }>('/work-orders', data);
+export const startWorkOrder = (id: string) => api.post<WorkOrder>(`/work-orders/${id}/start`, {});
+export const completeWorkOrder = (id: string) => api.post<WorkOrder>(`/work-orders/${id}/complete`, {});
+export const cancelWorkOrder = (id: string) => api.post(`/work-orders/${id}/cancel`, {});
+
 // ── Point of Sale ────────────────────────────────────────────────────────────
 export const getPosSession = () => api.get('/pos/session');
 export const getPosSessions = () => api.get('/pos/sessions');

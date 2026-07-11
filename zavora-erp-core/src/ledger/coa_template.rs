@@ -32,6 +32,7 @@ pub fn kenya_standard_coa() -> Vec<CreateAccountRequest> {
         acct("1310", "WHT Receivable", AccountType::Asset, None, false),
         acct("1400", "Prepaid Expenses", AccountType::Asset, None, false),
         acct("1500", "Inventory", AccountType::Asset, None, false),
+        acct("1510", "Work in Progress", AccountType::Asset, None, false),
         acct("1600", "Other Current Assets", AccountType::Asset, None, false),
         // Called-up share capital subscribed but not yet paid by the shareholder.
         acct("1610", "Unpaid Share Capital", AccountType::Asset, None, false),

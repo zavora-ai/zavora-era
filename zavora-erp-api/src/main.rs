@@ -530,6 +530,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/warehouses/{id}", axum::routing::put(routes::warehouses::update))
         .route("/api/v1/warehouses/{id}/stock", get(routes::warehouses::stock_in_warehouse))
         .route("/api/v1/inventory/{item_id}/warehouse-stock", get(routes::warehouses::item_stock))
+        .route("/api/v1/boms", get(routes::manufacturing::list_boms).post(routes::manufacturing::create_bom))
+        .route("/api/v1/boms/{id}", get(routes::manufacturing::get_bom).put(routes::manufacturing::update_bom))
+        .route("/api/v1/work-orders", get(routes::manufacturing::list_work_orders).post(routes::manufacturing::create_work_order))
+        .route("/api/v1/work-orders/{id}", get(routes::manufacturing::get_work_order))
+        .route("/api/v1/work-orders/{id}/start", post(routes::manufacturing::start_work_order))
+        .route("/api/v1/work-orders/{id}/complete", post(routes::manufacturing::complete_work_order))
+        .route("/api/v1/work-orders/{id}/cancel", post(routes::manufacturing::cancel_work_order))
         // Assets
         .route("/api/v1/assets", get(routes::assets::list).post(routes::assets::create))
         .route("/api/v1/assets/depreciation/run", post(routes::assets::run_depreciation))
