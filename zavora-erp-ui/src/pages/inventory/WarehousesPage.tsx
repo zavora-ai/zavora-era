@@ -12,7 +12,6 @@ import { Plus, Warehouse as WarehouseIcon, Truck, ArrowRightLeft } from 'lucide-
 
 export default function WarehousesPage() {
   const qc = useQueryClient();
-  const toast = useToast();
   const { data: whRes } = useQuery({ queryKey: ['warehouses'], queryFn: () => getWarehouses().then((r) => r.data) });
   const warehouses: Warehouse[] = whRes ?? [];
   const { data: items = [] } = useQuery<InventoryItem[]>({ queryKey: ['inventory'], queryFn: () => getInventory().then((r) => Array.isArray(r.data) ? r.data : []) });
