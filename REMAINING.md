@@ -93,7 +93,7 @@ These were incorrectly still open in older backlog files; verified present:
 | **Intercompany + group consolidation** — both-sided IC charge, IC control accounts, consolidation with IC elimination, group-management UI | `services/intercompany.rs`, `services/consolidation.rs`, `routes/consolidation.rs`, migration `059_intercompany.sql`, PR #90 |
 | **Optional multi-warehouse + 3PL** — warehouses (own/3PL), per-warehouse stock, transfers; non-breaking hooks keep `SUM(warehouse_stock)=on_hand` | `services/warehousing.rs`, `routes/warehouses.rs`, migration `060_warehousing.sql`, `WarehousesPage.tsx`, PR #92 |
 | **Backup/restore runbook + migration safety** | `docs/BACKUP_RUNBOOK.md`, PR #93 |
-| **Manufacturing v1 (BOM + work orders)** — recipe of components (+ labour/overhead), two-step work order (issue→WIP, complete→finished goods) with WAC costing; WIP (1510) nets to zero; reuses inventory + warehousing + journal engine | `services/manufacturing.rs`, `routes/manufacturing.rs`, migration `061_manufacturing.sql`, `ManufacturingPage.tsx` |
+| **Manufacturing v1 (BOM + work orders)** — recipe of components (+ labour/overhead), two-step work order (issue→WIP, complete→finished goods) with WAC costing; WIP (1510) nets to zero; reuses inventory + warehousing + journal engine. **v2 backlog:** [`docs/MANUFACTURING_ROADMAP.md`](docs/MANUFACTURING_ROADMAP.md) (routing/work-centres, capacity, MRP, scrap/yield variance, multi-level BOM, subcontracting, FIFO) | `services/manufacturing.rs`, `routes/manufacturing.rs`, migration `061_manufacturing.sql`, `ManufacturingPage.tsx` |
 
 ---
 

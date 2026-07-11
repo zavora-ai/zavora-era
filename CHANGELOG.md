@@ -46,6 +46,10 @@ WIP (1510) net = 0, the JE balances (DR 6,320 = CR 6,320), components decremente
 finished goods received, and DB-wide `on_hand == SUM(warehouse_stock)` (0
 mismatches); browser page + cost/consumptions detail confirmed.
 
+Deferred capabilities (routing/work-centres, capacity/scheduling, MRP,
+scrap/yield variance, multi-level BOM explosion, subcontracting, per-warehouse
+costing/FIFO) are scoped in [`docs/MANUFACTURING_ROADMAP.md`](docs/MANUFACTURING_ROADMAP.md).
+
 ### 2026-07-10 — Amos user-scoped MCP auth (P0: ledger actor = the human)
 
 Closes the §7.1 P0. Amos tool calls previously hit the ERP as the shared
