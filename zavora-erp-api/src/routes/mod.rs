@@ -60,6 +60,7 @@ pub mod platform;
 pub mod public_invoice;
 pub mod warehouses;
 pub mod manufacturing;
+pub mod projects;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use zavora_erp_core::ErpError;

@@ -52,3 +52,4 @@ pub mod intercompany;
 pub mod consolidation;
 pub mod warehousing;
 pub mod manufacturing;
+pub mod projects;

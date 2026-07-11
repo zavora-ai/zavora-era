@@ -262,6 +262,8 @@ const RESOURCES: &[Resource] = &[
     Resource { key: "custom_report", category: "Reports", label: "Custom Reports", verbs: &["read","create","delete"] },
     Resource { key: "report_schedule", category: "Reports", label: "Report Schedules", verbs: &["read","create","delete"] },
     Resource { key: "consolidation", category: "Reports", label: "Consolidation", verbs: &["read"] },
+    // Projects (job/project accounting)
+    Resource { key: "project", category: "Projects", label: "Projects", verbs: &["read","manage"] },
     // Payroll & HR (sensitive)
     Resource { key: "employee", category: "HR", label: "Employees", verbs: &["read","create","update"] },
     Resource { key: "pay_run", category: "HR", label: "Pay Runs", verbs: &["read","create","approve","post","pay","delete"] },

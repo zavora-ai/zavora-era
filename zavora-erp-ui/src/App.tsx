@@ -83,6 +83,8 @@ import UsersPage from './pages/settings/UsersPage';
 import InventoryPage from './pages/inventory/InventoryPage';
 import WarehousesPage from './pages/inventory/WarehousesPage';
 import ManufacturingPage from './pages/inventory/ManufacturingPage';
+import ProjectsPage from './pages/projects/ProjectsPage';
+import ProjectDetailPage from './pages/projects/ProjectDetailPage';
 import PosSellPage from './pages/pos/PosSellPage';
 import PosSessionsPage from './pages/pos/PosSessionsPage';
 import MobileStockPage from './pages/pos/MobileStockPage';
@@ -239,6 +241,8 @@ export default function App() {
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="warehouses" element={<WarehousesPage />} />
             <Route path="manufacturing" element={<ManufacturingPage />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route path="pos" element={<PosSellPage />} />
             <Route path="pos/sessions" element={<PosSessionsPage />} />
             <Route path="pos/stock" element={<MobileStockPage />} />
