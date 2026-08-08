@@ -252,8 +252,8 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 /// work-as-of date) carried on the handshake frame.
 struct Handshake {
     principal: crate::auth::Principal,
-    /// The verified access token itself — threaded into ERP tool calls so the
-    /// ledger actor is the human. `None` only in the dev/unauth path.
+    /// The verified access token itself. It is written to a private per-session
+    /// file and never passed through MCP arguments. `None` only in dev/unauth.
     token: Option<String>,
     timezone: Option<String>,
     work_date: Option<String>,
@@ -323,8 +323,8 @@ where
         }
         _ => return Err(Refusal::new("no_auth", "Sign in to the ERP to use Amos.")),
     };
-    // The verified access token rides into the session so ERP tool calls carry
-    // it as `__user_token` (dev/unauth path has no token → service account).
+    // The verified access token is stored in a private per-session file. The
+    // dev/unauth path has no token, so delegated ERP calls fail closed.
     Ok(Handshake { principal, token: session_token, timezone, work_date, plan })
 }
 
@@ -401,11 +401,18 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // Per-session panel state: this conversation's workplan, evidence feed and
     // active skill. Never shared across sessions — two people (or two tabs)
     // each see only their own plan and evidence.
-    let session = Arc::new(SessionState::new());
-    // Seed the session's ERP bearer so tool calls act as this user.
-    if let Some(tok) = handshake_token {
-        session.set_user_token(tok).await;
-    }
+    let session = match handshake_token.as_deref() {
+        Some(token) => SessionState::with_token(token),
+        None => Ok(SessionState::new()),
+    };
+    let session = match session {
+        Ok(session) => Arc::new(session),
+        Err(error) => {
+            error!("Failed to create delegated ERP credential: {error}");
+            let _ = ws_sender.send(ws::Message::Text(send_error("Failed to initialize secure ERP access".into()).into())).await;
+            return;
+        }
+    };
 
     // Fresh runner per browser session, scoped to this principal.
     let runner = match agent::build_runner(&state, &session, principal.clone(), attachments.clone(), clock.clone(), entitlements).await {
@@ -471,6 +478,7 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
     // Verifier clone so a mid-session `context` frame can validate a refreshed
     // access token against the served entity before adopting it as the bearer.
     let verifier = state.verifier.clone();
+    let refresh_principal = principal.clone();
     let voice_enabled = entitlements.voice;
     let send_handle = tokio::spawn(async move {
         let mut voice_upsold = false;
@@ -546,15 +554,21 @@ async fn handle_ws(socket: ws::WebSocket, state: Arc<AppState>) {
                                 let updated = crate::clock::SessionClock::from_handshake(tz, wd);
                                 info!("🕑 context update: tz {} · posting date {}", updated.tz.name(), updated.effective_posting_date());
                                 *clock_ingest.write().await = updated;
-                                // A refreshed access token (the embedded shell
-                                // pushes a new one before the old ~15-min token
-                                // expires) keeps mid-session ERP writes acting
-                                // as the user. Verify it against the served
-                                // entity before adopting it.
+                                // Accept a refreshed token only for the exact
+                                // same user, tenant, and role. A role change
+                                // requires reconnecting so scopes are rebuilt.
                                 if let Some(tok) = msg.get("token").and_then(|v| v.as_str()) {
-                                    if !tok.trim().is_empty() && verifier.verify(tok).is_ok() {
-                                        session_confirm.set_user_token(tok.to_string()).await;
-                                        info!("🔑 session ERP token refreshed");
+                                    match verifier.verify(tok) {
+                                        Ok(candidate) if candidate.user_id == refresh_principal.user_id
+                                            && candidate.entity_id == refresh_principal.entity_id
+                                            && candidate.role == refresh_principal.role => {
+                                            match session_confirm.refresh_token(tok) {
+                                                Ok(()) => info!("🔑 session ERP token refreshed"),
+                                                Err(error) => warn!("session ERP token refresh failed: {error}"),
+                                            }
+                                        }
+                                        Ok(_) => warn!("rejected ERP token refresh for a different principal or role"),
+                                        Err(error) => warn!("rejected invalid ERP token refresh: {error}"),
                                     }
                                 }
                             }

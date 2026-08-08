@@ -4,9 +4,7 @@
       "command": "${AMOS_MCP_ERP_BIN}",
       "args": [],
       "env": {
-        "ZAVORA_API_URL": "${ZAVORA_API_URL}",
-        "ZAVORA_EMAIL": "${ZAVORA_EMAIL}",
-        "ZAVORA_PASSWORD": "${ZAVORA_PASSWORD}"
+        "ZAVORA_API_URL": "${ZAVORA_API_URL}"
       }
     },
     "browser": {

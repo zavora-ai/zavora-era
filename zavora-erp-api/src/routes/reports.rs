@@ -9,7 +9,7 @@ use zavora_erp_core::reporting::*;
 /// Payroll/salary report types are gated behind `payroll.read` (they expose pay
 /// and statutory figures). All other report types are readable by any
 /// authenticated user.
-fn is_payroll_report(rt: &ReportType) -> bool {
+pub(crate) fn is_payroll_report(rt: &ReportType) -> bool {
     matches!(
         rt,
         ReportType::PayrollSummary

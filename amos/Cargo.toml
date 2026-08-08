@@ -2,6 +2,7 @@
 name = "amos"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 publish = false
 description = "Amos AI — your personal AI accountant for Zavora ERA (realtime voice + chat agent)"
 

@@ -33,6 +33,14 @@ the real ledger, drives a headed browser through the ERP to **showcase**
 results, and files screenshot **evidence cards**. Postings always require
 explicit confirmation.
 
+Interactive ERP tools are bound to the verified WebSocket user end to end:
+Amos passes no bearer token through MCP, mcp-erp has no interactive service
+credential or fallback, and the API derives tenant and ledger actor from the
+verified JWT. Unattended routines run through a separate ERP-only service
+process. The `/agent/report` and `/agent/post` endpoints overwrite client
+tenant/actor fields with authenticated claims and apply granular permissions.
+See [Amos security and tenant isolation](docs/AMOS.md#5b-security--tenant-isolation).
+
 Amos also works **while you're away**: scheduled routines (morning cash
 briefing, daily eTIMS compliance sweep, Monday AR chase, VAT/PAYE prep on the
 KRA calendar, a month-end close pack) run as scoped, audited sub-agents and
@@ -57,7 +65,7 @@ Note: `amos` is intentionally **not** a workspace member (it path-depends on
 
 ## Prerequisites
 
-- Rust 1.75+
+- Rust 1.95+ (Amos/ADK-Rust; the ERP MCP server has an MSRV of 1.94.1)
 - PostgreSQL 15+
 - Redis 7+
 - Node 18+ (for the web UI)

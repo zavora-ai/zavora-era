@@ -151,8 +151,14 @@ impl ErpEngine {
         &self,
         req: PostingRequest,
     ) -> ErpResult<AgentPostingResult> {
+        self.post_from_agent_for(self.entity_id(), req).await
+    }
+
+    /// Tenant-bound agent posting. The entity comes from verified request
+    /// context; callers must never infer it from tool arguments.
+    pub async fn post_from_agent_for(&self, entity_id: Uuid, req: PostingRequest) -> ErpResult<AgentPostingResult> {
         // 1. Validate the entry
-        let validation = self.validate_entry(&req.entry).await?;
+        let validation = crate::services::journal::validate_entry(self, entity_id, &req.entry).await?;
         if !validation.is_valid {
             return Err(ErpError::ValidationFailed {
                 message: validation.errors.join("; "),
@@ -160,7 +166,7 @@ impl ErpEngine {
         }
 
         // 2. Resolve period
-        let period = self.resolve_period(req.entry.date).await?;
+        let period = self.resolve_period_for(entity_id, req.entry.date).await?;
         if !period.allows_posting() {
             return Err(ErpError::PeriodClosed {
                 period_id: period.id,
@@ -169,7 +175,7 @@ impl ErpEngine {
         }
 
         // 3. Create journal entry
-        let entry = self.create_and_post_entry(req.entry, period.id, req.posted_by).await?;
+        let entry = crate::services::journal::create_and_post(self, entity_id, req.entry, period.id, req.posted_by).await?;
 
         // 4. Generate summary
         let summary = format!(
@@ -215,14 +221,11 @@ impl ErpEngine {
 
     // === Internal helpers ===
 
-    async fn resolve_period(
-        &self,
-        date: chrono::NaiveDate,
-    ) -> ErpResult<FiscalPeriod> {
+    async fn resolve_period_for(&self, entity_id: Uuid, date: chrono::NaiveDate) -> ErpResult<FiscalPeriod> {
         let period = sqlx::query_as::<_, FiscalPeriod>(
             "SELECT * FROM fiscal_periods WHERE entity_id = $1 AND start_date <= $2 AND end_date >= $2",
         )
-        .bind(self.config.entity_id)
+        .bind(entity_id)
         .bind(date)
         .fetch_optional(&self.pool)
         .await?
@@ -232,14 +235,6 @@ impl ErpEngine {
         Ok(period)
     }
 
-    async fn create_and_post_entry(
-        &self,
-        req: CreateJournalEntryRequest,
-        period_id: Uuid,
-        posted_by: AgentOrUserId,
-    ) -> ErpResult<JournalEntry> {
-        crate::services::journal::create_and_post(self, self.entity_id(), req, period_id, posted_by).await
-    }
 }
 
 /// A request-scoped handle that binds an [`ErpEngine`] to a single tenant's

@@ -13,8 +13,8 @@ ARG MCP_ERP_REF=main
 ARG PLAYWRIGHT_MCP_VERSION=0.0.77
 
 # ── Stage 1: build amos + mcp-erp ────────────────────────────────────────────
-# adk-rust pins rustc 1.94 (rust-toolchain.toml).
-FROM rust:1.94-slim-bookworm AS builder
+# Current ADK-Rust requires rustc 1.95.
+FROM rust:1.95-slim-bookworm AS builder
 ARG ADK_RUST_REF
 ARG MCP_ERP_REF
 WORKDIR /build

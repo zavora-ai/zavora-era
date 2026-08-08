@@ -127,29 +127,27 @@ impl ScopedTool {
         }
     }
 
-    /// Inject the session user's access token into an ERP tool's arguments so
-    /// mcp-erp uses it as the request bearer (making the human the ledger
-    /// actor). Only ERP tools take it — `browser_*` tools don't, and would
-    /// reject an unknown arg. ScopedTool wraps only ERP + browser MCP tools, so
-    /// "not a browser tool" == "an ERP tool". Ambient routines pass
-    /// `session: None` and so run as the service account, by design.
-    async fn with_user_token(&self, mut args: serde_json::Value) -> serde_json::Value {
+    /// Inject an opaque reference to this session's private bearer file. The
+    /// JWT never enters MCP arguments; mcp-erp reads it only for this call.
+    fn with_credential_file(&self, mut args: serde_json::Value) -> serde_json::Value {
         if self.inner.name().starts_with("browser_") {
             return args;
         }
         let Some(session) = &self.session else { return args };
-        let Some(token) = session.user_token().await else { return args };
+        let Some(path) = session.credential_file() else { return args };
+        if !args.is_object() {
+            args = serde_json::json!({});
+        }
         if let Some(obj) = args.as_object_mut() {
-            obj.insert(USER_TOKEN_ARG.to_string(), serde_json::Value::String(token));
+            obj.insert(CREDENTIAL_FILE_ARG.to_string(), serde_json::Value::String(path.to_string_lossy().into_owned()));
         }
         args
     }
 }
 
-/// The argument name that carries the session user's access token to mcp-erp.
-/// Must match `mcp-erp`'s `server::USER_TOKEN_ARG`; mcp-erp strips it before
-/// the typed tool input deserializes.
-const USER_TOKEN_ARG: &str = "__user_token";
+/// Must match `mcp-erp::auth::CREDENTIAL_FILE_ARG`. It is absent from every
+/// tool schema and overwritten after model generation.
+const CREDENTIAL_FILE_ARG: &str = "__credential_file";
 
 #[async_trait]
 impl Tool for ScopedTool {
@@ -177,12 +175,10 @@ impl Tool for ScopedTool {
                     }
                 }
                 self.record(self.inner.name(), AuditOutcome::Allowed).await;
-                // User-scoped ERP auth: thread the session user's access token
-                // to mcp-erp (as `__user_token`) so the ledger actor is the
-                // human, not the service account. Injected AFTER the confirm
-                // preview so the token never appears on the approval card, and
-                // it is not in any tool's schema so the model never sets it.
-                let args = self.with_user_token(args).await;
+                // Caller-bound ERP auth: inject only the private credential
+                // file reference after the confirmation preview. The model
+                // cannot set it and the bearer never traverses MCP.
+                let args = self.with_credential_file(args);
                 self.inner.execute(ctx, args).await
             }
             Err(denied) => {
@@ -234,34 +230,41 @@ mod inject_tests {
     }
 
     #[tokio::test]
-    async fn injects_token_for_erp_tool() {
-        let session = Arc::new(SessionState::new());
-        session.set_user_token("jwt-xyz".into()).await;
-        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert_eq!(out["__user_token"], "jwt-xyz", "ERP tool gets the user token");
+    async fn injects_opaque_credential_file_for_erp_tool() {
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out = scoped("post_bill", Some(session)).with_credential_file(serde_json::json!({"id": "b1"}));
+        let path = out["__credential_file"].as_str().unwrap();
+        assert!(path.ends_with(".jwt"));
+        assert_ne!(path, "aaa.bbb.ccc", "the JWT must not enter MCP arguments");
         assert_eq!(out["id"], "b1", "existing args preserved");
     }
 
     #[tokio::test]
+    async fn injects_credential_for_no_argument_erp_tool() {
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out = scoped("get_dashboard", Some(session)).with_credential_file(serde_json::Value::Null);
+        assert!(out["__credential_file"].as_str().is_some());
+    }
+
+    #[tokio::test]
     async fn no_token_for_browser_tool() {
-        let session = Arc::new(SessionState::new());
-        session.set_user_token("jwt-xyz".into()).await;
-        let out = scoped("browser_click", Some(session)).with_user_token(serde_json::json!({"ref": "e1"})).await;
-        assert!(out.get("__user_token").is_none(), "browser tools must not get the token");
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out = scoped("browser_click", Some(session)).with_credential_file(serde_json::json!({"ref": "e1"}));
+        assert!(out.get("__credential_file").is_none(), "browser tools must not get credentials");
     }
 
     #[tokio::test]
     async fn no_token_when_session_absent() {
         // Ambient routines pass session: None → service account, by design.
-        let out = scoped("post_bill", None).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert!(out.get("__user_token").is_none());
+        let out = scoped("post_bill", None).with_credential_file(serde_json::json!({"id": "b1"}));
+        assert!(out.get("__credential_file").is_none());
     }
 
     #[tokio::test]
     async fn no_token_when_session_has_none() {
-        let session = Arc::new(SessionState::new()); // token never set
-        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert!(out.get("__user_token").is_none());
+        let session = Arc::new(SessionState::new());
+        let out = scoped("post_bill", Some(session)).with_credential_file(serde_json::json!({"id": "b1"}));
+        assert!(out.get("__credential_file").is_none());
     }
 }
 

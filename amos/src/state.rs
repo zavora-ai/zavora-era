@@ -83,13 +83,10 @@ pub struct SessionState {
     pub showcase: RwLock<Vec<ShowcaseStep>>,
     /// Write-confirmation gate for this session's posting tools.
     pub confirmations: Confirmations,
-    /// The session user's current ERP access token. Injected into every ERP
-    /// tool call (as `__user_token`) so mcp-erp acts AS the human, not the
-    /// service account — the ledger actor is the person who approved the write.
-    /// Set at the WS handshake and refreshed over the `context` frame (access
-    /// tokens live ~15 min); `None` (e.g. dev/unauth) ⇒ service-account
-    /// fallback in mcp-erp.
-    pub user_token: RwLock<Option<String>>,
+    /// Private, per-session bearer file. Only its opaque path is injected into
+    /// an ERP MCP call; the JWT itself never enters MCP arguments or model
+    /// context. `None` fails closed in the delegated MCP server.
+    pub credential: Option<crate::credential::SessionCredential>,
     /// JSON messages pushed to THIS session's UI websocket only.
     pub push: broadcast::Sender<String>,
 }
@@ -102,19 +99,25 @@ impl SessionState {
             tasks: RwLock::new(Vec::new()),
             showcase: RwLock::new(Vec::new()),
             confirmations: Confirmations::default(),
-            user_token: RwLock::new(None),
+            credential: None,
             push,
         }
     }
 
-    /// Set/refresh the session user's ERP access token.
-    pub async fn set_user_token(&self, token: String) {
-        *self.user_token.write().await = Some(token);
+    pub fn with_token(token: &str) -> Result<Self> {
+        let mut state = Self::new();
+        state.credential = Some(crate::credential::SessionCredential::create(token)?);
+        Ok(state)
     }
 
-    /// The current user access token, if any.
-    pub async fn user_token(&self) -> Option<String> {
-        self.user_token.read().await.clone()
+    pub fn refresh_token(&self, token: &str) -> Result<()> {
+        self.credential.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("session has no delegated ERP credential"))?
+            .refresh(token)
+    }
+
+    pub fn credential_file(&self) -> Option<&std::path::Path> {
+        self.credential.as_ref().map(crate::credential::SessionCredential::path)
     }
 
     /// Push a JSON message to this session's UI (ignores "no receivers").
@@ -160,6 +163,9 @@ mod tests {
 pub struct AppState {
     pub model: Arc<GeminiRealtimeModel>,
     pub manager: Arc<McpServerManager>,
+    /// ERP-only trusted manager for unattended routines. Interactive sessions
+    /// never receive tools from this authorization domain.
+    pub service_manager: Arc<McpServerManager>,
     pub erp: crate::erp::ErpClient,
     pub skills: crate::skills::SkillsCatalog,
     pub memory: crate::memory::AmosMemory,
@@ -188,6 +194,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         manager: Arc<McpServerManager>,
+        service_manager: Arc<McpServerManager>,
         memory: crate::memory::AmosMemory,
         served_entity: uuid::Uuid,
         audit: Option<std::sync::Arc<dyn adk_auth::AuditSink>>,
@@ -211,6 +218,7 @@ impl AppState {
         Ok(Self {
             model,
             manager,
+            service_manager,
             erp: crate::erp::ErpClient::from_env()?,
             skills: crate::skills::SkillsCatalog::load(),
             memory,
