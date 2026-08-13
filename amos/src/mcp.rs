@@ -3,7 +3,10 @@
 //! as `adk_core::Tool`s through `McpServerManager`.
 
 use adk_core::{Content, ReadonlyContext, Tool, Toolset};
-use adk_tool::mcp::manager::{McpServerConfig, McpServerManager};
+use adk_tool::mcp::{
+    McpTaskConfig,
+    manager::{McpLifecycleMode, McpServerConfig, McpServerManager},
+};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -77,7 +80,9 @@ pub struct AmosContext {
 
 impl AmosContext {
     pub fn new() -> Self {
-        Self { user_content: Content::new("user").with_text("amos") }
+        Self {
+            user_content: Content::new("user").with_text("amos"),
+        }
     }
 }
 
@@ -107,7 +112,10 @@ impl ReadonlyContext for AmosContext {
 
 fn erp_server_config(showcase_dir: &std::path::Path) -> HashMap<String, McpServerConfig> {
     let erp_bin = std::env::var("AMOS_MCP_ERP_BIN").unwrap_or_else(|_| {
-        format!("{}/../../mcp-servers/mcp-erp/target/release/mcp-erp", env!("CARGO_MANIFEST_DIR"))
+        format!(
+            "{}/../../mcp-servers/mcp-erp/target/release/mcp-erp",
+            env!("CARGO_MANIFEST_DIR")
+        )
     });
 
     let mut erp_env = HashMap::new();
@@ -143,6 +151,8 @@ fn erp_server_config(showcase_dir: &std::path::Path) -> HashMap<String, McpServe
                 disabled: false,
                 auto_approve: vec![],
                 restart_policy: None,
+                lifecycle: McpLifecycleMode::Discover,
+                task_config: McpTaskConfig::enabled(),
             },
         ),
         (
@@ -154,6 +164,8 @@ fn erp_server_config(showcase_dir: &std::path::Path) -> HashMap<String, McpServe
                 disabled: false,
                 auto_approve: vec![],
                 restart_policy: None,
+                lifecycle: McpLifecycleMode::Auto,
+                task_config: McpTaskConfig::default(),
             },
         ),
     ])
@@ -171,9 +183,15 @@ fn configured_servers(showcase_dir: &std::path::Path) -> Result<HashMap<String, 
     let defaults = HashMap::from([
         (
             "AMOS_MCP_ERP_BIN",
-            format!("{}/../../mcp-servers/mcp-erp/target/release/mcp-erp", env!("CARGO_MANIFEST_DIR")),
+            format!(
+                "{}/../../mcp-servers/mcp-erp/target/release/mcp-erp",
+                env!("CARGO_MANIFEST_DIR")
+            ),
         ),
-        ("AMOS_SHOWCASE_DIR", showcase_dir.to_string_lossy().into_owned()),
+        (
+            "AMOS_SHOWCASE_DIR",
+            showcase_dir.to_string_lossy().into_owned(),
+        ),
         ("ZAVORA_API_URL", "http://localhost:8080".to_string()),
         // Pin in production images so npx never re-resolves at boot.
         ("AMOS_PLAYWRIGHT_MCP_VERSION", "latest".to_string()),
@@ -185,19 +203,27 @@ fn configured_servers(showcase_dir: &std::path::Path) -> Result<HashMap<String, 
         Some(json) => {
             let value: serde_json::Value = serde_json::from_str(&json)
                 .map_err(|e| anyhow::anyhow!("invalid mcp.json: {e}"))?;
-            let servers = value.get("mcpServers").and_then(serde_json::Value::as_object)
+            let servers = value
+                .get("mcpServers")
+                .and_then(serde_json::Value::as_object)
                 .ok_or_else(|| anyhow::anyhow!("mcp.json must contain an mcpServers object"))?;
-            servers.iter().map(|(id, config)| {
-                serde_json::from_value(config.clone())
-                    .map(|config| (id.clone(), config))
-                    .map_err(|e| anyhow::anyhow!("invalid MCP server '{id}': {e}"))
-            }).collect()
+            servers
+                .iter()
+                .map(|(id, config)| {
+                    serde_json::from_value(config.clone())
+                        .map(|config| (id.clone(), config))
+                        .map_err(|e| anyhow::anyhow!("invalid MCP server '{id}': {e}"))
+                })
+                .collect()
         }
         None => Ok(erp_server_config(showcase_dir)),
     }
 }
 
-async fn start(configs: HashMap<String, McpServerConfig>, name: &str) -> Result<Arc<McpServerManager>> {
+async fn start(
+    configs: HashMap<String, McpServerConfig>,
+    name: &str,
+) -> Result<Arc<McpServerManager>> {
     let manager = McpServerManager::new(configs).with_name(name.to_string());
     for (id, result) in manager.start_all().await {
         result.map_err(|e| anyhow::anyhow!("failed to start MCP server '{id}': {e}"))?;
@@ -212,15 +238,32 @@ fn isolate_child_environment(config: &mut McpServerConfig) {
     let original_command = std::mem::take(&mut config.command);
     let original_args = std::mem::take(&mut config.args);
     let mut allowed = config.env.drain().collect::<Vec<_>>();
-    for key in ["PATH", "HOME", "USER", "TMPDIR", "RUST_LOG", "PLAYWRIGHT_BROWSERS_PATH", "NODE_EXTRA_CA_CERTS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"] {
+    for key in [
+        "PATH",
+        "HOME",
+        "USER",
+        "TMPDIR",
+        "RUST_LOG",
+        "PLAYWRIGHT_BROWSERS_PATH",
+        "NODE_EXTRA_CA_CERTS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    ] {
         if allowed.iter().all(|(present, _)| present != key) {
-            if let Ok(value) = std::env::var(key) { allowed.push((key.to_string(), value)); }
+            if let Ok(value) = std::env::var(key) {
+                allowed.push((key.to_string(), value));
+            }
         }
     }
     allowed.sort_by(|a, b| a.0.cmp(&b.0));
     config.command = "env".to_string();
     config.args = vec!["-i".to_string()];
-    config.args.extend(allowed.into_iter().map(|(key, value)| format!("{key}={value}")));
+    config.args.extend(
+        allowed
+            .into_iter()
+            .map(|(key, value)| format!("{key}={value}")),
+    );
     config.args.push(original_command);
     config.args.extend(original_args);
 }
@@ -230,29 +273,56 @@ fn isolate_child_environment(config: &mut McpServerConfig) {
 /// fallback impossible on a user-driven call.
 pub async fn start_managers(showcase_dir: &std::path::Path) -> Result<McpManagers> {
     let base = configured_servers(showcase_dir)?;
-    let base_erp = base.get("erp").cloned()
+    let base_erp = base
+        .get("erp")
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("mcp.json must configure an 'erp' server"))?;
 
     let mut interactive = base;
     let interactive_erp = interactive.get_mut("erp").expect("checked above");
-    interactive_erp.env.insert("MCP_ERP_AUTH_MODE".into(), "delegated".into());
-    interactive_erp.env.insert("MCP_ERP_CREDENTIAL_DIR".into(), crate::credential::root()?.to_string_lossy().into_owned());
+    interactive_erp
+        .env
+        .entry("MCP_ERP_REQUEST_STATE_KEY".into())
+        .or_insert_with(|| format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4()));
+    interactive_erp
+        .env
+        .insert("MCP_ERP_AUTH_MODE".into(), "delegated".into());
+    interactive_erp.env.insert(
+        "MCP_ERP_CREDENTIAL_DIR".into(),
+        crate::credential::root()?.to_string_lossy().into_owned(),
+    );
     interactive_erp.env.remove("ZAVORA_EMAIL");
     interactive_erp.env.remove("ZAVORA_PASSWORD");
-    for config in interactive.values_mut() { isolate_child_environment(config); }
+    for config in interactive.values_mut() {
+        isolate_child_environment(config);
+    }
 
     let mut service_erp = base_erp;
+    service_erp
+        .env
+        .entry("MCP_ERP_REQUEST_STATE_KEY".into())
+        .or_insert_with(|| format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4()));
     for key in ["ZAVORA_API_URL", "ZAVORA_EMAIL", "ZAVORA_PASSWORD"] {
-        if let Ok(value) = std::env::var(key) { service_erp.env.insert(key.to_string(), value); }
+        if let Ok(value) = std::env::var(key) {
+            service_erp.env.insert(key.to_string(), value);
+        }
     }
-    service_erp.env.insert("MCP_ERP_AUTH_MODE".into(), "trusted-single-user".into());
+    service_erp
+        .env
+        .insert("MCP_ERP_AUTH_MODE".into(), "trusted-single-user".into());
+    service_erp
+        .env
+        .insert("MCP_ERP_UNATTENDED".into(), "true".into());
     let service = HashMap::from([("erp".to_string(), service_erp)]);
 
     let (interactive, service) = tokio::try_join!(
         start(interactive, "amos-interactive-mcp"),
         start(service, "amos-service-mcp"),
     )?;
-    Ok(McpManagers { interactive, service })
+    Ok(McpManagers {
+        interactive,
+        service,
+    })
 }
 
 /// All tools Amos may use: the built-in allowlists plus anything an installed
@@ -287,7 +357,10 @@ pub async fn named_tools(
         .tools(ctx)
         .await
         .map_err(|e| anyhow::anyhow!("failed to list MCP tools: {e}"))?;
-    Ok(all.into_iter().filter(|t| names.contains(t.name())).collect())
+    Ok(all
+        .into_iter()
+        .filter(|t| names.contains(t.name()))
+        .collect())
 }
 
 /// Look up a single tool by name (used by the native showcase_step tool to
@@ -319,10 +392,23 @@ mod security_tests {
         assert_eq!(config.command, "env");
         assert!(config.env.is_empty());
         assert_eq!(config.args.first().map(String::as_str), Some("-i"));
-        assert!(config.args.iter().any(|arg| arg == "ZAVORA_API_URL=https://erp.test"));
+        assert!(
+            config
+                .args
+                .iter()
+                .any(|arg| arg == "ZAVORA_API_URL=https://erp.test")
+        );
         assert!(config.args.iter().any(|arg| arg == "/opt/mcp-erp"));
-        for secret in ["GOOGLE_API_KEY", "JWT_ACCESS_SECRET", "ZAVORA_PASSWORD", "DATABASE_URL"] {
-            assert!(!config.args.iter().any(|arg| arg.starts_with(secret)), "{secret} leaked into child environment");
+        for secret in [
+            "GOOGLE_API_KEY",
+            "JWT_ACCESS_SECRET",
+            "ZAVORA_PASSWORD",
+            "DATABASE_URL",
+        ] {
+            assert!(
+                !config.args.iter().any(|arg| arg.starts_with(secret)),
+                "{secret} leaked into child environment"
+            );
         }
     }
 }

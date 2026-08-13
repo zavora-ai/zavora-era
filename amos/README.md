@@ -87,6 +87,13 @@ interactive tool object. Interactive MCP children are launched with a minimal
 environment; the Gemini key, JWT signing secret, database URLs, and service
 password are not inherited by mcp-erp or Playwright.
 
+Both first-party `mcp-erp` processes require the stateless MCP 2026-07-28
+`server/discover` lifecycle and advertise SEP-2663 Tasks support. Long-running
+ERP calls may therefore return a durable task that Amos polls and can resume
+after an `input_required` round. The third-party Playwright server uses `auto`:
+ADK probes `server/discover` first and falls back to the legacy initialization
+handshake only when the server explicitly reports that discovery is unsupported.
+
 The ERP API remains the final authorization boundary: it derives the tenant and
 actor from the verified JWT, overwrites client-supplied report tenant IDs, and
 applies its granular permission registry. Amos's confirmation prompt is an
