@@ -76,15 +76,27 @@ impl ScopedTool {
         audit: Option<Arc<dyn AuditSink>>,
         session: Option<Arc<crate::state::SessionState>>,
     ) -> Arc<dyn Tool> {
-        Arc::new(Self { inner, granted, user_id, session_id, audit, session })
+        Arc::new(Self {
+            inner,
+            granted,
+            user_id,
+            session_id,
+            audit,
+            session,
+        })
     }
 
     /// The interactive write gate. Returns Ok(()) to proceed, or the refusal
     /// message the model should relay.
     async fn confirm_with_user(&self, args: &serde_json::Value) -> Result<(), String> {
-        let Some(session) = &self.session else { return Ok(()) };
+        let Some(session) = &self.session else {
+            return Ok(());
+        };
         // Escape hatch for demos/dev; the gate is on by default.
-        if matches!(std::env::var("AMOS_CONFIRM_WRITES").as_deref(), Ok("0") | Ok("false")) {
+        if matches!(
+            std::env::var("AMOS_CONFIRM_WRITES").as_deref(),
+            Ok("0") | Ok("false")
+        ) {
             return Ok(());
         }
 
@@ -109,7 +121,10 @@ impl ScopedTool {
             Ok(Ok(true)) => Ok(()),
             Ok(Ok(false)) => {
                 session.push_json(serde_json::json!({"type": "confirm_closed", "id": id}));
-                Err("The user DECLINED this posting. Do not retry it; ask what they want changed.".to_string())
+                Err(
+                    "The user DECLINED this posting. Do not retry it; ask what they want changed."
+                        .to_string(),
+                )
             }
             _ => {
                 session.confirmations.forget(&id).await;
@@ -122,34 +137,54 @@ impl ScopedTool {
     async fn record(&self, tool: &str, outcome: AuditOutcome) {
         if let Some(sink) = &self.audit {
             let _ = sink
-                .log(AuditEvent::tool_access(&self.user_id, tool, outcome).with_session(&self.session_id))
+                .log(
+                    AuditEvent::tool_access(&self.user_id, tool, outcome)
+                        .with_session(&self.session_id),
+                )
                 .await;
         }
     }
 
-    /// Inject the session user's access token into an ERP tool's arguments so
-    /// mcp-erp uses it as the request bearer (making the human the ledger
-    /// actor). Only ERP tools take it — `browser_*` tools don't, and would
-    /// reject an unknown arg. ScopedTool wraps only ERP + browser MCP tools, so
-    /// "not a browser tool" == "an ERP tool". Ambient routines pass
-    /// `session: None` and so run as the service account, by design.
-    async fn with_user_token(&self, mut args: serde_json::Value) -> serde_json::Value {
+    /// Inject an opaque reference to this session's private bearer file. The
+    /// JWT never enters MCP arguments; mcp-erp reads it only for this call.
+    fn with_host_proofs(
+        &self,
+        mut args: serde_json::Value,
+        user_confirmed: bool,
+    ) -> serde_json::Value {
         if self.inner.name().starts_with("browser_") {
             return args;
         }
-        let Some(session) = &self.session else { return args };
-        let Some(token) = session.user_token().await else { return args };
+        let Some(session) = &self.session else {
+            return args;
+        };
+        let Some(path) = session.credential_file() else {
+            return args;
+        };
+        if !args.is_object() {
+            args = serde_json::json!({});
+        }
         if let Some(obj) = args.as_object_mut() {
-            obj.insert(USER_TOKEN_ARG.to_string(), serde_json::Value::String(token));
+            obj.insert(
+                CREDENTIAL_FILE_ARG.to_string(),
+                serde_json::Value::String(path.to_string_lossy().into_owned()),
+            );
+            if user_confirmed {
+                obj.insert(
+                    USER_CONFIRMED_ARG.to_string(),
+                    serde_json::Value::Bool(true),
+                );
+            }
         }
         args
     }
 }
 
-/// The argument name that carries the session user's access token to mcp-erp.
-/// Must match `mcp-erp`'s `server::USER_TOKEN_ARG`; mcp-erp strips it before
-/// the typed tool input deserializes.
-const USER_TOKEN_ARG: &str = "__user_token";
+/// Must match `mcp-erp::auth::CREDENTIAL_FILE_ARG`. It is absent from every
+/// tool schema and overwritten after model generation.
+const CREDENTIAL_FILE_ARG: &str = "__credential_file";
+/// Must match `mcp-erp::auth::USER_CONFIRMED_ARG`; injected only after the UI gate.
+const USER_CONFIRMED_ARG: &str = "__user_confirmed";
 
 #[async_trait]
 impl Tool for ScopedTool {
@@ -163,7 +198,11 @@ impl Tool for ScopedTool {
         self.inner.parameters_schema()
     }
 
-    async fn execute(&self, ctx: Arc<dyn ToolContext>, args: serde_json::Value) -> adk_core::Result<serde_json::Value> {
+    async fn execute(
+        &self,
+        ctx: Arc<dyn ToolContext>,
+        args: serde_json::Value,
+    ) -> adk_core::Result<serde_json::Value> {
         let required = required_scopes(self.inner.name());
         match check_scopes(required, &self.granted) {
             Ok(()) => {
@@ -177,12 +216,10 @@ impl Tool for ScopedTool {
                     }
                 }
                 self.record(self.inner.name(), AuditOutcome::Allowed).await;
-                // User-scoped ERP auth: thread the session user's access token
-                // to mcp-erp (as `__user_token`) so the ledger actor is the
-                // human, not the service account. Injected AFTER the confirm
-                // preview so the token never appears on the approval card, and
-                // it is not in any tool's schema so the model never sets it.
-                let args = self.with_user_token(args).await;
+                // Caller-bound ERP auth: inject only the private credential
+                // file reference after the confirmation preview. The model
+                // cannot set it and the bearer never traverses MCP.
+                let args = self.with_host_proofs(args, required.contains(&"ledger:post"));
                 self.inner.execute(ctx, args).await
             }
             Err(denied) => {
@@ -217,15 +254,25 @@ mod inject_tests {
         fn description(&self) -> &str {
             "dummy"
         }
-        async fn execute(&self, _ctx: Arc<dyn ToolContext>, args: serde_json::Value) -> adk_core::Result<serde_json::Value> {
+        async fn execute(
+            &self,
+            _ctx: Arc<dyn ToolContext>,
+            args: serde_json::Value,
+        ) -> adk_core::Result<serde_json::Value> {
             Ok(args)
         }
     }
 
     fn scoped(name: &str, session: Option<Arc<SessionState>>) -> ScopedTool {
         ScopedTool {
-            inner: Arc::new(DummyTool { name: name.to_string() }),
-            granted: Arc::new(vec!["erp:read".into(), "erp:write".into(), "ledger:post".into()]),
+            inner: Arc::new(DummyTool {
+                name: name.to_string(),
+            }),
+            granted: Arc::new(vec![
+                "erp:read".into(),
+                "erp:write".into(),
+                "ledger:post".into(),
+            ]),
             user_id: "u".into(),
             session_id: "s".into(),
             audit: None,
@@ -234,34 +281,49 @@ mod inject_tests {
     }
 
     #[tokio::test]
-    async fn injects_token_for_erp_tool() {
-        let session = Arc::new(SessionState::new());
-        session.set_user_token("jwt-xyz".into()).await;
-        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert_eq!(out["__user_token"], "jwt-xyz", "ERP tool gets the user token");
+    async fn injects_opaque_credential_file_for_erp_tool() {
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out = scoped("post_bill", Some(session))
+            .with_host_proofs(serde_json::json!({"id": "b1"}), true);
+        let path = out["__credential_file"].as_str().unwrap();
+        assert!(path.ends_with(".jwt"));
+        assert_ne!(path, "aaa.bbb.ccc", "the JWT must not enter MCP arguments");
         assert_eq!(out["id"], "b1", "existing args preserved");
+        assert_eq!(out[USER_CONFIRMED_ARG], true);
+    }
+
+    #[tokio::test]
+    async fn injects_credential_for_no_argument_erp_tool() {
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out =
+            scoped("get_dashboard", Some(session)).with_host_proofs(serde_json::Value::Null, false);
+        assert!(out["__credential_file"].as_str().is_some());
     }
 
     #[tokio::test]
     async fn no_token_for_browser_tool() {
-        let session = Arc::new(SessionState::new());
-        session.set_user_token("jwt-xyz".into()).await;
-        let out = scoped("browser_click", Some(session)).with_user_token(serde_json::json!({"ref": "e1"})).await;
-        assert!(out.get("__user_token").is_none(), "browser tools must not get the token");
+        let session = Arc::new(SessionState::with_token("aaa.bbb.ccc").unwrap());
+        let out = scoped("browser_click", Some(session))
+            .with_host_proofs(serde_json::json!({"ref": "e1"}), false);
+        assert!(
+            out.get("__credential_file").is_none(),
+            "browser tools must not get credentials"
+        );
     }
 
     #[tokio::test]
     async fn no_token_when_session_absent() {
         // Ambient routines pass session: None → service account, by design.
-        let out = scoped("post_bill", None).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert!(out.get("__user_token").is_none());
+        let out = scoped("post_bill", None).with_host_proofs(serde_json::json!({"id": "b1"}), true);
+        assert!(out.get("__credential_file").is_none());
     }
 
     #[tokio::test]
     async fn no_token_when_session_has_none() {
-        let session = Arc::new(SessionState::new()); // token never set
-        let out = scoped("post_bill", Some(session)).with_user_token(serde_json::json!({"id": "b1"})).await;
-        assert!(out.get("__user_token").is_none());
+        let session = Arc::new(SessionState::new());
+        let out = scoped("post_bill", Some(session))
+            .with_host_proofs(serde_json::json!({"id": "b1"}), false);
+        assert!(out.get("__credential_file").is_none());
     }
 }
 
@@ -276,32 +338,77 @@ mod tests {
     #[test]
     fn every_mutating_tool_requires_write_or_post() {
         let posts = [
-            "post_bill", "record_payment", "post_journal_entry", "post_invoice",
-            "post_pay_run", "approve_pay_run", "mark_pay_run_paid",
-            "close_period", "reopen_period",
-            "file_tax_return", "remit_tax_filing", "etims_transmit_invoice",
-            "run_depreciation", "run_fx_revaluation", "complete_reconciliation",
-            "receive_goods", "adjust_stock", "create_debit_note",
+            "post_bill",
+            "record_payment",
+            "post_journal_entry",
+            "post_invoice",
+            "post_pay_run",
+            "approve_pay_run",
+            "mark_pay_run_paid",
+            "close_period",
+            "reopen_period",
+            "file_tax_return",
+            "remit_tax_filing",
+            "etims_transmit_invoice",
+            "run_depreciation",
+            "run_fx_revaluation",
+            "complete_reconciliation",
+            "receive_goods",
+            "adjust_stock",
+            "create_debit_note",
         ];
         let writes = [
-            "create_bill_draft", "create_invoice_draft", "submit_invoice",
-            "create_customer", "create_vendor", "update_customer", "update_vendor",
-            "create_product", "update_product", "transfer_stock",
-            "send_customer_statement", "import_bank_statement", "compute_reconciliation",
-            "set_budget", "run_payroll", "add_pay_run_input", "recompute_pay_run",
-            "create_sales_order_draft", "submit_sales_order",
-            "create_purchase_order_draft", "submit_purchase_order", "create_direct_po",
-            "send_purchase_order", "create_requisition", "approve_requisition",
-            "convert_requisition", "create_expense_claim", "approve_expense_claim",
+            "create_bill_draft",
+            "create_invoice_draft",
+            "submit_invoice",
+            "create_customer",
+            "create_vendor",
+            "update_customer",
+            "update_vendor",
+            "create_product",
+            "update_product",
+            "transfer_stock",
+            "send_customer_statement",
+            "import_bank_statement",
+            "compute_reconciliation",
+            "set_budget",
+            "run_payroll",
+            "add_pay_run_input",
+            "recompute_pay_run",
+            "create_sales_order_draft",
+            "submit_sales_order",
+            "create_purchase_order_draft",
+            "submit_purchase_order",
+            "create_direct_po",
+            "send_purchase_order",
+            "create_requisition",
+            "approve_requisition",
+            "convert_requisition",
+            "create_expense_claim",
+            "approve_expense_claim",
         ];
         for t in posts {
-            assert_eq!(required_scopes(t), &["ledger:post"], "{t} must require ledger:post");
+            assert_eq!(
+                required_scopes(t),
+                &["ledger:post"],
+                "{t} must require ledger:post"
+            );
         }
         for t in writes {
-            assert_eq!(required_scopes(t), &["erp:write"], "{t} must require erp:write");
+            assert_eq!(
+                required_scopes(t),
+                &["erp:write"],
+                "{t} must require erp:write"
+            );
         }
         // Reads stay reads — the default arm.
-        for t in ["list_invoices", "get_dashboard", "run_report", "cit_estimate", "three_way_match"] {
+        for t in [
+            "list_invoices",
+            "get_dashboard",
+            "run_report",
+            "cit_estimate",
+            "three_way_match",
+        ] {
             assert_eq!(required_scopes(t), &["erp:read"], "{t} should be a read");
         }
     }

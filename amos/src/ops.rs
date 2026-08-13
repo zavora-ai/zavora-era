@@ -408,7 +408,7 @@ impl Ops {
             scopes.push(format!("tenant:{}", self.entity));
             scopes
         });
-        let tools = crate::mcp::named_tools(&state.manager, &allowed).await?;
+        let tools = crate::mcp::named_tools(&state.service_manager, &allowed).await?;
         if tools.is_empty() {
             return Err(anyhow!("no tools resolved for routine '{}'", spec.name));
         }

@@ -4,9 +4,14 @@
       "command": "${AMOS_MCP_ERP_BIN}",
       "args": [],
       "env": {
-        "ZAVORA_API_URL": "${ZAVORA_API_URL}",
-        "ZAVORA_EMAIL": "${ZAVORA_EMAIL}",
-        "ZAVORA_PASSWORD": "${ZAVORA_PASSWORD}"
+        "ZAVORA_API_URL": "${ZAVORA_API_URL}"
+      },
+      "lifecycle": "discover",
+      "taskConfig": {
+        "enableTasks": true,
+        "pollIntervalMs": 500,
+        "timeoutMs": 300000,
+        "maxInputRounds": 10
       }
     },
     "browser": {
@@ -21,7 +26,8 @@
         "1440,900",
         "--output-dir",
         "${AMOS_SHOWCASE_DIR}"
-      ]
+      ],
+      "lifecycle": "auto"
     }
   }
 }

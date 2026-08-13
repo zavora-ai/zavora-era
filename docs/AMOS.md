@@ -26,9 +26,10 @@ Browser — ERP /amos page (iframe, mic-enabled) or standalone :8090
   ▼
 amos crate (Rust, axum, standalone cargo workspace) ── RealtimeRunner ── Gemini Live
   │      tools bridged into the realtime session:
-  ├── McpServerManager  (amos/mcp.json, Kiro format, ${VAR} expansion)
-  │     ├── mcp-erp (zavora backend)  → Zavora ERA REST API :8080
-  │     └── @playwright/mcp           → headed/headless Chrome → ERP UI :3000
+  ├── interactive MCP manager (secret-minimized environment)
+  │     ├── mcp-erp delegated per verified session user → ERP API :8080
+  │     └── @playwright/mcp → headed/headless Chrome → ERP UI :3000
+  ├── ERP-only routine MCP manager (separate service identity)
   ├── native tools: plan_tasks · update_task · use_skill · erp_login ·
   │                 showcase_step · remember · recall · forget ·
   │                 analyze_attachment · web_search · current_datetime ·
@@ -56,8 +57,10 @@ amos crate (Rust, axum, standalone cargo workspace) ── RealtimeRunner ──
 ## 2. Capabilities (what's built)
 
 ### 2.1 ERP toolset (mcp-erp, zavora backend)
-A `zavora` backend was added to the shared `mcp-erp` server (JWT login with
-auto re-login; 70+ tools). Amos uses a filtered set covering the full
+A `zavora` backend was added to the shared `mcp-erp` server. Interactive calls
+use caller delegation with no service-account fallback; a separate ERP-only
+manager retains automatic service-token refresh for unattended routines. Amos
+uses a filtered set of 70+ tools covering the full
 accountant job: dashboard + **27 report types**, customers/vendors/products
 (incl. masters), **AR invoices** (draft → VAT-verified post → **eTIMS
 transmit/retry**), **AP bills**, **payments** (Kenyan WHT, director funding),
@@ -65,7 +68,7 @@ transmit/retry**), **AP bills**, **payments** (Kenyan WHT, director funding),
 **inventory** (levels/adjust/transfer), **bank reconciliation**
 (compute → tick → complete-and-lock), **period close/reopen**, and
 **statutory tax filings** (VAT/PAYE/WHT: report → file → remit). The backend's
-own docs: the mcp-erp repo (`feat/zavora-backend`).
+own docs: the [mcp-erp repository](https://github.com/zavora-ai/mcp-erp).
 
 ### 2.2 Skills — teachable playbooks (agentskills.io standard)
 Drop-in `SKILL.md` files under `amos/skills/` teach Amos consistent multi-step
@@ -266,6 +269,14 @@ and refuses every session that isn't for it.
   ERP/browser tool is wrapped so its required scope is checked before it runs —
   a Viewer's session cannot post to the ledger no matter what the model or a
   malicious prompt attempts.
+- **Caller-bound MCP auth** (`amos/src/credential.rs`, `mcp.rs`): interactive
+  calls carry only an opaque path to a private, per-session bearer file. Raw
+  JWTs never enter MCP arguments. The interactive mcp-erp child has no service
+  credentials and cannot fall back when a token is missing, expired, or
+  rejected. Unattended routines use a separate ERP-only process.
+- **Child-process secret isolation**: interactive MCP children start with a
+  minimal environment, excluding the Gemini key, JWT signing secret, database
+  URLs, and ERP service password. This applies to Playwright as well as mcp-erp.
 - **Prompt-injection guardrails** (`amos/src/guard.rs`): inbound user turns are
   screened for instruction-override and secret/cross-tenant-exfiltration before
   reaching the model; a hit is refused, not forwarded. The `remember` tool
@@ -288,12 +299,14 @@ To add a tenant: run another Amos instance with that tenant's service account
 
 ## 6. Known constraints & operational notes
 
-- **One Amos serves one tenant** (see §5b). A single shared multi-tenant Amos
-  (per-user-token data path, per-entity showcase) is the future SaaS path;
-  today, each tenant gets its own instance.
+- **One Amos serves one tenant** (see §5b). Interactive ERP calls are already
+  bound to each verified user, but per-entity memory, evidence, and deployment
+  isolation remain intentionally single-tenant; each tenant gets its own
+  instance.
 - **Gemini Live tool-count sensitivity** — the tool set is filtered
   aggressively; large sets degrade the model.
-- **15-min JWT TTL** — handled inside the zavora backend (auto re-login).
+- **15-min JWT TTL** — the ERP shell refreshes the verified interactive token;
+  the separate routine service client re-authenticates independently.
 - **Process hygiene** — stop Amos with SIGTERM/Ctrl-C so it reaps MCP children
   (mcp-erp, Playwright, Chromium); SIGKILL leaks them.
 - **sqlx pin** — `amos/Cargo.lock` pins sqlx 0.8.6; pgvector's version range
@@ -308,8 +321,8 @@ To add a tenant: run another Amos instance with that tenant's service account
 Amos deploys with the ERP stack on every merge to `main`
 (`.github/workflows/deploy.yml`).
 
-- **Image** (`amos/Dockerfile`): clones `adk-rust` (pinned branch) and `mcp-erp`
-  (`feat/zavora-backend`), builds both binaries on rust 1.94, bakes Node + a
+- **Image** (`amos/Dockerfile`): clones pinned `adk-rust` and `mcp-erp` refs,
+  builds both binaries on Rust 1.95, bakes Node + a
   pinned `@playwright/mcp` + headless Chromium.
 - **Routing**: Caddy proxies `/amos-app/*` → `amos:8090` (prefix stripped; the
   frontend auto-detects it). Same-origin with the ERP → the iframe inherits mic

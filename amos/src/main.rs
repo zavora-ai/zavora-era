@@ -14,6 +14,7 @@ mod audit;
 mod auth;
 mod clock;
 mod config;
+mod credential;
 mod erp;
 mod guard;
 mod history;
@@ -64,8 +65,8 @@ async fn main() -> Result<()> {
     let served_entity = resolve_served_entity().await?;
     info!("🔒 Serving entity {served_entity} (sessions for other tenants are refused)");
 
-    let manager = mcp::start_manager(&showcase_dir).await?;
-    info!("✓ MCP servers started (erp + browser)");
+    let managers = mcp::start_managers(&showcase_dir).await?;
+    info!("✓ MCP servers started (delegated interactive + isolated routine service)");
 
     let memory = memory::AmosMemory::connect(served_entity).await;
 
@@ -80,7 +81,15 @@ async fn main() -> Result<()> {
     // Ambient operations: the routine registry + ops ledger (None = disabled).
     let ops = ops::Ops::init(served_entity).await;
 
-    let state = Arc::new(AppState::new(manager, memory, served_entity, audit, history, ops)?);
+    let state = Arc::new(AppState::new(
+        managers.interactive,
+        managers.service,
+        memory,
+        served_entity,
+        audit,
+        history,
+        ops,
+    )?);
     info!("✓ Memory online ({}) · audit {} · history {} · ops {}", state.memory.backend,
         if state.audit.is_some() { "on" } else { "off" },
         if state.history.is_some() { "on" } else { "off" },
@@ -105,6 +114,7 @@ async fn main() -> Result<()> {
     // restart leaks orphaned processes that poison later browser sessions.
     info!("Shutting down MCP servers…");
     let _ = state.manager.shutdown().await;
+    let _ = state.service_manager.shutdown().await;
     Ok(())
 }
 

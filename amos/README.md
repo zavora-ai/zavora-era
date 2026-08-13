@@ -18,9 +18,10 @@ Browser (ERP /amos page, or standalone :8090)
   ▼
 amos (Rust, axum) ── RealtimeRunner ── Gemini Live (native audio)
   │        tools bridged into the realtime session:
-  ├── McpServerManager (mcp.json)
-  │     ├── mcp-erp  (zavora backend → Zavora ERA REST API :8080)
+  ├── interactive MCP manager (secret-minimized child environments)
+  │     ├── mcp-erp delegated as the verified session user → ERP API :8080
   │     └── @playwright/mcp --isolated (headed Chrome → ERP UI :3000)
+  ├── routine MCP manager (ERP-only service identity; never exposed to chat)
   └── native tools: plan_tasks · update_task · use_skill · erp_login · showcase_step
 ```
 
@@ -54,7 +55,7 @@ Requires the ERP API (`:8080`) and UI (`:3000`) running, Node (for
 | `GOOGLE_API_KEY` | Gemini API key (AI Studio) |
 | `GEMINI_LIVE_MODEL` | Live model id (default `models/gemini-live-2.5-flash-native-audio`) |
 | `ZAVORA_API_URL` | ERP API base (default `http://localhost:8080`) |
-| `ZAVORA_EMAIL` / `ZAVORA_PASSWORD` | Service user for API tool calls (e.g. `amos@zavora.ai`, Accountant role) |
+| `ZAVORA_EMAIL` / `ZAVORA_PASSWORD` | Least-privilege service user for snapshots and explicitly unattended routines; interactive tools never receive these credentials |
 | `ERP_LOGIN_EMAIL` / `ERP_LOGIN_PASSWORD` | Account the visible browser signs in as (defaults to `ZAVORA_*`) |
 | `ERP_UI_URL` | ERP web UI (default `http://localhost:3000`) |
 | `AMOS_PORT` | Listen port (default `8090`) |
@@ -67,6 +68,36 @@ Requires the ERP API (`:8080`) and UI (`:3000`) running, Node (for
 | `AMOS_OPS_MODEL` | Model for routine sub-agents (default `gemini-flash-latest`) |
 | `AMOS_WEBHOOK_SECRET` | Shared secret letting the ERP fire `POST /api/ops/run/*` (unset = webhook path off) |
 | `AMOS_SHOWCASE_RETENTION_DAYS` | Evidence-screenshot retention sweep at startup (default `14`) |
+| `AMOS_MCP_CREDENTIAL_DIR` | Private directory for per-session delegated bearer files (default OS temp; must be mode `0700`) |
+
+### MCP authorization boundary
+
+Amos starts two separate mcp-erp processes. Interactive chat uses
+`MCP_ERP_AUTH_MODE=delegated`: after the WebSocket JWT is verified, Amos writes
+it to a per-session `0600` file and injects only that opaque file path after
+model generation. The raw bearer is absent from tool schemas, model context,
+approval cards, and MCP messages. Token refreshes are accepted only when the
+user, tenant, and role still match the original session.
+
+The interactive mcp-erp process has no service credentials and fails closed on
+a missing, expired, rejected, or out-of-directory caller credential. It cannot
+retry as Amos. Unattended routines use a distinct ERP-only process in explicit
+`trusted-single-user` mode, so its service identity is never reachable from an
+interactive tool object. Interactive MCP children are launched with a minimal
+environment; the Gemini key, JWT signing secret, database URLs, and service
+password are not inherited by mcp-erp or Playwright.
+
+Both first-party `mcp-erp` processes require the stateless MCP 2026-07-28
+`server/discover` lifecycle and advertise SEP-2663 Tasks support. Long-running
+ERP calls may therefore return a durable task that Amos polls and can resume
+after an `input_required` round. The third-party Playwright server uses `auto`:
+ADK probes `server/discover` first and falls back to the legacy initialization
+handshake only when the server explicitly reports that discovery is unsupported.
+
+The ERP API remains the final authorization boundary: it derives the tenant and
+actor from the verified JWT, overwrites client-supplied report tenant IDs, and
+applies its granular permission registry. Amos's confirmation prompt is an
+additional financial-control gate, not a substitute for authorization.
 
 ## Configuration surface (edit files, restart — no recompiling)
 
